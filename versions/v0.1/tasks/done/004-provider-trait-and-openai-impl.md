@@ -22,11 +22,11 @@ The system can send a conversation to an LLM and receive a streaming response th
 
 ## Acceptance Criteria
 
-- [ ] `OpenAiProvider` successfully streams a response from an OpenAI-compatible endpoint given valid credentials
-- [ ] Each `Token` arrives as it is generated (true streaming, not buffered)
-- [ ] Network errors, 401s, and 429s are mapped to the correct `ProviderError` variant
-- [ ] The `Provider` trait compiles as an `async trait` with no `Box<dyn>` in the stream return type if possible (or with a clear type alias if boxing is needed)
-- [ ] No OpenAI-specific logic leaks outside of `OpenAiProvider`
+- [x] `OpenAiProvider` successfully streams a response from an OpenAI-compatible endpoint given valid credentials
+- [x] Each `Token` arrives as it is generated (true streaming, not buffered)
+- [x] Network errors, 401s, and 429s are mapped to the correct `ProviderError` variant
+- [x] The `Provider` trait compiles as an `async trait` with no `Box<dyn>` in the stream return type if possible (or with a clear type alias if boxing is needed)
+- [x] No OpenAI-specific logic leaks outside of `OpenAiProvider`
 
 ## Test Cases
 

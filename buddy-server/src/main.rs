@@ -2,6 +2,7 @@ use axum::Router;
 use tower_http::services::ServeDir;
 
 mod config;
+mod provider;
 mod types;
 
 #[tokio::main]
