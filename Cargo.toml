@@ -1,0 +1,3 @@
+[workspace]
+members = ["buddy-server"]
+resolver = "3"
