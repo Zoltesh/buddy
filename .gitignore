@@ -18,3 +18,4 @@ buddy.toml
 .idea/
 .vscode/
 *.iml
+*.claude/
