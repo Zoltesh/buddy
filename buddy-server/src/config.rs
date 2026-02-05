@@ -46,11 +46,19 @@ fn default_port() -> u16 {
     DEFAULT_PORT
 }
 
+const DEFAULT_SYSTEM_PROMPT: &str = "You are a helpful, friendly AI assistant.";
+
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct ProviderConfig {
     pub api_key: String,
     pub model: String,
     pub endpoint: String,
+    #[serde(default = "default_system_prompt")]
+    pub system_prompt: String,
+}
+
+fn default_system_prompt() -> String {
+    DEFAULT_SYSTEM_PROMPT.to_string()
 }
 
 impl Config {

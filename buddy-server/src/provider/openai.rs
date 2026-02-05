@@ -13,6 +13,7 @@ pub struct OpenAiProvider {
     api_key: String,
     model: String,
     endpoint: String,
+    system_prompt: String,
 }
 
 impl OpenAiProvider {
@@ -22,6 +23,7 @@ impl OpenAiProvider {
             api_key: config.api_key.clone(),
             model: config.model.clone(),
             endpoint: config.endpoint.clone(),
+            system_prompt: config.system_prompt.clone(),
         }
     }
 }
@@ -59,10 +61,23 @@ fn to_chat_messages(messages: &[Message]) -> Vec<ChatMessage> {
         .collect()
 }
 
-fn build_request_body<'a>(messages: &[Message], model: &'a str) -> ChatRequest<'a> {
+fn build_request_body<'a>(
+    messages: &[Message],
+    model: &'a str,
+    system_prompt: &str,
+) -> ChatRequest<'a> {
+    let mut chat_messages = Vec::new();
+    // Prepend system prompt if not empty
+    if !system_prompt.is_empty() {
+        chat_messages.push(ChatMessage {
+            role: "system",
+            content: system_prompt.to_string(),
+        });
+    }
+    chat_messages.extend(to_chat_messages(messages));
     ChatRequest {
         model,
-        messages: to_chat_messages(messages),
+        messages: chat_messages,
         stream: true,
     }
 }
@@ -142,7 +157,7 @@ impl Provider for OpenAiProvider {
             "{}/chat/completions",
             self.endpoint.trim_end_matches('/')
         );
-        let body = build_request_body(&messages, &self.model);
+        let body = build_request_body(&messages, &self.model, &self.system_prompt);
 
         let response = self
             .client
@@ -217,22 +232,36 @@ mod tests {
     #[test]
     fn request_body_matches_openai_spec() {
         let messages = make_messages();
-        let body = build_request_body(&messages, "gpt-4");
+        let body = build_request_body(&messages, "gpt-4", "You are a helpful assistant.");
         let json = serde_json::to_value(&body).unwrap();
 
         assert_eq!(json["model"], "gpt-4");
         assert_eq!(json["stream"], true);
 
         let msgs = json["messages"].as_array().unwrap();
+        // system prompt + 2 messages from make_messages
+        assert_eq!(msgs.len(), 3);
+        assert_eq!(msgs[0]["role"], "system");
+        assert_eq!(msgs[0]["content"], "You are a helpful assistant.");
+        assert_eq!(msgs[1]["role"], "system");
+        assert_eq!(msgs[1]["content"], "You are helpful.");
+        assert_eq!(msgs[2]["role"], "user");
+        assert_eq!(msgs[2]["content"], "Hi");
+
+        // No internal fields leak into the request
+        assert!(msgs[1].get("timestamp").is_none());
+        assert!(msgs[1].get("type").is_none());
+    }
+
+    #[test]
+    fn empty_system_prompt_is_not_prepended() {
+        let messages = make_messages();
+        let body = build_request_body(&messages, "gpt-4", "");
+        let json = serde_json::to_value(&body).unwrap();
+        let msgs = json["messages"].as_array().unwrap();
         assert_eq!(msgs.len(), 2);
         assert_eq!(msgs[0]["role"], "system");
         assert_eq!(msgs[0]["content"], "You are helpful.");
-        assert_eq!(msgs[1]["role"], "user");
-        assert_eq!(msgs[1]["content"], "Hi");
-
-        // No internal fields leak into the request
-        assert!(msgs[0].get("timestamp").is_none());
-        assert!(msgs[0].get("type").is_none());
     }
 
     #[test]
@@ -343,6 +372,7 @@ mod tests {
             api_key: std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set"),
             model: "gpt-4".into(),
             endpoint: "https://api.openai.com/v1".into(),
+            system_prompt: "You are a helpful assistant.".into(),
         };
         let provider = OpenAiProvider::new(&config);
 

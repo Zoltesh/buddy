@@ -19,13 +19,13 @@ A single `cargo run` (after building the frontend) starts buddy and a user can h
 
 ## Acceptance Criteria
 
-- [ ] `cargo run` starts the server; opening `http://127.0.0.1:3000` shows the chat UI
-- [ ] Sending a message produces a streamed response from the configured LLM
-- [ ] A multi-turn conversation (3+ exchanges) works without errors or dropped context
-- [ ] Starting with a missing `buddy.toml` prints a clear error and exits with a non-zero code
-- [ ] Starting with an invalid API key results in a user-visible error in the chat UI (not a silent failure)
-- [ ] `Ctrl+C` stops the server without error output
-- [ ] Startup log includes the bind address and model name
+- [x] `cargo run` starts the server; opening `http://127.0.0.1:3000` shows the chat UI
+- [x] Sending a message produces a streamed response from the configured LLM
+- [x] A multi-turn conversation (3+ exchanges) works without errors or dropped context
+- [x] Starting with a missing `buddy.toml` prints a clear error and exits with a non-zero code
+- [x] Starting with an invalid API key results in a user-visible error in the chat UI (not a silent failure)
+- [x] `Ctrl+C` stops the server without error output
+- [x] Startup log includes the bind address and model name
 
 ## Test Cases
 

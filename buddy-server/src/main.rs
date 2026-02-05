@@ -1,9 +1,17 @@
+use std::sync::Arc;
+
+use axum::routing::post;
 use axum::Router;
+use tokio::signal;
 use tower_http::services::ServeDir;
 
+mod api;
 mod config;
 mod provider;
 mod types;
+
+use api::{chat_handler, AppState};
+use provider::openai::OpenAiProvider;
 
 #[tokio::main]
 async fn main() {
@@ -13,7 +21,14 @@ async fn main() {
     });
 
     let addr = config.bind_address();
-    let app = Router::new().fallback_service(ServeDir::new("frontend/dist"));
+    let model = config.provider.model.clone();
+    let provider = OpenAiProvider::new(&config.provider);
+    let state = Arc::new(AppState { provider });
+
+    let app = Router::new()
+        .route("/api/chat", post(chat_handler::<OpenAiProvider>))
+        .with_state(state)
+        .fallback_service(ServeDir::new("frontend/dist"));
 
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
@@ -22,7 +37,19 @@ async fn main() {
             std::process::exit(1);
         });
 
-    println!("Serving on http://{addr}");
+    println!("buddy server started");
+    println!("  address: http://{addr}");
+    println!("  model:   {model}");
 
-    axum::serve(listener, app).await.expect("server error");
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await
+        .expect("server error");
+}
+
+async fn shutdown_signal() {
+    signal::ctrl_c()
+        .await
+        .expect("failed to install Ctrl+C handler");
+    println!("\nShutting down...");
 }

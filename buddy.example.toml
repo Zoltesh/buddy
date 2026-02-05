@@ -14,3 +14,5 @@ api_key = "your-api-key-here"
 model = "gpt-4"
 # Provider API endpoint URL (required)
 endpoint = "https://api.openai.com/v1"
+# System prompt sent at the start of every conversation (optional)
+# system_prompt = "You are a helpful, friendly AI assistant."

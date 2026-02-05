@@ -1,1 +1,56 @@
 @import "tailwindcss";
+
+/* Markdown prose styling */
+.prose {
+  color: inherit;
+}
+
+.prose :where(code):not(:where(pre *)) {
+  background-color: rgba(0, 0, 0, 0.05);
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
+  font-size: 0.875em;
+  font-weight: 600;
+}
+
+.dark .prose :where(code):not(:where(pre *)) {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.prose pre {
+  background-color: #1f2937;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  overflow-x: auto;
+}
+
+.prose pre code {
+  background-color: transparent;
+  color: #f3f4f6;
+  padding: 0;
+  font-weight: 400;
+}
+
+.prose p {
+  margin-top: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.prose p:first-child {
+  margin-top: 0;
+}
+
+.prose p:last-child {
+  margin-bottom: 0;
+}
+
+.prose ul, .prose ol {
+  margin-top: 0.75rem;
+  margin-bottom: 0.75rem;
+  padding-left: 1.5rem;
+}
+
+.prose li {
+  margin-top: 0.25rem;
+  margin-bottom: 0.25rem;
+}

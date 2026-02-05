@@ -22,11 +22,11 @@ A transport-agnostic API contract exists and is served over HTTP/WebSocket. The 
 
 ## Acceptance Criteria
 
-- [ ] A client can connect and send a `ChatRequest`; receives a stream of `ChatEvent` frames ending with `Done`
-- [ ] Malformed requests return a structured JSON error, not a 500 or HTML
-- [ ] The `/` route serves the frontend `index.html`
-- [ ] Static assets under `/assets/*` are served correctly (JS, CSS)
-- [ ] The server starts and binds to the configured host/port from `Config`
+- [x] A client can connect and send a `ChatRequest`; receives a stream of `ChatEvent` frames ending with `Done`
+- [x] Malformed requests return a structured JSON error, not a 500 or HTML
+- [x] The `/` route serves the frontend `index.html`
+- [x] Static assets under `/assets/*` are served correctly (JS, CSS)
+- [x] The server starts and binds to the configured host/port from `Config`
 
 ## Test Cases
 

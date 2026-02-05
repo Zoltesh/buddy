@@ -24,13 +24,13 @@ A clean, minimal chat interface where a user can type a message, send it, and se
 
 ## Acceptance Criteria
 
-- [ ] User can type a message and press Enter (or click Send) to submit
-- [ ] Assistant response appears token-by-token as it streams
-- [ ] Conversation history is displayed correctly for multi-turn exchanges
-- [ ] The UI is usable at 360px and 1440px viewport widths
-- [ ] Code blocks in assistant responses are rendered with monospace font and visible boundaries
-- [ ] The input is disabled while a response is streaming; re-enabled after `Done`
-- [ ] No JavaScript errors in the browser console during normal use
+- [x] User can type a message and press Enter (or click Send) to submit
+- [x] Assistant response appears token-by-token as it streams
+- [x] Conversation history is displayed correctly for multi-turn exchanges
+- [x] The UI is usable at 360px and 1440px viewport widths
+- [x] Code blocks in assistant responses are rendered with monospace font and visible boundaries
+- [x] The input is disabled while a response is streaming; re-enabled after `Done`
+- [x] No JavaScript errors in the browser console during normal use
 
 ## Test Cases
 
