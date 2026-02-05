@@ -1,6 +1,12 @@
+pub mod fetch_url;
+pub mod read_file;
+pub mod write_file;
+
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
+
+use crate::config::SkillsConfig;
 
 /// Errors that can occur when executing a skill.
 #[derive(Debug)]
@@ -77,6 +83,16 @@ impl SkillRegistry {
         self.skills.values().map(|s| s.as_ref()).collect()
     }
 
+    /// Returns the number of registered skills.
+    pub fn len(&self) -> usize {
+        self.skills.len()
+    }
+
+    /// Returns true if no skills are registered.
+    pub fn is_empty(&self) -> bool {
+        self.skills.is_empty()
+    }
+
     /// Produce OpenAI-compatible tool definitions for all registered skills.
     ///
     /// Each entry has the shape:
@@ -105,6 +121,25 @@ impl SkillRegistry {
             })
             .collect()
     }
+}
+
+/// Build a `SkillRegistry` from the skills configuration.
+///
+/// Only skills with configuration present in `buddy.toml` are registered.
+pub fn build_registry(config: &SkillsConfig) -> SkillRegistry {
+    let mut registry = SkillRegistry::new();
+
+    if let Some(ref cfg) = config.read_file {
+        registry.register(Box::new(read_file::ReadFileSkill::new(cfg)));
+    }
+    if let Some(ref cfg) = config.write_file {
+        registry.register(Box::new(write_file::WriteFileSkill::new(cfg)));
+    }
+    if let Some(ref cfg) = config.fetch_url {
+        registry.register(Box::new(fetch_url::FetchUrlSkill::new(cfg)));
+    }
+
+    registry
 }
 
 #[cfg(test)]
@@ -253,5 +288,53 @@ mod tests {
 
         let e3 = SkillError::ExecutionFailed("boom".into());
         assert_eq!(e3.to_string(), "execution failed: boom");
+    }
+
+    #[test]
+    fn build_registry_with_no_skills_is_empty() {
+        let config = SkillsConfig::default();
+        let registry = build_registry(&config);
+        assert!(registry.is_empty());
+        assert_eq!(registry.len(), 0);
+    }
+
+    #[test]
+    fn build_registry_with_read_file_only() {
+        use crate::config::ReadFileConfig;
+
+        let config = SkillsConfig {
+            read_file: Some(ReadFileConfig {
+                allowed_directories: vec!["/tmp".into()],
+            }),
+            write_file: None,
+            fetch_url: None,
+        };
+        let registry = build_registry(&config);
+        assert_eq!(registry.len(), 1);
+        assert!(registry.get("read_file").is_some());
+        assert!(registry.get("write_file").is_none());
+        assert!(registry.get("fetch_url").is_none());
+    }
+
+    #[test]
+    fn build_registry_with_all_skills() {
+        use crate::config::{FetchUrlConfig, ReadFileConfig, WriteFileConfig};
+
+        let config = SkillsConfig {
+            read_file: Some(ReadFileConfig {
+                allowed_directories: vec!["/tmp".into()],
+            }),
+            write_file: Some(WriteFileConfig {
+                allowed_directories: vec!["/tmp".into()],
+            }),
+            fetch_url: Some(FetchUrlConfig {
+                allowed_domains: vec!["example.com".into()],
+            }),
+        };
+        let registry = build_registry(&config);
+        assert_eq!(registry.len(), 3);
+        assert!(registry.get("read_file").is_some());
+        assert!(registry.get("write_file").is_some());
+        assert!(registry.get("fetch_url").is_some());
     }
 }

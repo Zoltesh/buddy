@@ -52,6 +52,7 @@ pub struct ApiError {
 /// Shared application state.
 pub struct AppState<P> {
     pub provider: P,
+    pub registry: crate::skill::SkillRegistry,
 }
 
 /// `POST /api/chat` — accepts a `ChatRequest` and streams `ChatEvent` frames via SSE.
@@ -136,6 +137,7 @@ mod tests {
     fn test_app(tokens: Vec<String>) -> Router {
         let state = Arc::new(AppState {
             provider: MockProvider { tokens },
+            registry: crate::skill::SkillRegistry::new(),
         });
         Router::new()
             .route("/api/chat", post(chat_handler::<MockProvider>))
@@ -145,6 +147,7 @@ mod tests {
     fn test_app_with_static(tokens: Vec<String>, static_dir: &str) -> Router {
         let state = Arc::new(AppState {
             provider: MockProvider { tokens },
+            registry: crate::skill::SkillRegistry::new(),
         });
         Router::new()
             .route("/api/chat", post(chat_handler::<MockProvider>))

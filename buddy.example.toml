@@ -16,3 +16,19 @@ model = "gpt-4"
 endpoint = "https://api.openai.com/v1"
 # System prompt sent at the start of every conversation (optional)
 # system_prompt = "You are a helpful, friendly AI assistant."
+
+# --- Skills ---
+# Skills are optional. Only skills with configuration are enabled.
+# A skill with no config section is disabled entirely.
+
+# read_file — Read files from allowed directories
+# [skills.read_file]
+# allowed_directories = ["/home/user/documents", "/home/user/projects"]
+
+# write_file — Write files to allowed directories (creates parent dirs as needed)
+# [skills.write_file]
+# allowed_directories = ["/home/user/sandbox"]
+
+# fetch_url — HTTP GET from allowlisted domains (10s timeout)
+# [skills.fetch_url]
+# allowed_domains = ["example.com", "api.github.com"]

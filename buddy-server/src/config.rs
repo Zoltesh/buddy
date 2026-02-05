@@ -19,6 +19,8 @@ pub struct Config {
     #[serde(default)]
     pub server: ServerConfig,
     pub provider: ProviderConfig,
+    #[serde(default)]
+    pub skills: SkillsConfig,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -59,6 +61,28 @@ pub struct ProviderConfig {
 
 fn default_system_prompt() -> String {
     DEFAULT_SYSTEM_PROMPT.to_string()
+}
+
+#[derive(Debug, Deserialize, PartialEq, Default)]
+pub struct SkillsConfig {
+    pub read_file: Option<ReadFileConfig>,
+    pub write_file: Option<WriteFileConfig>,
+    pub fetch_url: Option<FetchUrlConfig>,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Clone)]
+pub struct ReadFileConfig {
+    pub allowed_directories: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Clone)]
+pub struct WriteFileConfig {
+    pub allowed_directories: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Clone)]
+pub struct FetchUrlConfig {
+    pub allowed_domains: Vec<String>,
 }
 
 impl Config {
@@ -176,5 +200,69 @@ endpoint = "https://api.openai.com/v1"
         let config = Config::parse(toml).unwrap();
         assert_eq!(config.server.host, "0.0.0.0");
         assert_eq!(config.server.port, 8080);
+    }
+
+    #[test]
+    fn no_skills_section_uses_defaults() {
+        let toml = r#"
+[provider]
+api_key = "sk-test"
+model = "gpt-4"
+endpoint = "https://api.openai.com/v1"
+"#;
+        let config = Config::parse(toml).unwrap();
+        assert!(config.skills.read_file.is_none());
+        assert!(config.skills.write_file.is_none());
+        assert!(config.skills.fetch_url.is_none());
+    }
+
+    #[test]
+    fn skills_read_file_only() {
+        let toml = r#"
+[provider]
+api_key = "sk-test"
+model = "gpt-4"
+endpoint = "https://api.openai.com/v1"
+
+[skills.read_file]
+allowed_directories = ["/home/user/documents"]
+"#;
+        let config = Config::parse(toml).unwrap();
+        assert!(config.skills.read_file.is_some());
+        assert_eq!(
+            config.skills.read_file.unwrap().allowed_directories,
+            vec!["/home/user/documents"]
+        );
+        assert!(config.skills.write_file.is_none());
+        assert!(config.skills.fetch_url.is_none());
+    }
+
+    #[test]
+    fn full_skills_config_parses() {
+        let toml = r#"
+[provider]
+api_key = "sk-test"
+model = "gpt-4"
+endpoint = "https://api.openai.com/v1"
+
+[skills.read_file]
+allowed_directories = ["/home/user/docs", "/tmp/shared"]
+
+[skills.write_file]
+allowed_directories = ["/home/user/sandbox"]
+
+[skills.fetch_url]
+allowed_domains = ["example.com", "api.github.com"]
+"#;
+        let config = Config::parse(toml).unwrap();
+
+        let rf = config.skills.read_file.unwrap();
+        assert_eq!(rf.allowed_directories, vec!["/home/user/docs", "/tmp/shared"]);
+
+        let wf = config.skills.write_file.unwrap();
+        assert_eq!(wf.allowed_directories, vec!["/home/user/sandbox"]);
+
+        let fu = config.skills.fetch_url.unwrap();
+        assert_eq!(fu.allowed_domains, vec!["example.com", "api.github.com"]);
     }
 }

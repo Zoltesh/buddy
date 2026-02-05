@@ -13,6 +13,7 @@ mod types;
 
 use api::{chat_handler, AppState};
 use provider::openai::OpenAiProvider;
+use skill::build_registry;
 
 #[tokio::main]
 async fn main() {
@@ -24,7 +25,9 @@ async fn main() {
     let addr = config.bind_address();
     let model = config.provider.model.clone();
     let provider = OpenAiProvider::new(&config.provider);
-    let state = Arc::new(AppState { provider });
+    let registry = build_registry(&config.skills);
+    let skill_count = registry.len();
+    let state = Arc::new(AppState { provider, registry });
 
     let app = Router::new()
         .route("/api/chat", post(chat_handler::<OpenAiProvider>))
@@ -41,6 +44,7 @@ async fn main() {
     println!("buddy server started");
     println!("  address: http://{addr}");
     println!("  model:   {model}");
+    println!("  skills:  {skill_count} registered");
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())

@@ -44,15 +44,15 @@ buddy can read files, write files, and fetch URLs — but only within explicitly
 
 ## Acceptance Criteria
 
-- [ ] `read_file` reads a file within an allowed directory and returns its content
-- [ ] `read_file` rejects paths outside allowed directories (including `../` traversal)
-- [ ] `write_file` writes a file within an allowed directory
-- [ ] `write_file` rejects paths outside allowed directories
-- [ ] `fetch_url` fetches an allowlisted domain and returns status + body
-- [ ] `fetch_url` rejects non-allowlisted domains
-- [ ] Skills with no configuration in `buddy.toml` are not registered
-- [ ] `buddy.example.toml` documents all skill configuration options
-- [ ] Existing config parsing (server, provider) is unaffected
+- [x] `read_file` reads a file within an allowed directory and returns its content
+- [x] `read_file` rejects paths outside allowed directories (including `../` traversal)
+- [x] `write_file` writes a file within an allowed directory
+- [x] `write_file` rejects paths outside allowed directories
+- [x] `fetch_url` fetches an allowlisted domain and returns status + body
+- [x] `fetch_url` rejects non-allowlisted domains
+- [x] Skills with no configuration in `buddy.toml` are not registered
+- [x] `buddy.example.toml` documents all skill configuration options
+- [x] Existing config parsing (server, provider) is unaffected
 
 ## Test Cases
 
