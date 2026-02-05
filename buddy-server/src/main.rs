@@ -8,6 +8,7 @@ use tower_http::services::ServeDir;
 mod api;
 mod config;
 mod provider;
+mod skill;
 mod types;
 
 use api::{chat_handler, AppState};
