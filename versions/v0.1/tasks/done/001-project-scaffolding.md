@@ -19,11 +19,11 @@ A developer can clone the repo, run a single command to build, and get a running
 
 ## Acceptance Criteria
 
-- [ ] `cargo build` succeeds with no warnings
-- [ ] `npm install && npm run build` in `frontend/` produces a `dist/` directory
-- [ ] Running the binary serves the frontend at `http://127.0.0.1:3000`
-- [ ] The server does NOT bind to `0.0.0.0`
-- [ ] Repository has a clean `.gitignore` — no build artifacts committed
+- [x] `cargo build` succeeds with no warnings
+- [x] `npm install && npm run build` in `frontend/` produces a `dist/` directory
+- [x] Running the binary serves the frontend at `http://127.0.0.1:3000`
+- [x] The server does NOT bind to `0.0.0.0`
+- [x] Repository has a clean `.gitignore` — no build artifacts committed
 
 ## Test Cases
 
