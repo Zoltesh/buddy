@@ -19,9 +19,9 @@ A single canonical set of types that every layer of the system serializes and de
 
 ## Acceptance Criteria
 
-- [ ] Types compile and round-trip through `serde_json` without data loss
-- [ ] A `Vec<Message>` can represent a multi-turn conversation with mixed roles
-- [ ] `ToolCall` and `ToolResult` variants serialize/deserialize correctly even though nothing produces them yet
+- [x] Types compile and round-trip through `serde_json` without data loss
+- [x] A `Vec<Message>` can represent a multi-turn conversation with mixed roles
+- [x] `ToolCall` and `ToolResult` variants serialize/deserialize correctly even though nothing produces them yet
 
 ## Test Cases
 

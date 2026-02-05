@@ -1,6 +1,8 @@
 use axum::Router;
 use tower_http::services::ServeDir;
 
+mod types;
+
 #[tokio::main]
 async fn main() {
     let app = Router::new().fallback_service(ServeDir::new("frontend/dist"));
