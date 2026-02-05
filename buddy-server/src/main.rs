@@ -1,17 +1,27 @@
 use axum::Router;
 use tower_http::services::ServeDir;
 
+mod config;
 mod types;
 
 #[tokio::main]
 async fn main() {
+    let config = config::Config::load().unwrap_or_else(|e| {
+        eprintln!("Error: {e}");
+        std::process::exit(1);
+    });
+
+    let addr = config.bind_address();
     let app = Router::new().fallback_service(ServeDir::new("frontend/dist"));
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
+    let listener = tokio::net::TcpListener::bind(&addr)
         .await
-        .expect("failed to bind to 127.0.0.1:3000");
+        .unwrap_or_else(|e| {
+            eprintln!("Error: failed to bind to {addr}: {e}");
+            std::process::exit(1);
+        });
 
-    println!("Serving on http://127.0.0.1:3000");
+    println!("Serving on http://{addr}");
 
     axum::serve(listener, app).await.expect("server error");
 }

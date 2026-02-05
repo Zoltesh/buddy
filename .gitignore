@@ -11,6 +11,9 @@ Thumbs.db
 *.swp
 *~
 
+# Config (contains secrets)
+buddy.toml
+
 # IDE
 .idea/
 .vscode/

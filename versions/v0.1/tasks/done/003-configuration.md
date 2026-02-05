@@ -23,11 +23,11 @@ All runtime behavior is controlled by a single, documented config file. No envir
 
 ## Acceptance Criteria
 
-- [ ] A valid `buddy.toml` is parsed into a typed `Config` struct at startup
-- [ ] Missing required fields produce a human-readable error naming the missing field
-- [ ] `--config /path/to/file.toml` overrides the default location
-- [ ] `buddy.toml` is in `.gitignore`; `buddy.example.toml` is committed
-- [ ] Default values for `server.host` and `server.port` work when those fields are omitted
+- [x] A valid `buddy.toml` is parsed into a typed `Config` struct at startup
+- [x] Missing required fields produce a human-readable error naming the missing field
+- [x] `--config /path/to/file.toml` overrides the default location
+- [x] `buddy.toml` is in `.gitignore`; `buddy.example.toml` is committed
+- [x] Default values for `server.host` and `server.port` work when those fields are omitted
 
 ## Test Cases
 
