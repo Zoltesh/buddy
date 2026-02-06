@@ -9,8 +9,15 @@ use crate::types::Message;
 
 /// A chunk of streamed LLM output.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Token {
-    pub text: String,
+pub enum Token {
+    /// A text content delta.
+    Text { text: String },
+    /// The LLM is requesting a tool execution.
+    ToolCall {
+        id: String,
+        name: String,
+        arguments: String,
+    },
 }
 
 /// Errors that can occur when calling an LLM provider.
@@ -50,5 +57,6 @@ pub trait Provider: Send + Sync {
     fn complete(
         &self,
         messages: Vec<Message>,
+        tools: Option<Vec<serde_json::Value>>,
     ) -> impl Future<Output = Result<TokenStream, ProviderError>> + Send;
 }

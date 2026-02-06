@@ -33,14 +33,14 @@ buddy can autonomously use its skills to accomplish tasks. The LLM decides when 
 
 ## Acceptance Criteria
 
-- [ ] The LLM receives tool definitions and can decide to call a tool
-- [ ] Tool calls are executed via the `SkillRegistry` and results fed back to the LLM
-- [ ] The LLM can chain multiple tool calls before producing a final response
-- [ ] Tool-call events are streamed to the client via SSE
-- [ ] A maximum iteration limit prevents infinite tool-call loops
-- [ ] Skill execution errors are returned to the LLM as error results, not crashes
-- [ ] The `Provider` trait change is backward-compatible (passing `None` for tools works as before)
-- [ ] Existing v0.1 chat functionality (no tools) continues to work unchanged
+- [x] The LLM receives tool definitions and can decide to call a tool
+- [x] Tool calls are executed via the `SkillRegistry` and results fed back to the LLM
+- [x] The LLM can chain multiple tool calls before producing a final response
+- [x] Tool-call events are streamed to the client via SSE
+- [x] A maximum iteration limit prevents infinite tool-call loops
+- [x] Skill execution errors are returned to the LLM as error results, not crashes
+- [x] The `Provider` trait change is backward-compatible (passing `None` for tools works as before)
+- [x] Existing v0.1 chat functionality (no tools) continues to work unchanged
 
 ## Test Cases
 
