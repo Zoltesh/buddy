@@ -54,6 +54,15 @@ If a task cannot proceed (missing dependency, unresolved question, etc.), move t
 
 When all acceptance criteria are met and all test cases pass, move the task file from `in-progress/` to `done/`.
 
+## Code Standards
+
+- **Minimal changes only.** Touch only the code necessary to complete the task. Do not refactor, reorganize, or "improve" surrounding code.
+- **Do not introduce bugs.** Read and understand existing code before modifying it. Verify that changes preserve existing behavior unless the task explicitly requires changing it.
+- **Find root causes.** When fixing a bug, diagnose the actual root cause. Do not apply workarounds, band-aids, or temporary fixes.
+- **Keep changes simple.** Every change should be as small and focused as possible. Prefer the solution that impacts the least code.
+- **Senior developer standards.** Write production-quality code. No TODO hacks, no commented-out code, no speculative additions. If it ships, it should be correct.
+- **No collateral damage.** Do not modify function signatures, data structures, or public APIs unless the task requires it. Do not rename, reformat, or rearrange code outside the scope of the task.
+
 ## Tech Stack
 
 - **Backend:** Rust 2024 edition, Axum 0.8, Tokio
