@@ -11,6 +11,8 @@ mod config;
 mod provider;
 mod skill;
 pub mod store;
+#[cfg(test)]
+mod testutil;
 mod types;
 
 use api::{chat_handler, create_conversation, delete_conversation, get_conversation, list_conversations, AppState};

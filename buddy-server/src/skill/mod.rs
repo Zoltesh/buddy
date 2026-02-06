@@ -145,79 +145,13 @@ pub fn build_registry(config: &SkillsConfig) -> SkillRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// A trivial skill for testing purposes.
-    struct MockSkill;
-
-    impl Skill for MockSkill {
-        fn name(&self) -> &str {
-            "mock"
-        }
-
-        fn description(&self) -> &str {
-            "A mock skill for testing"
-        }
-
-        fn input_schema(&self) -> serde_json::Value {
-            serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "value": { "type": "string" }
-                },
-                "required": ["value"]
-            })
-        }
-
-        fn execute(
-            &self,
-            input: serde_json::Value,
-        ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SkillError>> + Send + '_>>
-        {
-            Box::pin(async move {
-                let value = input
-                    .get("value")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| {
-                        SkillError::InvalidInput("missing required field: value".into())
-                    })?;
-                Ok(serde_json::json!({ "echo": value }))
-            })
-        }
-    }
-
-    /// A second mock skill to verify multi-skill registry behavior.
-    struct AnotherSkill;
-
-    impl Skill for AnotherSkill {
-        fn name(&self) -> &str {
-            "another"
-        }
-
-        fn description(&self) -> &str {
-            "Another test skill"
-        }
-
-        fn input_schema(&self) -> serde_json::Value {
-            serde_json::json!({
-                "type": "object",
-                "properties": {},
-            })
-        }
-
-        fn execute(
-            &self,
-            _input: serde_json::Value,
-        ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SkillError>> + Send + '_>>
-        {
-            Box::pin(async { Ok(serde_json::json!({ "ok": true })) })
-        }
-    }
+    use crate::testutil::{MockEchoSkill, MockNoOpSkill};
 
     #[test]
     fn registry_get_returns_some_for_registered_skill() {
         let mut registry = SkillRegistry::new();
-        registry.register(Box::new(MockSkill));
-        assert!(registry.get("mock").is_some());
+        registry.register(Box::new(MockEchoSkill));
+        assert!(registry.get("echo").is_some());
     }
 
     #[test]
@@ -229,23 +163,23 @@ mod tests {
     #[test]
     fn registry_list_returns_all_registered_skills() {
         let mut registry = SkillRegistry::new();
-        registry.register(Box::new(MockSkill));
-        registry.register(Box::new(AnotherSkill));
+        registry.register(Box::new(MockEchoSkill));
+        registry.register(Box::new(MockNoOpSkill));
         assert_eq!(registry.list().len(), 2);
     }
 
     #[test]
     fn tool_definitions_has_correct_shape() {
         let mut registry = SkillRegistry::new();
-        registry.register(Box::new(MockSkill));
+        registry.register(Box::new(MockEchoSkill));
 
         let defs = registry.tool_definitions();
         assert_eq!(defs.len(), 1);
 
         let def = &defs[0];
         assert_eq!(def["type"], "function");
-        assert_eq!(def["function"]["name"], "mock");
-        assert_eq!(def["function"]["description"], "A mock skill for testing");
+        assert_eq!(def["function"]["name"], "echo");
+        assert_eq!(def["function"]["description"], "Echoes input");
         assert!(def["function"]["parameters"].is_object());
         assert_eq!(def["function"]["parameters"]["type"], "object");
     }
@@ -253,9 +187,9 @@ mod tests {
     #[tokio::test]
     async fn execute_mock_skill_with_valid_input() {
         let mut registry = SkillRegistry::new();
-        registry.register(Box::new(MockSkill));
+        registry.register(Box::new(MockEchoSkill));
 
-        let skill = registry.get("mock").unwrap();
+        let skill = registry.get("echo").unwrap();
         let result = skill
             .execute(serde_json::json!({ "value": "hello" }))
             .await;
@@ -267,9 +201,9 @@ mod tests {
     #[tokio::test]
     async fn execute_mock_skill_with_invalid_input_returns_error() {
         let mut registry = SkillRegistry::new();
-        registry.register(Box::new(MockSkill));
+        registry.register(Box::new(MockEchoSkill));
 
-        let skill = registry.get("mock").unwrap();
+        let skill = registry.get("echo").unwrap();
         let result = skill.execute(serde_json::json!({})).await;
 
         assert!(result.is_err());
