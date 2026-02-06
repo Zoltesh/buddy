@@ -66,6 +66,7 @@ pub struct AppState<P> {
     pub registry: crate::skill::SkillRegistry,
     pub store: crate::store::Store,
     pub embedder: Option<std::sync::Arc<dyn crate::embedding::Embedder>>,
+    pub vector_store: Option<std::sync::Arc<dyn crate::memory::VectorStore>>,
 }
 
 // ── Conversation CRUD handlers ──────────────────────────────────────────
@@ -486,6 +487,7 @@ mod tests {
             registry: SkillRegistry::new(),
             store: crate::store::Store::open_in_memory().unwrap(),
             embedder: None,
+            vector_store: None,
         });
         Router::new()
             .route("/api/chat", post(chat_handler::<MockProvider>))
@@ -498,6 +500,7 @@ mod tests {
             registry: SkillRegistry::new(),
             store: crate::store::Store::open_in_memory().unwrap(),
             embedder: None,
+            vector_store: None,
         });
         Router::new()
             .route("/api/chat", post(chat_handler::<MockProvider>))
@@ -511,6 +514,7 @@ mod tests {
             registry,
             store: crate::store::Store::open_in_memory().unwrap(),
             embedder: None,
+            vector_store: None,
         });
         Router::new()
             .route("/api/chat", post(chat_handler::<SequencedProvider>))
@@ -523,6 +527,7 @@ mod tests {
             registry: SkillRegistry::new(),
             store: crate::store::Store::open_in_memory().unwrap(),
             embedder: None,
+            vector_store: None,
         });
         let router = Router::new()
             .route("/api/chat", post(chat_handler::<MockProvider>))
@@ -874,6 +879,7 @@ mod tests {
                 registry: SkillRegistry::new(),
                 store: crate::store::Store::open_in_memory().unwrap(),
                 embedder: None,
+                vector_store: None,
             });
             let app = Router::new()
                 .route(
@@ -1083,6 +1089,7 @@ mod tests {
                 registry: registry_with_echo(),
                 store: crate::store::Store::open_in_memory().unwrap(),
                 embedder: None,
+                vector_store: None,
             });
             let app = Router::new()
                 .route("/api/chat", post(chat_handler::<SequencedProvider>))

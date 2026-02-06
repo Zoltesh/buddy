@@ -9,6 +9,7 @@ use tower_http::services::ServeDir;
 mod api;
 mod config;
 mod embedding;
+mod memory;
 mod provider;
 mod skill;
 pub mod store;
@@ -115,6 +116,20 @@ async fn main() {
             Arc::new(e) as Arc<dyn embedding::Embedder>
         });
 
+    // Build the optional vector store when an embedder is available.
+    let vector_store: Option<Arc<dyn memory::VectorStore>> = embedder.as_ref().map(|e| {
+        let vs = memory::sqlite::SqliteVectorStore::open(
+            Path::new("memory.db"),
+            e.model_name(),
+            e.dimensions(),
+        )
+        .unwrap_or_else(|err| {
+            eprintln!("Error: failed to initialize vector store: {err}");
+            std::process::exit(1);
+        });
+        Arc::new(vs) as Arc<dyn memory::VectorStore>
+    });
+
     let registry = build_registry(&config.skills);
     let skill_count = registry.len();
     let state = Arc::new(AppState {
@@ -122,6 +137,7 @@ async fn main() {
         registry,
         store,
         embedder: embedder.clone(),
+        vector_store,
     });
 
     let app = Router::new()

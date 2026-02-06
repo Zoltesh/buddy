@@ -36,13 +36,13 @@ buddy has a persistent, zero-config vector store for long-term memory that suppo
 
 ## Acceptance Criteria
 
-- [ ] `VectorStore` trait compiles and is object-safe (`Arc<dyn VectorStore>` works)
-- [ ] `SqliteVectorStore` can store and retrieve vector entries
-- [ ] Similarity search returns results ordered by descending cosine similarity
-- [ ] Storing an embedding with wrong dimensions returns `DimensionMismatch` error
-- [ ] `metadata()` returns correct model name, dimensions, and entry count
-- [ ] Source text is stored and returned in search results
-- [ ] The vector store table is created automatically on first use (migration)
+- [x] `VectorStore` trait compiles and is object-safe (`Arc<dyn VectorStore>` works)
+- [x] `SqliteVectorStore` can store and retrieve vector entries
+- [x] Similarity search returns results ordered by descending cosine similarity
+- [x] Storing an embedding with wrong dimensions returns `DimensionMismatch` error
+- [x] `metadata()` returns correct model name, dimensions, and entry count
+- [x] Source text is stored and returned in search results
+- [x] The vector store table is created automatically on first use (migration)
 
 ## Test Cases
 
