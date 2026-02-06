@@ -53,12 +53,10 @@ fn validate_path(path: &str, allowed_dirs: &[PathBuf]) -> Result<PathBuf, SkillE
     let normalized = normalize_path(Path::new(path))?;
     let mut in_sandbox = false;
     for dir in allowed_dirs {
-        let canonical_dir = std::fs::canonicalize(dir).map_err(|e| {
-            SkillError::ExecutionFailed(format!(
-                "cannot resolve allowed directory '{}': {e}",
-                dir.display()
-            ))
-        })?;
+        // Skip allowed directories that don't exist on disk rather than failing.
+        let Ok(canonical_dir) = std::fs::canonicalize(dir) else {
+            continue;
+        };
         if normalized.starts_with(&canonical_dir) {
             in_sandbox = true;
             break;
