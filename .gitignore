@@ -19,3 +19,6 @@ buddy.toml
 .vscode/
 *.iml
 *.claude/
+
+# Database
+buddy.db*
