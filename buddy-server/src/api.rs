@@ -449,155 +449,21 @@ mod tests {
     use axum::http::Request;
     use axum::routing::{get, post};
     use axum::Router;
-    use chrono::Utc;
     use http_body_util::BodyExt;
-    use std::future::Future;
-    use std::pin::Pin;
-    use std::sync::Mutex;
     use tower::ServiceExt;
     use tower_http::services::ServeDir;
 
-    use crate::provider::{ProviderError, Token, TokenStream};
-    use crate::skill::{Skill, SkillError, SkillRegistry};
-    use crate::types::{MessageContent, Role};
-
-    // ── Simple mock provider (always returns text) ──────────────────────
-
-    struct MockProvider {
-        tokens: Vec<String>,
-    }
-
-    impl Provider for MockProvider {
-        async fn complete(
-            &self,
-            _messages: Vec<Message>,
-            _tools: Option<Vec<serde_json::Value>>,
-        ) -> Result<TokenStream, ProviderError> {
-            let tokens = self.tokens.clone();
-            let stream = async_stream::try_stream! {
-                for text in tokens {
-                    yield Token::Text { text };
-                }
-            };
-            Ok(Box::pin(stream))
-        }
-    }
-
-    // ── Sequenced mock provider (returns different responses per call) ──
-
-    /// Responses the sequenced provider can return.
-    enum MockResponse {
-        Text(Vec<String>),
-        ToolCalls(Vec<(String, String, String)>), // (id, name, arguments)
-    }
-
-    struct SequencedProvider {
-        responses: Mutex<Vec<MockResponse>>,
-    }
-
-    impl SequencedProvider {
-        fn new(responses: Vec<MockResponse>) -> Self {
-            Self {
-                responses: Mutex::new(responses),
-            }
-        }
-    }
-
-    impl Provider for SequencedProvider {
-        async fn complete(
-            &self,
-            _messages: Vec<Message>,
-            _tools: Option<Vec<serde_json::Value>>,
-        ) -> Result<TokenStream, ProviderError> {
-            let response = {
-                let mut q = self.responses.lock().unwrap();
-                if q.is_empty() {
-                    MockResponse::Text(vec!["<no more responses>".into()])
-                } else {
-                    q.remove(0)
-                }
-            };
-
-            match response {
-                MockResponse::Text(texts) => {
-                    let stream = async_stream::try_stream! {
-                        for text in texts {
-                            yield Token::Text { text };
-                        }
-                    };
-                    Ok(Box::pin(stream))
-                }
-                MockResponse::ToolCalls(calls) => {
-                    let stream = async_stream::try_stream! {
-                        for (id, name, arguments) in calls {
-                            yield Token::ToolCall { id, name, arguments };
-                        }
-                    };
-                    Ok(Box::pin(stream))
-                }
-            }
-        }
-    }
-
-    // ── Mock skill ──────────────────────────────────────────────────────
-
-    struct EchoSkill;
-
-    impl Skill for EchoSkill {
-        fn name(&self) -> &str {
-            "echo"
-        }
-        fn description(&self) -> &str {
-            "Echoes input"
-        }
-        fn input_schema(&self) -> serde_json::Value {
-            serde_json::json!({
-                "type": "object",
-                "properties": { "value": { "type": "string" } },
-                "required": ["value"]
-            })
-        }
-        fn execute(
-            &self,
-            input: serde_json::Value,
-        ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SkillError>> + Send + '_>>
-        {
-            Box::pin(async move {
-                let value = input["value"]
-                    .as_str()
-                    .ok_or_else(|| SkillError::InvalidInput("missing value".into()))?;
-                Ok(serde_json::json!({ "echo": value }))
-            })
-        }
-    }
-
-    /// A skill that always fails.
-    struct FailingSkill;
-
-    impl Skill for FailingSkill {
-        fn name(&self) -> &str {
-            "failing"
-        }
-        fn description(&self) -> &str {
-            "Always fails"
-        }
-        fn input_schema(&self) -> serde_json::Value {
-            serde_json::json!({ "type": "object", "properties": {} })
-        }
-        fn execute(
-            &self,
-            _input: serde_json::Value,
-        ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SkillError>> + Send + '_>>
-        {
-            Box::pin(async { Err(SkillError::ExecutionFailed("boom".into())) })
-        }
-    }
+    use crate::skill::SkillRegistry;
+    use crate::testutil::{
+        FailingSkill, MockEchoSkill, MockProvider, MockResponse, SequencedProvider,
+        make_chat_body, make_chat_body_with_conversation, post_chat, post_chat_raw,
+    };
 
     // ── Helpers ─────────────────────────────────────────────────────────
 
     fn registry_with_echo() -> SkillRegistry {
         let mut r = SkillRegistry::new();
-        r.register(Box::new(EchoSkill));
+        r.register(Box::new(MockEchoSkill));
         r
     }
 
@@ -641,386 +507,6 @@ mod tests {
             .with_state(state)
     }
 
-    fn make_chat_body() -> String {
-        serde_json::to_string(&ChatRequest {
-            conversation_id: None,
-            messages: vec![Message {
-                role: Role::User,
-                content: MessageContent::Text {
-                    text: "Hi".into(),
-                },
-                timestamp: Utc::now(),
-            }],
-        })
-        .unwrap()
-    }
-
-    fn make_chat_body_with_conversation(conversation_id: &str) -> String {
-        serde_json::to_string(&ChatRequest {
-            conversation_id: Some(conversation_id.to_string()),
-            messages: vec![Message {
-                role: Role::User,
-                content: MessageContent::Text {
-                    text: "Hi".into(),
-                },
-                timestamp: Utc::now(),
-            }],
-        })
-        .unwrap()
-    }
-
-    fn parse_sse_events(body: &str) -> Vec<ChatEvent> {
-        body.split("\n\n")
-            .filter(|s| !s.is_empty())
-            .filter_map(|chunk| {
-                chunk
-                    .strip_prefix("data: ")
-                    .and_then(|data| serde_json::from_str(data).ok())
-            })
-            .collect()
-    }
-
-    /// Post to /api/chat and return all SSE events (including ConversationMeta).
-    async fn post_chat_raw(app: Router, body: &str) -> Vec<ChatEvent> {
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/api/chat")
-                    .header("content-type", "application/json")
-                    .body(Body::from(body.to_owned()))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        let bytes = response.into_body().collect().await.unwrap().to_bytes();
-        parse_sse_events(&String::from_utf8(bytes.to_vec()).unwrap())
-    }
-
-    /// Post to /api/chat and return events excluding ConversationMeta (for backward-compat tests).
-    async fn post_chat(app: Router, body: &str) -> Vec<ChatEvent> {
-        post_chat_raw(app, body)
-            .await
-            .into_iter()
-            .filter(|e| !matches!(e, ChatEvent::ConversationMeta { .. }))
-            .collect()
-    }
-
-    // ── Tests ───────────────────────────────────────────────────────────
-
-    #[tokio::test]
-    async fn valid_request_streams_token_deltas_and_done() {
-        let app = test_app(vec!["Hello".into(), " world".into()]);
-        let events = post_chat(app, &make_chat_body()).await;
-
-        assert_eq!(events.len(), 3);
-        assert_eq!(
-            events[0],
-            ChatEvent::TokenDelta {
-                content: "Hello".into()
-            }
-        );
-        assert_eq!(
-            events[1],
-            ChatEvent::TokenDelta {
-                content: " world".into()
-            }
-        );
-        assert_eq!(events[2], ChatEvent::Done);
-    }
-
-    #[tokio::test]
-    async fn malformed_json_returns_400_with_structured_error() {
-        let app = test_app(vec![]);
-
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/api/chat")
-                    .header("content-type", "application/json")
-                    .body(Body::from("not valid json"))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-
-        let body = response.into_body().collect().await.unwrap().to_bytes();
-        let error: serde_json::Value = serde_json::from_slice(&body).unwrap();
-
-        assert!(
-            error.get("code").is_some(),
-            "response should have 'code' field"
-        );
-        assert!(
-            error.get("message").is_some(),
-            "response should have 'message' field"
-        );
-        assert_eq!(error["code"], "bad_request");
-    }
-
-    #[tokio::test]
-    async fn root_serves_index_html() {
-        let dir = std::env::temp_dir().join("buddy-api-test-static");
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("index.html"), "<html><body>buddy</body></html>").unwrap();
-
-        let app = test_app_with_static(vec![], dir.to_str().unwrap());
-
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .uri("/")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let ct = response
-            .headers()
-            .get("content-type")
-            .unwrap()
-            .to_str()
-            .unwrap();
-        assert!(ct.contains("text/html"), "expected text/html, got {ct}");
-
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[tokio::test]
-    async fn nonexistent_asset_returns_404() {
-        let dir = std::env::temp_dir().join("buddy-api-test-404");
-        std::fs::create_dir_all(&dir).unwrap();
-
-        let app = test_app_with_static(vec![], dir.to_str().unwrap());
-
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .uri("/assets/nonexistent.js")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
-
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    // ── Tool-call loop tests ────────────────────────────────────────────
-
-    #[tokio::test]
-    async fn single_tool_call_executes_skill_and_returns_text() {
-        let app = sequenced_app(
-            vec![
-                // First call: LLM requests a tool call.
-                MockResponse::ToolCalls(vec![(
-                    "call_1".into(),
-                    "echo".into(),
-                    r#"{"value":"hello"}"#.into(),
-                )]),
-                // Second call: LLM returns text after seeing the tool result.
-                MockResponse::Text(vec!["The echo said hello.".into()]),
-            ],
-            registry_with_echo(),
-        );
-
-        let events = post_chat(app, &make_chat_body()).await;
-
-        // Expect: ToolCallStart, ToolCallResult, TokenDelta, Done
-        assert!(events.contains(&ChatEvent::ToolCallStart {
-            id: "call_1".into(),
-            name: "echo".into(),
-            arguments: r#"{"value":"hello"}"#.into(),
-        }));
-        assert!(events.iter().any(|e| matches!(
-            e,
-            ChatEvent::ToolCallResult { id, content }
-            if id == "call_1" && content.contains("hello")
-        )));
-        assert!(events.contains(&ChatEvent::TokenDelta {
-            content: "The echo said hello.".into(),
-        }));
-        assert!(events.last() == Some(&ChatEvent::Done));
-    }
-
-    #[tokio::test]
-    async fn three_chained_tool_calls_all_execute() {
-        let app = sequenced_app(
-            vec![
-                MockResponse::ToolCalls(vec![(
-                    "c1".into(),
-                    "echo".into(),
-                    r#"{"value":"a"}"#.into(),
-                )]),
-                MockResponse::ToolCalls(vec![(
-                    "c2".into(),
-                    "echo".into(),
-                    r#"{"value":"b"}"#.into(),
-                )]),
-                MockResponse::ToolCalls(vec![(
-                    "c3".into(),
-                    "echo".into(),
-                    r#"{"value":"c"}"#.into(),
-                )]),
-                MockResponse::Text(vec!["Done chaining.".into()]),
-            ],
-            registry_with_echo(),
-        );
-
-        let events = post_chat(app, &make_chat_body()).await;
-
-        let starts: Vec<_> = events
-            .iter()
-            .filter(|e| matches!(e, ChatEvent::ToolCallStart { .. }))
-            .collect();
-        let results: Vec<_> = events
-            .iter()
-            .filter(|e| matches!(e, ChatEvent::ToolCallResult { .. }))
-            .collect();
-
-        assert_eq!(starts.len(), 3);
-        assert_eq!(results.len(), 3);
-        assert!(events.contains(&ChatEvent::TokenDelta {
-            content: "Done chaining.".into(),
-        }));
-        assert!(events.last() == Some(&ChatEvent::Done));
-    }
-
-    #[tokio::test]
-    async fn loop_stops_at_max_iterations() {
-        // 11 consecutive tool calls — should stop at 10.
-        let mut responses: Vec<MockResponse> = (0..11)
-            .map(|i| {
-                MockResponse::ToolCalls(vec![(
-                    format!("c{i}"),
-                    "echo".into(),
-                    r#"{"value":"x"}"#.into(),
-                )])
-            })
-            .collect();
-        // Unreachable final text.
-        responses.push(MockResponse::Text(vec!["never reached".into()]));
-
-        let app = sequenced_app(responses, registry_with_echo());
-        let events = post_chat(app, &make_chat_body()).await;
-
-        let starts: Vec<_> = events
-            .iter()
-            .filter(|e| matches!(e, ChatEvent::ToolCallStart { .. }))
-            .collect();
-
-        // Should execute exactly MAX_TOOL_ITERATIONS tool calls.
-        assert_eq!(starts.len(), MAX_TOOL_ITERATIONS);
-
-        // Should have an error about exceeding the limit.
-        assert!(events.iter().any(|e| matches!(
-            e,
-            ChatEvent::Error { message } if message.contains("exceeded")
-        )));
-        assert!(events.last() == Some(&ChatEvent::Done));
-    }
-
-    #[tokio::test]
-    async fn skill_error_is_fed_back_not_crash() {
-        let app = sequenced_app(
-            vec![
-                MockResponse::ToolCalls(vec![(
-                    "c1".into(),
-                    "failing".into(),
-                    "{}".into(),
-                )]),
-                MockResponse::Text(vec!["Handled the error.".into()]),
-            ],
-            registry_with_failing(),
-        );
-
-        let events = post_chat(app, &make_chat_body()).await;
-
-        // The tool result should contain the error message.
-        assert!(events.iter().any(|e| matches!(
-            e,
-            ChatEvent::ToolCallResult { content, .. } if content.contains("Error:")
-        )));
-
-        // The conversation should continue — no fatal crash.
-        assert!(events.contains(&ChatEvent::TokenDelta {
-            content: "Handled the error.".into(),
-        }));
-        assert!(events.last() == Some(&ChatEvent::Done));
-    }
-
-    #[tokio::test]
-    async fn unknown_tool_returns_error_result() {
-        let app = sequenced_app(
-            vec![
-                MockResponse::ToolCalls(vec![(
-                    "c1".into(),
-                    "nonexistent".into(),
-                    "{}".into(),
-                )]),
-                MockResponse::Text(vec!["OK.".into()]),
-            ],
-            SkillRegistry::new(), // empty registry
-        );
-
-        let events = post_chat(app, &make_chat_body()).await;
-
-        assert!(events.iter().any(|e| matches!(
-            e,
-            ChatEvent::ToolCallResult { content, .. } if content.contains("unknown tool")
-        )));
-        assert!(events.last() == Some(&ChatEvent::Done));
-    }
-
-    #[tokio::test]
-    async fn normal_chat_no_tools_works_unchanged() {
-        // With an empty registry (no tools), behavior is v0.1-style.
-        let app = test_app(vec!["Hello!".into()]);
-        let events = post_chat(app, &make_chat_body()).await;
-
-        assert_eq!(events.len(), 2);
-        assert_eq!(
-            events[0],
-            ChatEvent::TokenDelta {
-                content: "Hello!".into()
-            }
-        );
-        assert_eq!(events[1], ChatEvent::Done);
-    }
-
-    #[tokio::test]
-    async fn sse_stream_contains_tool_events() {
-        let app = sequenced_app(
-            vec![
-                MockResponse::ToolCalls(vec![(
-                    "tc1".into(),
-                    "echo".into(),
-                    r#"{"value":"test"}"#.into(),
-                )]),
-                MockResponse::Text(vec!["Final.".into()]),
-            ],
-            registry_with_echo(),
-        );
-
-        let events = post_chat(app, &make_chat_body()).await;
-
-        let has_start = events.iter().any(|e| matches!(e, ChatEvent::ToolCallStart { .. }));
-        let has_result = events.iter().any(|e| matches!(e, ChatEvent::ToolCallResult { .. }));
-
-        assert!(has_start, "expected ToolCallStart in SSE stream");
-        assert!(has_result, "expected ToolCallResult in SSE stream");
-    }
-
-    // ── Conversation management tests ──────────────────────────────────
-
     fn conversation_app(tokens: Vec<String>) -> (Arc<AppState<MockProvider>>, Router) {
         let state = Arc::new(AppState {
             provider: MockProvider { tokens },
@@ -1041,218 +527,544 @@ mod tests {
         (state, router)
     }
 
-    #[tokio::test]
-    async fn list_conversations_empty_on_fresh_db() {
-        let (_, app) = conversation_app(vec![]);
-        let response = app
-            .oneshot(Request::builder().uri("/api/conversations").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = response.into_body().collect().await.unwrap().to_bytes();
-        let list: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
-        assert!(list.is_empty());
+    // ── Chat tests ───────────────────────────────────────────────────
+
+    mod chat {
+        use super::*;
+
+        #[tokio::test]
+        async fn valid_request_streams_token_deltas_and_done() {
+            let app = test_app(vec!["Hello".into(), " world".into()]);
+            let events = post_chat(app, &make_chat_body()).await;
+
+            assert_eq!(events.len(), 3);
+            assert_eq!(
+                events[0],
+                ChatEvent::TokenDelta {
+                    content: "Hello".into()
+                }
+            );
+            assert_eq!(
+                events[1],
+                ChatEvent::TokenDelta {
+                    content: " world".into()
+                }
+            );
+            assert_eq!(events[2], ChatEvent::Done);
+        }
+
+        #[tokio::test]
+        async fn malformed_json_returns_400_with_structured_error() {
+            let app = test_app(vec![]);
+
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/api/chat")
+                        .header("content-type", "application/json")
+                        .body(Body::from("not valid json"))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+            let body = response.into_body().collect().await.unwrap().to_bytes();
+            let error: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+            assert!(
+                error.get("code").is_some(),
+                "response should have 'code' field"
+            );
+            assert!(
+                error.get("message").is_some(),
+                "response should have 'message' field"
+            );
+            assert_eq!(error["code"], "bad_request");
+        }
+
+        #[tokio::test]
+        async fn root_serves_index_html() {
+            let dir = std::env::temp_dir().join("buddy-api-test-static");
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("index.html"), "<html><body>buddy</body></html>").unwrap();
+
+            let app = test_app_with_static(vec![], dir.to_str().unwrap());
+
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .uri("/")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), StatusCode::OK);
+            let ct = response
+                .headers()
+                .get("content-type")
+                .unwrap()
+                .to_str()
+                .unwrap();
+            assert!(ct.contains("text/html"), "expected text/html, got {ct}");
+
+            std::fs::remove_dir_all(&dir).ok();
+        }
+
+        #[tokio::test]
+        async fn nonexistent_asset_returns_404() {
+            let dir = std::env::temp_dir().join("buddy-api-test-404");
+            std::fs::create_dir_all(&dir).unwrap();
+
+            let app = test_app_with_static(vec![], dir.to_str().unwrap());
+
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .uri("/assets/nonexistent.js")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+            std::fs::remove_dir_all(&dir).ok();
+        }
+
+        #[tokio::test]
+        async fn normal_chat_no_tools_works_unchanged() {
+            // With an empty registry (no tools), behavior is v0.1-style.
+            let app = test_app(vec!["Hello!".into()]);
+            let events = post_chat(app, &make_chat_body()).await;
+
+            assert_eq!(events.len(), 2);
+            assert_eq!(
+                events[0],
+                ChatEvent::TokenDelta {
+                    content: "Hello!".into()
+                }
+            );
+            assert_eq!(events[1], ChatEvent::Done);
+        }
     }
 
-    #[tokio::test]
-    async fn create_then_list_conversation() {
-        let (_, app) = conversation_app(vec![]);
+    // ── Tool-call loop tests ────────────────────────────────────────────
 
-        // Create
-        let response = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/api/conversations")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::CREATED);
-        let body = response.into_body().collect().await.unwrap().to_bytes();
-        let conv: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert!(conv.get("id").is_some());
+    mod tool_loop {
+        use super::*;
 
-        // List
-        let response = app
-            .oneshot(Request::builder().uri("/api/conversations").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = response.into_body().collect().await.unwrap().to_bytes();
-        let list: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
-        assert_eq!(list.len(), 1);
-        assert_eq!(list[0]["id"], conv["id"]);
+        #[tokio::test]
+        async fn single_tool_call_executes_skill_and_returns_text() {
+            let app = sequenced_app(
+                vec![
+                    // First call: LLM requests a tool call.
+                    MockResponse::ToolCalls(vec![(
+                        "call_1".into(),
+                        "echo".into(),
+                        r#"{"value":"hello"}"#.into(),
+                    )]),
+                    // Second call: LLM returns text after seeing the tool result.
+                    MockResponse::Text(vec!["The echo said hello.".into()]),
+                ],
+                registry_with_echo(),
+            );
+
+            let events = post_chat(app, &make_chat_body()).await;
+
+            // Expect: ToolCallStart, ToolCallResult, TokenDelta, Done
+            assert!(events.contains(&ChatEvent::ToolCallStart {
+                id: "call_1".into(),
+                name: "echo".into(),
+                arguments: r#"{"value":"hello"}"#.into(),
+            }));
+            assert!(events.iter().any(|e| matches!(
+                e,
+                ChatEvent::ToolCallResult { id, content }
+                if id == "call_1" && content.contains("hello")
+            )));
+            assert!(events.contains(&ChatEvent::TokenDelta {
+                content: "The echo said hello.".into(),
+            }));
+            assert!(events.last() == Some(&ChatEvent::Done));
+        }
+
+        #[tokio::test]
+        async fn three_chained_tool_calls_all_execute() {
+            let app = sequenced_app(
+                vec![
+                    MockResponse::ToolCalls(vec![(
+                        "c1".into(),
+                        "echo".into(),
+                        r#"{"value":"a"}"#.into(),
+                    )]),
+                    MockResponse::ToolCalls(vec![(
+                        "c2".into(),
+                        "echo".into(),
+                        r#"{"value":"b"}"#.into(),
+                    )]),
+                    MockResponse::ToolCalls(vec![(
+                        "c3".into(),
+                        "echo".into(),
+                        r#"{"value":"c"}"#.into(),
+                    )]),
+                    MockResponse::Text(vec!["Done chaining.".into()]),
+                ],
+                registry_with_echo(),
+            );
+
+            let events = post_chat(app, &make_chat_body()).await;
+
+            let starts: Vec<_> = events
+                .iter()
+                .filter(|e| matches!(e, ChatEvent::ToolCallStart { .. }))
+                .collect();
+            let results: Vec<_> = events
+                .iter()
+                .filter(|e| matches!(e, ChatEvent::ToolCallResult { .. }))
+                .collect();
+
+            assert_eq!(starts.len(), 3);
+            assert_eq!(results.len(), 3);
+            assert!(events.contains(&ChatEvent::TokenDelta {
+                content: "Done chaining.".into(),
+            }));
+            assert!(events.last() == Some(&ChatEvent::Done));
+        }
+
+        #[tokio::test]
+        async fn loop_stops_at_max_iterations() {
+            // 11 consecutive tool calls — should stop at 10.
+            let mut responses: Vec<MockResponse> = (0..11)
+                .map(|i| {
+                    MockResponse::ToolCalls(vec![(
+                        format!("c{i}"),
+                        "echo".into(),
+                        r#"{"value":"x"}"#.into(),
+                    )])
+                })
+                .collect();
+            // Unreachable final text.
+            responses.push(MockResponse::Text(vec!["never reached".into()]));
+
+            let app = sequenced_app(responses, registry_with_echo());
+            let events = post_chat(app, &make_chat_body()).await;
+
+            let starts: Vec<_> = events
+                .iter()
+                .filter(|e| matches!(e, ChatEvent::ToolCallStart { .. }))
+                .collect();
+
+            // Should execute exactly MAX_TOOL_ITERATIONS tool calls.
+            assert_eq!(starts.len(), MAX_TOOL_ITERATIONS);
+
+            // Should have an error about exceeding the limit.
+            assert!(events.iter().any(|e| matches!(
+                e,
+                ChatEvent::Error { message } if message.contains("exceeded")
+            )));
+            assert!(events.last() == Some(&ChatEvent::Done));
+        }
+
+        #[tokio::test]
+        async fn skill_error_is_fed_back_not_crash() {
+            let app = sequenced_app(
+                vec![
+                    MockResponse::ToolCalls(vec![(
+                        "c1".into(),
+                        "failing".into(),
+                        "{}".into(),
+                    )]),
+                    MockResponse::Text(vec!["Handled the error.".into()]),
+                ],
+                registry_with_failing(),
+            );
+
+            let events = post_chat(app, &make_chat_body()).await;
+
+            // The tool result should contain the error message.
+            assert!(events.iter().any(|e| matches!(
+                e,
+                ChatEvent::ToolCallResult { content, .. } if content.contains("Error:")
+            )));
+
+            // The conversation should continue — no fatal crash.
+            assert!(events.contains(&ChatEvent::TokenDelta {
+                content: "Handled the error.".into(),
+            }));
+            assert!(events.last() == Some(&ChatEvent::Done));
+        }
+
+        #[tokio::test]
+        async fn unknown_tool_returns_error_result() {
+            let app = sequenced_app(
+                vec![
+                    MockResponse::ToolCalls(vec![(
+                        "c1".into(),
+                        "nonexistent".into(),
+                        "{}".into(),
+                    )]),
+                    MockResponse::Text(vec!["OK.".into()]),
+                ],
+                SkillRegistry::new(), // empty registry
+            );
+
+            let events = post_chat(app, &make_chat_body()).await;
+
+            assert!(events.iter().any(|e| matches!(
+                e,
+                ChatEvent::ToolCallResult { content, .. } if content.contains("unknown tool")
+            )));
+            assert!(events.last() == Some(&ChatEvent::Done));
+        }
+
+        #[tokio::test]
+        async fn sse_stream_contains_tool_events() {
+            let app = sequenced_app(
+                vec![
+                    MockResponse::ToolCalls(vec![(
+                        "tc1".into(),
+                        "echo".into(),
+                        r#"{"value":"test"}"#.into(),
+                    )]),
+                    MockResponse::Text(vec!["Final.".into()]),
+                ],
+                registry_with_echo(),
+            );
+
+            let events = post_chat(app, &make_chat_body()).await;
+
+            let has_start = events.iter().any(|e| matches!(e, ChatEvent::ToolCallStart { .. }));
+            let has_result = events.iter().any(|e| matches!(e, ChatEvent::ToolCallResult { .. }));
+
+            assert!(has_start, "expected ToolCallStart in SSE stream");
+            assert!(has_result, "expected ToolCallResult in SSE stream");
+        }
     }
 
-    #[tokio::test]
-    async fn get_nonexistent_conversation_returns_404() {
-        let (_, app) = conversation_app(vec![]);
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .uri("/api/conversations/nonexistent-id")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
-        let body = response.into_body().collect().await.unwrap().to_bytes();
-        let err: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(err["code"], "not_found");
-    }
+    // ── Conversation management tests ──────────────────────────────────
 
-    #[tokio::test]
-    async fn delete_conversation_returns_204() {
-        let (state, app) = conversation_app(vec![]);
-        let conv = state.store.create_conversation("To delete").unwrap();
+    mod conversations {
+        use super::*;
 
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .method("DELETE")
-                    .uri(format!("/api/conversations/{}", conv.id))
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        #[tokio::test]
+        async fn list_conversations_empty_on_fresh_db() {
+            let (_, app) = conversation_app(vec![]);
+            let response = app
+                .oneshot(Request::builder().uri("/api/conversations").body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let body = response.into_body().collect().await.unwrap().to_bytes();
+            let list: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+            assert!(list.is_empty());
+        }
 
-        // Verify it's gone.
-        assert!(state.store.get_conversation(&conv.id).unwrap().is_none());
-    }
+        #[tokio::test]
+        async fn create_then_list_conversation() {
+            let (_, app) = conversation_app(vec![]);
 
-    #[tokio::test]
-    async fn delete_nonexistent_conversation_returns_404() {
-        let (_, app) = conversation_app(vec![]);
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .method("DELETE")
-                    .uri("/api/conversations/nonexistent-id")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
-    }
+            // Create
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/api/conversations")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::CREATED);
+            let body = response.into_body().collect().await.unwrap().to_bytes();
+            let conv: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            assert!(conv.get("id").is_some());
 
-    #[tokio::test]
-    async fn chat_without_conversation_id_auto_creates() {
-        let (state, app) = conversation_app(vec!["Reply".into()]);
+            // List
+            let response = app
+                .oneshot(Request::builder().uri("/api/conversations").body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let body = response.into_body().collect().await.unwrap().to_bytes();
+            let list: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+            assert_eq!(list.len(), 1);
+            assert_eq!(list[0]["id"], conv["id"]);
+        }
 
-        let events = post_chat_raw(app, &make_chat_body()).await;
+        #[tokio::test]
+        async fn get_nonexistent_conversation_returns_404() {
+            let (_, app) = conversation_app(vec![]);
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .uri("/api/conversations/nonexistent-id")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::NOT_FOUND);
+            let body = response.into_body().collect().await.unwrap().to_bytes();
+            let err: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(err["code"], "not_found");
+        }
 
-        // First event should be ConversationMeta.
-        assert!(
-            matches!(&events[0], ChatEvent::ConversationMeta { conversation_id } if !conversation_id.is_empty()),
-            "first event should be ConversationMeta"
-        );
+        #[tokio::test]
+        async fn delete_conversation_returns_204() {
+            let (state, app) = conversation_app(vec![]);
+            let conv = state.store.create_conversation("To delete").unwrap();
 
-        // A conversation should have been auto-created.
-        let convs = state.store.list_conversations().unwrap();
-        assert_eq!(convs.len(), 1);
-        assert_eq!(convs[0].title, "Hi"); // title from the user message
-    }
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("DELETE")
+                        .uri(format!("/api/conversations/{}", conv.id))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::NO_CONTENT);
 
-    #[tokio::test]
-    async fn chat_with_conversation_id_appends_to_existing() {
-        let (state, app) = conversation_app(vec!["Reply".into()]);
-        let conv = state.store.create_conversation("Existing").unwrap();
+            // Verify it's gone.
+            assert!(state.store.get_conversation(&conv.id).unwrap().is_none());
+        }
 
-        let body = make_chat_body_with_conversation(&conv.id);
-        let events = post_chat_raw(app, &body).await;
+        #[tokio::test]
+        async fn delete_nonexistent_conversation_returns_404() {
+            let (_, app) = conversation_app(vec![]);
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("DELETE")
+                        .uri("/api/conversations/nonexistent-id")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        }
 
-        // Should get ConversationMeta with the provided id.
-        assert!(matches!(
-            &events[0],
-            ChatEvent::ConversationMeta { conversation_id } if conversation_id == &conv.id
-        ));
+        #[tokio::test]
+        async fn chat_without_conversation_id_auto_creates() {
+            let (state, app) = conversation_app(vec!["Reply".into()]);
 
-        // Messages should be persisted.
-        let loaded = state.store.get_conversation(&conv.id).unwrap().unwrap();
-        assert!(loaded.messages.len() >= 2); // user + assistant
-    }
+            let events = post_chat_raw(app, &make_chat_body()).await;
 
-    #[tokio::test]
-    async fn chat_with_nonexistent_conversation_id_returns_404() {
-        let (_, app) = conversation_app(vec![]);
-        let body = make_chat_body_with_conversation("nonexistent-id");
+            // First event should be ConversationMeta.
+            assert!(
+                matches!(&events[0], ChatEvent::ConversationMeta { conversation_id } if !conversation_id.is_empty()),
+                "first event should be ConversationMeta"
+            );
 
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/api/chat")
-                    .header("content-type", "application/json")
-                    .body(Body::from(body))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
-    }
+            // A conversation should have been auto-created.
+            let convs = state.store.list_conversations().unwrap();
+            assert_eq!(convs.len(), 1);
+            assert_eq!(convs[0].title, "Hi"); // title from the user message
+        }
 
-    #[tokio::test]
-    async fn chat_persists_all_message_types() {
-        let state = Arc::new(AppState {
-            provider: SequencedProvider::new(vec![
-                MockResponse::ToolCalls(vec![(
-                    "c1".into(),
-                    "echo".into(),
-                    r#"{"value":"test"}"#.into(),
-                )]),
-                MockResponse::Text(vec!["Final answer.".into()]),
-            ]),
-            registry: registry_with_echo(),
-            store: crate::store::Store::open_in_memory().unwrap(),
-        });
-        let app = Router::new()
-            .route("/api/chat", post(chat_handler::<SequencedProvider>))
-            .route(
-                "/api/conversations",
-                get(list_conversations::<SequencedProvider>).post(create_conversation::<SequencedProvider>),
-            )
-            .route(
-                "/api/conversations/{id}",
-                get(get_conversation::<SequencedProvider>).delete(delete_conversation::<SequencedProvider>),
-            )
-            .with_state(state.clone());
+        #[tokio::test]
+        async fn chat_with_conversation_id_appends_to_existing() {
+            let (state, app) = conversation_app(vec!["Reply".into()]);
+            let conv = state.store.create_conversation("Existing").unwrap();
 
-        let events = post_chat_raw(app, &make_chat_body()).await;
+            let body = make_chat_body_with_conversation(&conv.id);
+            let events = post_chat_raw(app, &body).await;
 
-        // Get the conversation id from the meta event.
-        let conv_id = match &events[0] {
-            ChatEvent::ConversationMeta { conversation_id } => conversation_id.clone(),
-            _ => panic!("expected ConversationMeta as first event"),
-        };
+            // Should get ConversationMeta with the provided id.
+            assert!(matches!(
+                &events[0],
+                ChatEvent::ConversationMeta { conversation_id } if conversation_id == &conv.id
+            ));
 
-        let conv = state.store.get_conversation(&conv_id).unwrap().unwrap();
+            // Messages should be persisted.
+            let loaded = state.store.get_conversation(&conv.id).unwrap().unwrap();
+            assert!(loaded.messages.len() >= 2); // user + assistant
+        }
 
-        // Should have: user msg, tool call, tool result, assistant text = 4 messages
-        assert_eq!(conv.messages.len(), 4, "expected 4 persisted messages, got {}: {:?}", conv.messages.len(), conv.messages);
+        #[tokio::test]
+        async fn chat_with_nonexistent_conversation_id_returns_404() {
+            let (_, app) = conversation_app(vec![]);
+            let body = make_chat_body_with_conversation("nonexistent-id");
 
-        // Verify types
-        assert!(matches!(conv.messages[0].content, MessageContent::Text { .. }));
-        assert!(matches!(conv.messages[1].content, MessageContent::ToolCall { .. }));
-        assert!(matches!(conv.messages[2].content, MessageContent::ToolResult { .. }));
-        assert!(matches!(conv.messages[3].content, MessageContent::Text { .. }));
-    }
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/api/chat")
+                        .header("content-type", "application/json")
+                        .body(Body::from(body))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        }
 
-    #[tokio::test]
-    async fn sse_stream_starts_with_conversation_meta() {
-        let (_, app) = conversation_app(vec!["Hi".into()]);
-        let events = post_chat_raw(app, &make_chat_body()).await;
+        #[tokio::test]
+        async fn chat_persists_all_message_types() {
+            let state = Arc::new(AppState {
+                provider: SequencedProvider::new(vec![
+                    MockResponse::ToolCalls(vec![(
+                        "c1".into(),
+                        "echo".into(),
+                        r#"{"value":"test"}"#.into(),
+                    )]),
+                    MockResponse::Text(vec!["Final answer.".into()]),
+                ]),
+                registry: registry_with_echo(),
+                store: crate::store::Store::open_in_memory().unwrap(),
+            });
+            let app = Router::new()
+                .route("/api/chat", post(chat_handler::<SequencedProvider>))
+                .route(
+                    "/api/conversations",
+                    get(list_conversations::<SequencedProvider>).post(create_conversation::<SequencedProvider>),
+                )
+                .route(
+                    "/api/conversations/{id}",
+                    get(get_conversation::<SequencedProvider>).delete(delete_conversation::<SequencedProvider>),
+                )
+                .with_state(state.clone());
 
-        assert!(!events.is_empty());
-        assert!(
-            matches!(&events[0], ChatEvent::ConversationMeta { conversation_id } if !conversation_id.is_empty()),
-            "SSE stream must start with ConversationMeta"
-        );
+            let events = post_chat_raw(app, &make_chat_body()).await;
+
+            // Get the conversation id from the meta event.
+            let conv_id = match &events[0] {
+                ChatEvent::ConversationMeta { conversation_id } => conversation_id.clone(),
+                _ => panic!("expected ConversationMeta as first event"),
+            };
+
+            let conv = state.store.get_conversation(&conv_id).unwrap().unwrap();
+
+            // Should have: user msg, tool call, tool result, assistant text = 4 messages
+            assert_eq!(conv.messages.len(), 4, "expected 4 persisted messages, got {}: {:?}", conv.messages.len(), conv.messages);
+
+            // Verify types
+            assert!(matches!(conv.messages[0].content, MessageContent::Text { .. }));
+            assert!(matches!(conv.messages[1].content, MessageContent::ToolCall { .. }));
+            assert!(matches!(conv.messages[2].content, MessageContent::ToolResult { .. }));
+            assert!(matches!(conv.messages[3].content, MessageContent::Text { .. }));
+        }
+
+        #[tokio::test]
+        async fn sse_stream_starts_with_conversation_meta() {
+            let (_, app) = conversation_app(vec!["Hi".into()]);
+            let events = post_chat_raw(app, &make_chat_body()).await;
+
+            assert!(!events.is_empty());
+            assert!(
+                matches!(&events[0], ChatEvent::ConversationMeta { conversation_id } if !conversation_id.is_empty()),
+                "SSE stream must start with ConversationMeta"
+            );
+        }
     }
 }
