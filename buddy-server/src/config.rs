@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 const DEFAULT_HOST: &str = "127.0.0.1";
 const DEFAULT_PORT: u16 = 3000;
 const DEFAULT_CONFIG_PATH: &str = "buddy.toml";
+const DEFAULT_DATABASE: &str = "buddy.db";
 
 #[derive(Parser)]
 #[command(name = "buddy-server")]
@@ -21,6 +22,8 @@ pub struct Config {
     pub provider: ProviderConfig,
     #[serde(default)]
     pub skills: SkillsConfig,
+    #[serde(default)]
+    pub storage: StorageConfig,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -61,6 +64,24 @@ pub struct ProviderConfig {
 
 fn default_system_prompt() -> String {
     DEFAULT_SYSTEM_PROMPT.to_string()
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+pub struct StorageConfig {
+    #[serde(default = "default_database")]
+    pub database: String,
+}
+
+impl Default for StorageConfig {
+    fn default() -> Self {
+        Self {
+            database: default_database(),
+        }
+    }
+}
+
+fn default_database() -> String {
+    DEFAULT_DATABASE.to_string()
 }
 
 #[derive(Debug, Deserialize, PartialEq, Default)]
@@ -214,6 +235,33 @@ endpoint = "https://api.openai.com/v1"
         assert!(config.skills.read_file.is_none());
         assert!(config.skills.write_file.is_none());
         assert!(config.skills.fetch_url.is_none());
+    }
+
+    #[test]
+    fn no_storage_section_uses_default_database_path() {
+        let toml = r#"
+[provider]
+api_key = "sk-test"
+model = "gpt-4"
+endpoint = "https://api.openai.com/v1"
+"#;
+        let config = Config::parse(toml).unwrap();
+        assert_eq!(config.storage.database, "buddy.db");
+    }
+
+    #[test]
+    fn custom_storage_database_path() {
+        let toml = r#"
+[provider]
+api_key = "sk-test"
+model = "gpt-4"
+endpoint = "https://api.openai.com/v1"
+
+[storage]
+database = "/var/data/buddy.db"
+"#;
+        let config = Config::parse(toml).unwrap();
+        assert_eq!(config.storage.database, "/var/data/buddy.db");
     }
 
     #[test]

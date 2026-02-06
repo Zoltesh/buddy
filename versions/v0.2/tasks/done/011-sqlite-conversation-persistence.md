@@ -49,15 +49,15 @@ Conversations are durable. The user can close their browser, restart the server,
 
 ## Acceptance Criteria
 
-- [ ] Database file is created on first startup at the configured path
-- [ ] `create_conversation` returns a conversation with a valid UUID
-- [ ] `append_message` persists messages that survive a `Store` reinstantiation (simulating restart)
-- [ ] `list_conversations` returns conversations ordered by `updated_at` descending
-- [ ] `get_conversation` returns all messages in correct order
-- [ ] `delete_conversation` removes the conversation and all its messages
-- [ ] Tool call and tool result messages are stored and retrieved correctly
-- [ ] Schema migrations run idempotently (safe to run on an existing database)
-- [ ] Default database path works when `[storage]` is omitted from config
+- [x] Database file is created on first startup at the configured path
+- [x] `create_conversation` returns a conversation with a valid UUID
+- [x] `append_message` persists messages that survive a `Store` reinstantiation (simulating restart)
+- [x] `list_conversations` returns conversations ordered by `updated_at` descending
+- [x] `get_conversation` returns all messages in correct order
+- [x] `delete_conversation` removes the conversation and all its messages
+- [x] Tool call and tool result messages are stored and retrieved correctly
+- [x] Schema migrations run idempotently (safe to run on an existing database)
+- [x] Default database path works when `[storage]` is omitted from config
 
 ## Test Cases
 

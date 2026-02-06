@@ -17,6 +17,11 @@ endpoint = "https://api.openai.com/v1"
 # System prompt sent at the start of every conversation (optional)
 # system_prompt = "You are a helpful, friendly AI assistant."
 
+# --- Storage ---
+# [storage]
+# Path to the SQLite database file (default: "buddy.db")
+# database = "buddy.db"
+
 # --- Skills ---
 # Skills are optional. Only skills with configuration are enabled.
 # A skill with no config section is disabled entirely.

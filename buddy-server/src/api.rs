@@ -59,6 +59,7 @@ pub struct ApiError {
 pub struct AppState<P> {
     pub provider: P,
     pub registry: crate::skill::SkillRegistry,
+    pub store: crate::store::Store,
 }
 
 /// `POST /api/chat` — accepts a `ChatRequest` and streams `ChatEvent` frames via SSE.
@@ -413,6 +414,7 @@ mod tests {
         let state = Arc::new(AppState {
             provider: MockProvider { tokens },
             registry: SkillRegistry::new(),
+            store: crate::store::Store::open_in_memory().unwrap(),
         });
         Router::new()
             .route("/api/chat", post(chat_handler::<MockProvider>))
@@ -423,6 +425,7 @@ mod tests {
         let state = Arc::new(AppState {
             provider: MockProvider { tokens },
             registry: SkillRegistry::new(),
+            store: crate::store::Store::open_in_memory().unwrap(),
         });
         Router::new()
             .route("/api/chat", post(chat_handler::<MockProvider>))
@@ -434,6 +437,7 @@ mod tests {
         let state = Arc::new(AppState {
             provider: SequencedProvider::new(responses),
             registry,
+            store: crate::store::Store::open_in_memory().unwrap(),
         });
         Router::new()
             .route("/api/chat", post(chat_handler::<SequencedProvider>))
