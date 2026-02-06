@@ -1,6 +1,5 @@
 use reqwest::Client;
 
-use crate::config::ProviderConfig;
 use crate::provider::openai::{build_request_body, map_error_status, parse_sse_stream};
 use crate::provider::{Provider, ProviderError, TokenStream};
 use crate::types::Message;
@@ -15,12 +14,12 @@ pub struct LmStudioProvider {
 }
 
 impl LmStudioProvider {
-    pub fn new(config: &ProviderConfig) -> Self {
+    pub fn new(model: &str, endpoint: &str, system_prompt: &str) -> Self {
         Self {
             client: Client::new(),
-            model: config.model.clone(),
-            endpoint: config.endpoint.clone(),
-            system_prompt: config.system_prompt.clone(),
+            model: model.to_string(),
+            endpoint: endpoint.to_string(),
+            system_prompt: system_prompt.to_string(),
         }
     }
 }
@@ -175,15 +174,12 @@ mod tests {
     }
 
     #[test]
-    fn provider_new_ignores_api_key() {
-        let config = ProviderConfig {
-            provider_type: "lmstudio".into(),
-            api_key: String::new(),
-            model: "deepseek-coder".into(),
-            endpoint: "http://192.168.1.100:1234/v1".into(),
-            system_prompt: "You are helpful.".into(),
-        };
-        let provider = LmStudioProvider::new(&config);
+    fn provider_new_sets_fields() {
+        let provider = LmStudioProvider::new(
+            "deepseek-coder",
+            "http://192.168.1.100:1234/v1",
+            "You are helpful.",
+        );
         assert_eq!(provider.model, "deepseek-coder");
         assert_eq!(provider.endpoint, "http://192.168.1.100:1234/v1");
     }
@@ -198,14 +194,7 @@ mod tests {
         let model =
             std::env::var("LMSTUDIO_MODEL").unwrap_or_else(|_| "deepseek-coder".into());
 
-        let config = ProviderConfig {
-            provider_type: "lmstudio".into(),
-            api_key: String::new(),
-            model,
-            endpoint,
-            system_prompt: "You are a helpful assistant.".into(),
-        };
-        let provider = LmStudioProvider::new(&config);
+        let provider = LmStudioProvider::new(&model, &endpoint, "You are a helpful assistant.");
 
         let messages = vec![Message {
             role: Role::User,

@@ -7,24 +7,37 @@
 # Port the server listens on (default: 3000)
 # port = 3000
 
-# --- Provider ---
-# Select a provider by setting type. Default is "openai".
-
-# Option 1: OpenAI (or any OpenAI-compatible API that requires an API key)
-[provider]
-type = "openai"
-api_key = "your-api-key-here"
-model = "gpt-4"
-endpoint = "https://api.openai.com/v1"
-# System prompt sent at the start of every conversation (optional)
+# --- Chat ---
+# System prompt sent at the start of every conversation (optional).
+# [chat]
 # system_prompt = "You are a helpful, friendly AI assistant."
 
+# --- Models ---
+# Each model slot contains an ordered list of providers.
+# The first provider is the default; remaining entries are fallbacks.
+
+# Chat model (required) — used for conversations.
+
+# Option 1: OpenAI (or any OpenAI-compatible API that requires an API key)
+[[models.chat.providers]]
+type = "openai"
+model = "gpt-4"
+endpoint = "https://api.openai.com/v1"
+api_key_env = "OPENAI_API_KEY"    # reads API key from this environment variable
+
 # Option 2: LM Studio (local OpenAI-compatible server, no API key needed)
-# [provider]
+# [[models.chat.providers]]
 # type = "lmstudio"
 # model = "deepseek-coder"
 # endpoint = "http://localhost:1234/v1"
-# system_prompt = "You are a helpful, friendly AI assistant."
+
+# Embedding model (optional) — used for semantic search.
+# If omitted, embedding-dependent features are unavailable.
+# [[models.embedding.providers]]
+# type = "openai"
+# model = "text-embedding-3-small"
+# endpoint = "https://api.openai.com/v1"
+# api_key_env = "OPENAI_API_KEY"
 
 # --- Storage ---
 # [storage]

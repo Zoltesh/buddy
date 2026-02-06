@@ -32,22 +32,22 @@ The current config has a single `ProviderConfig` with one `provider_type`, `mode
 
 ## Acceptance Criteria
 
-- [ ] `buddy.toml` with the new `[models.chat]` / `[models.embedding]` schema parses into typed structs
-- [ ] The primary chat provider is constructed from `models.chat.providers[0]`
-- [ ] `models.embedding` is optional — omitting it does not cause a startup error
-- [ ] Missing `[models.chat]` or empty `providers` list produces a clear error message
-- [ ] `api_key_env` reads the key from the named environment variable
-- [ ] `system_prompt` is parsed from `[chat]` section, not from provider config
-- [ ] `buddy.example.toml` reflects the new schema with documentation comments
-- [ ] All existing tests pass (updated for new config format)
+- [x] `buddy.toml` with the new `[models.chat]` / `[models.embedding]` schema parses into typed structs
+- [x] The primary chat provider is constructed from `models.chat.providers[0]`
+- [x] `models.embedding` is optional — omitting it does not cause a startup error
+- [x] Missing `[models.chat]` or empty `providers` list produces a clear error message
+- [x] `api_key_env` reads the key from the named environment variable
+- [x] `system_prompt` is parsed from `[chat]` section, not from provider config
+- [x] `buddy.example.toml` reflects the new schema with documentation comments
+- [x] All existing tests pass (updated for new config format)
 
 ## Test Cases
 
-- Parse a config with `[models.chat]` containing two providers; assert both are stored in order
-- Parse a config with `[models.embedding]` containing a local provider; assert it parses correctly
-- Parse a config with no `[models.embedding]` section; assert config loads without error and embedding is `None`
-- Parse a config with no `[models.chat]` section; assert error message mentions `models.chat`
-- Parse a config with an empty `providers` list under `[models.chat]`; assert error message mentions empty providers
-- Set `OPENAI_API_KEY=test123` in env; parse config with `api_key_env = "OPENAI_API_KEY"`; assert resolved key is `"test123"`
-- Parse a config with `api_key_env` pointing to an unset variable; assert a clear error
-- Assert `system_prompt` default value works when `[chat]` section is omitted
+- [x] Parse a config with `[models.chat]` containing two providers; assert both are stored in order
+- [x] Parse a config with `[models.embedding]` containing a local provider; assert it parses correctly
+- [x] Parse a config with no `[models.embedding]` section; assert config loads without error and embedding is `None`
+- [x] Parse a config with no `[models.chat]` section; assert error message mentions `models.chat`
+- [x] Parse a config with an empty `providers` list under `[models.chat]`; assert error message mentions empty providers
+- [x] Set `OPENAI_API_KEY=test123` in env; parse config with `api_key_env = "OPENAI_API_KEY"`; assert resolved key is `"test123"`
+- [x] Parse a config with `api_key_env` pointing to an unset variable; assert a clear error
+- [x] Assert `system_prompt` default value works when `[chat]` section is omitted

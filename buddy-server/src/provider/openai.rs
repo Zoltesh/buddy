@@ -2,7 +2,6 @@ use futures_util::StreamExt;
 use reqwest::Client;
 use serde::Deserialize;
 
-use crate::config::ProviderConfig;
 use crate::provider::{Provider, ProviderError, Token, TokenStream};
 use crate::types::{Message, MessageContent, Role};
 
@@ -17,13 +16,13 @@ pub struct OpenAiProvider {
 }
 
 impl OpenAiProvider {
-    pub fn new(config: &ProviderConfig) -> Self {
+    pub fn new(api_key: &str, model: &str, endpoint: &str, system_prompt: &str) -> Self {
         Self {
             client: Client::new(),
-            api_key: config.api_key.clone(),
-            model: config.model.clone(),
-            endpoint: config.endpoint.clone(),
-            system_prompt: config.system_prompt.clone(),
+            api_key: api_key.to_string(),
+            model: model.to_string(),
+            endpoint: endpoint.to_string(),
+            system_prompt: system_prompt.to_string(),
         }
     }
 }
@@ -667,14 +666,13 @@ mod tests {
     #[tokio::test]
     #[ignore] // Requires a live API key: OPENAI_API_KEY=... cargo test -- --ignored
     async fn integration_live_streaming() {
-        let config = ProviderConfig {
-            provider_type: "openai".into(),
-            api_key: std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set"),
-            model: "gpt-4".into(),
-            endpoint: "https://api.openai.com/v1".into(),
-            system_prompt: "You are a helpful assistant.".into(),
-        };
-        let provider = OpenAiProvider::new(&config);
+        let api_key = std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set");
+        let provider = OpenAiProvider::new(
+            &api_key,
+            "gpt-4",
+            "https://api.openai.com/v1",
+            "You are a helpful assistant.",
+        );
 
         let messages = vec![Message {
             role: Role::User,

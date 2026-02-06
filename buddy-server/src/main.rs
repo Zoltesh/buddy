@@ -31,8 +31,10 @@ async fn main() {
     });
 
     let addr = config.bind_address();
-    let model = config.provider.model.clone();
-    let provider_type = config.provider.provider_type.clone();
+    let primary = &config.models.chat.providers[0];
+    let model = primary.model.clone();
+    let provider_type = primary.provider_type.clone();
+    let system_prompt = &config.chat.system_prompt;
     let db_path = &config.storage.database;
 
     // Validate skills configuration before proceeding.
@@ -43,15 +45,29 @@ async fn main() {
         std::process::exit(1);
     });
 
+    let endpoint = primary.endpoint.as_deref().unwrap_or_else(|| {
+        eprintln!(
+            "Error: endpoint is required for provider type '{provider_type}'"
+        );
+        std::process::exit(1);
+    });
+
+    let api_key = primary.resolve_api_key().unwrap_or_else(|e| {
+        eprintln!("Error: {e}");
+        std::process::exit(1);
+    });
+
     let provider = match provider_type.as_str() {
         "openai" => {
-            if config.provider.api_key.is_empty() {
-                eprintln!("Error: provider.api_key is required when provider.type = \"openai\"");
+            if api_key.is_empty() {
+                eprintln!("Error: api_key_env is required when type = \"openai\"");
                 std::process::exit(1);
             }
-            AnyProvider::OpenAi(OpenAiProvider::new(&config.provider))
+            AnyProvider::OpenAi(OpenAiProvider::new(&api_key, &model, endpoint, system_prompt))
         }
-        "lmstudio" => AnyProvider::LmStudio(LmStudioProvider::new(&config.provider)),
+        "lmstudio" => {
+            AnyProvider::LmStudio(LmStudioProvider::new(&model, endpoint, system_prompt))
+        }
         other => {
             eprintln!(
                 "Error: unknown provider type '{}'. Valid types: openai, lmstudio",
