@@ -212,14 +212,16 @@ impl Store {
     }
 
     /// Delete a conversation and all its messages (via ON DELETE CASCADE).
-    pub fn delete_conversation(&self, id: &str) -> Result<(), String> {
+    /// Returns `true` if a conversation was deleted, `false` if it didn't exist.
+    pub fn delete_conversation(&self, id: &str) -> Result<bool, String> {
         let conn = self.conn.lock().unwrap();
         // Ensure foreign keys are enforced for CASCADE.
         conn.execute("PRAGMA foreign_keys = ON", [])
             .map_err(|e| format!("failed to enable foreign keys: {e}"))?;
-        conn.execute("DELETE FROM conversations WHERE id = ?1", params![id])
+        let rows = conn
+            .execute("DELETE FROM conversations WHERE id = ?1", params![id])
             .map_err(|e| format!("failed to delete conversation: {e}"))?;
-        Ok(())
+        Ok(rows > 0)
     }
 
     /// Append a single message to a conversation.
@@ -455,7 +457,8 @@ mod tests {
             )
             .unwrap();
 
-        store.delete_conversation(&conv.id).unwrap();
+        let deleted = store.delete_conversation(&conv.id).unwrap();
+        assert!(deleted);
         assert!(store.get_conversation(&conv.id).unwrap().is_none());
     }
 

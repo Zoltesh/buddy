@@ -30,15 +30,15 @@ The frontend (and any future client) can manage conversations through a clean RE
 
 ## Acceptance Criteria
 
-- [ ] `GET /api/conversations` returns an empty array initially, then lists created conversations
-- [ ] `POST /api/conversations` creates and returns a new conversation
-- [ ] `GET /api/conversations/:id` returns the conversation with all messages
-- [ ] `GET /api/conversations/:nonexistent` returns 404 with structured error
-- [ ] `DELETE /api/conversations/:id` removes the conversation and returns 204
-- [ ] `POST /api/chat` without `conversation_id` auto-creates a conversation and emits `ConversationMeta`
-- [ ] `POST /api/chat` with `conversation_id` appends to the existing conversation
-- [ ] All messages (user, assistant, tool calls, tool results) are persisted after a chat request
-- [ ] Existing chat functionality is not broken
+- [x] `GET /api/conversations` returns an empty array initially, then lists created conversations
+- [x] `POST /api/conversations` creates and returns a new conversation
+- [x] `GET /api/conversations/:id` returns the conversation with all messages
+- [x] `GET /api/conversations/:nonexistent` returns 404 with structured error
+- [x] `DELETE /api/conversations/:id` removes the conversation and returns 204
+- [x] `POST /api/chat` without `conversation_id` auto-creates a conversation and emits `ConversationMeta`
+- [x] `POST /api/chat` with `conversation_id` appends to the existing conversation
+- [x] All messages (user, assistant, tool calls, tool results) are persisted after a chat request
+- [x] Existing chat functionality is not broken
 
 ## Test Cases
 

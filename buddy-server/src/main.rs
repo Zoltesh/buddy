@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use axum::routing::post;
+use axum::routing::{get, post};
 use axum::Router;
 use tokio::signal;
 use tower_http::services::ServeDir;
@@ -12,7 +12,7 @@ mod skill;
 pub mod store;
 mod types;
 
-use api::{chat_handler, AppState};
+use api::{chat_handler, create_conversation, delete_conversation, get_conversation, list_conversations, AppState};
 use provider::openai::OpenAiProvider;
 use skill::build_registry;
 use store::Store;
@@ -44,6 +44,8 @@ async fn main() {
 
     let app = Router::new()
         .route("/api/chat", post(chat_handler::<OpenAiProvider>))
+        .route("/api/conversations", get(list_conversations::<OpenAiProvider>).post(create_conversation::<OpenAiProvider>))
+        .route("/api/conversations/{id}", get(get_conversation::<OpenAiProvider>).delete(delete_conversation::<OpenAiProvider>))
         .with_state(state)
         .fallback_service(ServeDir::new("frontend/dist"));
 
