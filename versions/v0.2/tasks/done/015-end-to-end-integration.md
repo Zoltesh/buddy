@@ -24,16 +24,16 @@ A user can start buddy, hold conversations that use tools, switch between conver
 
 ## Acceptance Criteria
 
-- [ ] `cargo run` starts the server with all V0.2 features active
-- [ ] Sending a message that triggers a tool call (e.g., "Read /sandbox/test.txt") works end-to-end: skill executes, result fed to LLM, response streams to UI
-- [ ] Tool-call activity is visible in the UI chat
-- [ ] Conversations persist: send messages, restart the server, conversations are still listed and loadable
-- [ ] Creating a new conversation and switching between conversations works
-- [ ] The second provider works when configured (swap `provider.type` in config)
-- [ ] Sandbox is enforced: asking buddy to read a file outside allowed directories results in a clear error in the LLM response (not a crash)
-- [ ] `Ctrl+C` shuts the server down cleanly
-- [ ] `cargo test` passes all unit and integration tests
-- [ ] `buddy.example.toml` documents all configuration options
+- [x] `cargo run` starts the server with all V0.2 features active
+- [x] Sending a message that triggers a tool call (e.g., "Read /sandbox/test.txt") works end-to-end: skill executes, result fed to LLM, response streams to UI
+- [x] Tool-call activity is visible in the UI chat
+- [x] Conversations persist: send messages, restart the server, conversations are still listed and loadable
+- [x] Creating a new conversation and switching between conversations works
+- [x] The second provider works when configured (swap `provider.type` in config)
+- [x] Sandbox is enforced: asking buddy to read a file outside allowed directories results in a clear error in the LLM response (not a crash)
+- [x] `Ctrl+C` shuts the server down cleanly
+- [x] `cargo test` passes all unit and integration tests
+- [x] `buddy.example.toml` documents all configuration options
 
 ## Test Cases
 

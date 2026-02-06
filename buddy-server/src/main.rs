@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::sync::Arc;
 
 use axum::routing::{get, post};
@@ -13,6 +14,7 @@ pub mod store;
 mod types;
 
 use api::{chat_handler, create_conversation, delete_conversation, get_conversation, list_conversations, AppState};
+use config::SkillsConfig;
 use provider::AnyProvider;
 use provider::lmstudio::LmStudioProvider;
 use provider::openai::OpenAiProvider;
@@ -31,8 +33,11 @@ async fn main() {
     let provider_type = config.provider.provider_type.clone();
     let db_path = &config.storage.database;
 
-    let store = Store::open(std::path::Path::new(db_path)).unwrap_or_else(|e| {
-        eprintln!("Error: {e}");
+    // Validate skills configuration before proceeding.
+    validate_skills_config(&config.skills);
+
+    let store = Store::open(Path::new(db_path)).unwrap_or_else(|e| {
+        eprintln!("Error: failed to initialize database: {e}");
         std::process::exit(1);
     });
 
@@ -87,6 +92,39 @@ async fn main() {
         .with_graceful_shutdown(shutdown_signal())
         .await
         .expect("server error");
+}
+
+/// Validate skill sandbox configuration at startup.
+///
+/// Checks that all configured allowed directories exist and are actual
+/// directories. Prints warnings for any that don't exist but does not
+/// abort — the skills will still enforce path validation at runtime.
+fn validate_skills_config(skills: &SkillsConfig) {
+    if let Some(ref cfg) = skills.read_file {
+        for dir in &cfg.allowed_directories {
+            let path = Path::new(dir);
+            if !path.exists() {
+                eprintln!("Warning: skills.read_file allowed directory does not exist: {dir}");
+            } else if !path.is_dir() {
+                eprintln!("Warning: skills.read_file allowed path is not a directory: {dir}");
+            }
+        }
+    }
+    if let Some(ref cfg) = skills.write_file {
+        for dir in &cfg.allowed_directories {
+            let path = Path::new(dir);
+            if !path.exists() {
+                eprintln!("Warning: skills.write_file allowed directory does not exist: {dir}");
+            } else if !path.is_dir() {
+                eprintln!("Warning: skills.write_file allowed path is not a directory: {dir}");
+            }
+        }
+    }
+    if let Some(ref cfg) = skills.fetch_url {
+        if cfg.allowed_domains.is_empty() {
+            eprintln!("Warning: skills.fetch_url is configured but allowed_domains is empty");
+        }
+    }
 }
 
 async fn shutdown_signal() {
