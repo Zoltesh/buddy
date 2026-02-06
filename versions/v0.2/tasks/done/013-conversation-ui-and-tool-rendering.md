@@ -34,15 +34,15 @@ A user can manage multiple conversations and see full transparency into buddy's 
 
 ## Acceptance Criteria
 
-- [ ] Conversation list loads on app start and displays all conversations
-- [ ] Clicking "New Chat" clears the message area and starts a fresh conversation
-- [ ] Clicking a conversation loads and displays its history
-- [ ] Conversations persist: refresh the page, conversations are still listed
-- [ ] Tool-call blocks appear in the chat showing skill name and result
-- [ ] Tool-call details are expandable (collapsed by default)
-- [ ] Deleting a conversation removes it from the sidebar
-- [ ] The layout is responsive — sidebar collapses on mobile
-- [ ] No JavaScript errors during normal conversation and tool-call flows
+- [x] Conversation list loads on app start and displays all conversations
+- [x] Clicking "New Chat" clears the message area and starts a fresh conversation
+- [x] Clicking a conversation loads and displays its history
+- [x] Conversations persist: refresh the page, conversations are still listed
+- [x] Tool-call blocks appear in the chat showing skill name and result
+- [x] Tool-call details are expandable (collapsed by default)
+- [x] Deleting a conversation removes it from the sidebar
+- [x] The layout is responsive — sidebar collapses on mobile
+- [x] No JavaScript errors during normal conversation and tool-call flows
 
 ## Test Cases
 

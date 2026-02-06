@@ -177,10 +177,9 @@ pub async fn chat_handler<P: Provider + 'static>(
         )
     })?;
 
-    // Resolve or create the conversation.
-    let conversation_id = match &request.conversation_id {
+    // Resolve or create the conversation, loading existing messages when continuing.
+    let (conversation_id, existing_messages) = match &request.conversation_id {
         Some(id) => {
-            // Verify it exists.
             let conv = state.store.get_conversation(id).map_err(|e| {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -190,16 +189,18 @@ pub async fn chat_handler<P: Provider + 'static>(
                     }),
                 )
             })?;
-            if conv.is_none() {
-                return Err((
-                    StatusCode::NOT_FOUND,
-                    Json(ApiError {
-                        code: "not_found".into(),
-                        message: format!("conversation '{id}' not found"),
-                    }),
-                ));
+            match conv {
+                Some(c) => (id.clone(), c.messages),
+                None => {
+                    return Err((
+                        StatusCode::NOT_FOUND,
+                        Json(ApiError {
+                            code: "not_found".into(),
+                            message: format!("conversation '{id}' not found"),
+                        }),
+                    ));
+                }
             }
-            id.clone()
         }
         None => {
             // Auto-create a conversation, titled from the first user message.
@@ -222,9 +223,15 @@ pub async fn chat_handler<P: Provider + 'static>(
                     }),
                 )
             })?;
-            conv.id
+            (conv.id, Vec::new())
         }
     };
+
+    // Combine existing history with new messages for provider context.
+    let new_messages = request.messages;
+    let mut all_messages = existing_messages;
+    let persist_from = all_messages.len();
+    all_messages.extend(new_messages);
 
     let tools = {
         let defs = state.registry.tool_definitions();
@@ -240,7 +247,7 @@ pub async fn chat_handler<P: Provider + 'static>(
 
     let conv_id = conversation_id.clone();
     tokio::spawn(async move {
-        run_tool_loop(state, conv_id, request.messages, tools, tx).await;
+        run_tool_loop(state, conv_id, all_messages, persist_from, tools, tx).await;
     });
 
     let conv_id_for_meta = conversation_id;
@@ -287,11 +294,12 @@ async fn run_tool_loop<P: Provider>(
     state: Arc<AppState<P>>,
     conversation_id: String,
     mut messages: Vec<Message>,
+    persist_from: usize,
     tools: Option<Vec<serde_json::Value>>,
     tx: tokio::sync::mpsc::Sender<ChatEvent>,
 ) {
-    // Persist incoming user messages.
-    for msg in &messages {
+    // Persist only new incoming messages (existing ones are already in the DB).
+    for msg in &messages[persist_from..] {
         persist_message(&state.store, &conversation_id, msg);
     }
 

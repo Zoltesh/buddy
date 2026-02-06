@@ -1,0 +1,86 @@
+/**
+ * API helpers and data conversion utilities.
+ */
+
+/** Fetch all conversation summaries. */
+export async function fetchConversations() {
+  const res = await fetch('/api/conversations');
+  if (!res.ok) throw new Error('Failed to load conversations');
+  return res.json();
+}
+
+/** Fetch a single conversation with full message history. */
+export async function fetchConversation(id) {
+  const res = await fetch(`/api/conversations/${id}`);
+  if (!res.ok) throw new Error('Failed to load conversation');
+  return res.json();
+}
+
+/** Delete a conversation. */
+export async function deleteConversation(id) {
+  const res = await fetch(`/api/conversations/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete conversation');
+}
+
+/**
+ * Convert backend messages to display items.
+ * Groups tool_call + tool_result pairs into single blocks.
+ *
+ * Display item shapes:
+ *   { kind: 'text', role, content, timestamp }
+ *   { kind: 'tool_call', id, name, arguments, result }
+ */
+export function toDisplayItems(messages) {
+  const items = [];
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    if (msg.content.type === 'text') {
+      items.push({
+        kind: 'text',
+        role: msg.role,
+        content: msg.content.text,
+        timestamp: msg.timestamp,
+      });
+    } else if (msg.content.type === 'tool_call') {
+      const block = {
+        kind: 'tool_call',
+        id: msg.content.id,
+        name: msg.content.name,
+        arguments: msg.content.arguments,
+        result: null,
+      };
+      // Pair with the following tool_result if it matches.
+      if (
+        i + 1 < messages.length &&
+        messages[i + 1].content.type === 'tool_result' &&
+        messages[i + 1].content.id === msg.content.id
+      ) {
+        block.result = messages[i + 1].content.content;
+        i++;
+      }
+      items.push(block);
+    }
+    // Standalone tool_result (shouldn't normally happen) — skip.
+  }
+  return items;
+}
+
+/**
+ * Format a timestamp as a relative time string.
+ */
+export function timeAgo(dateStr) {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const seconds = Math.floor((now - date) / 1000);
+
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}mo ago`;
+  return `${Math.floor(months / 12)}y ago`;
+}
