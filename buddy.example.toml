@@ -7,14 +7,23 @@
 # Port the server listens on (default: 3000)
 # port = 3000
 
+# --- Provider ---
+# Select a provider by setting type. Default is "openai".
+
+# Option 1: OpenAI (or any OpenAI-compatible API that requires an API key)
 [provider]
-# Your LLM provider API key (required)
+type = "openai"
 api_key = "your-api-key-here"
-# Model identifier to use (required)
 model = "gpt-4"
-# Provider API endpoint URL (required)
 endpoint = "https://api.openai.com/v1"
 # System prompt sent at the start of every conversation (optional)
+# system_prompt = "You are a helpful, friendly AI assistant."
+
+# Option 2: LM Studio (local OpenAI-compatible server, no API key needed)
+# [provider]
+# type = "lmstudio"
+# model = "deepseek-coder"
+# endpoint = "http://localhost:1234/v1"
 # system_prompt = "You are a helpful, friendly AI assistant."
 
 # --- Storage ---

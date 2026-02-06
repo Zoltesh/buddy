@@ -109,8 +109,8 @@ fn to_chat_messages(messages: &[Message]) -> Vec<serde_json::Value> {
     result
 }
 
-/// Build the full request body for the OpenAI chat completions endpoint.
-fn build_request_body(
+/// Build the full request body for an OpenAI-compatible chat completions endpoint.
+pub(crate) fn build_request_body(
     messages: &[Message],
     model: &str,
     system_prompt: &str,
@@ -140,7 +140,7 @@ fn build_request_body(
     body
 }
 
-// --- Response types ---
+// --- Response types (shared with other OpenAI-compatible providers) ---
 
 #[derive(Deserialize)]
 struct ChatChunk {
@@ -160,7 +160,7 @@ struct ChunkDelta {
 }
 
 #[derive(Deserialize, Clone, Debug)]
-struct ToolCallChunk {
+pub(crate) struct ToolCallChunk {
     index: usize,
     id: Option<String>,
     function: Option<ToolCallFunctionChunk>,
@@ -186,7 +186,7 @@ struct ErrorDetail {
 
 /// What a single SSE line resolved to after parsing.
 #[derive(Debug)]
-enum SseChunk {
+pub(crate) enum SseChunk {
     /// Text content delta.
     TextDelta(String),
     /// Partial tool call data to accumulate.
@@ -198,7 +198,7 @@ enum SseChunk {
 }
 
 /// Parse a single `data:` line from the SSE stream.
-fn parse_sse_line(line: &str) -> Result<SseChunk, ProviderError> {
+pub(crate) fn parse_sse_line(line: &str) -> Result<SseChunk, ProviderError> {
     let data = match line.strip_prefix("data: ") {
         Some(d) => d,
         None => return Ok(SseChunk::Empty),
@@ -254,21 +254,21 @@ fn parse_sse_line(line: &str) -> Result<SseChunk, ProviderError> {
 }
 
 /// Accumulator for tool call chunks that arrive across multiple SSE events.
-struct ToolCallAccumulator {
+pub(crate) struct ToolCallAccumulator {
     /// (id, name, arguments_buffer) indexed by the tool_call index.
     calls: Vec<(String, String, String)>,
 }
 
 impl ToolCallAccumulator {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self { calls: Vec::new() }
     }
 
-    fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.calls.is_empty()
     }
 
-    fn process(&mut self, chunks: &[ToolCallChunk]) {
+    pub(crate) fn process(&mut self, chunks: &[ToolCallChunk]) {
         for tc in chunks {
             while self.calls.len() <= tc.index {
                 self.calls.push((String::new(), String::new(), String::new()));
@@ -287,7 +287,7 @@ impl ToolCallAccumulator {
         }
     }
 
-    fn drain(&mut self) -> Vec<Token> {
+    pub(crate) fn drain(&mut self) -> Vec<Token> {
         std::mem::take(&mut self.calls)
             .into_iter()
             .map(|(id, name, arguments)| Token::ToolCall {
@@ -300,7 +300,7 @@ impl ToolCallAccumulator {
 }
 
 /// Map an HTTP error status code and body to a `ProviderError`.
-fn map_error_status(status: u16, body: &str) -> ProviderError {
+pub(crate) fn map_error_status(status: u16, body: &str) -> ProviderError {
     let message = serde_json::from_str::<ErrorResponse>(body)
         .map(|r| r.error.message)
         .unwrap_or_else(|_| body.to_string());
@@ -310,6 +310,72 @@ fn map_error_status(status: u16, body: &str) -> ProviderError {
         429 => ProviderError::RateLimit(message),
         _ => ProviderError::Other(format!("HTTP {status}: {message}")),
     }
+}
+
+// --- Shared SSE stream parser (used by all OpenAI-compatible providers) ---
+
+/// Convert a streaming `reqwest::Response` from an OpenAI-compatible chat
+/// completions endpoint into a `TokenStream`.
+pub(crate) fn parse_sse_stream(response: reqwest::Response) -> TokenStream {
+    let stream = async_stream::try_stream! {
+        let mut byte_stream = response.bytes_stream();
+        let mut buffer = String::new();
+        let mut tool_acc = ToolCallAccumulator::new();
+
+        while let Some(chunk) = byte_stream.next().await {
+            let bytes = chunk.map_err(|e| ProviderError::Network(e.to_string()))?;
+            buffer.push_str(&String::from_utf8_lossy(&bytes));
+
+            while let Some(pos) = buffer.find('\n') {
+                let line = buffer[..pos].trim_end_matches('\r').to_string();
+                buffer = buffer[pos + 1..].to_string();
+
+                match parse_sse_line(&line)? {
+                    SseChunk::TextDelta(text) => yield Token::Text { text },
+                    SseChunk::ToolCallDelta(chunks) => {
+                        tool_acc.process(&chunks);
+                    }
+                    SseChunk::FinishToolCalls => {
+                        for token in tool_acc.drain() {
+                            yield token;
+                        }
+                    }
+                    SseChunk::Empty => {}
+                }
+            }
+        }
+
+        // Flush remaining buffer.
+        let remaining = buffer.trim();
+        if !remaining.is_empty() {
+            match parse_sse_line(remaining)? {
+                SseChunk::TextDelta(text) => yield Token::Text { text },
+                SseChunk::FinishToolCalls => {
+                    for token in tool_acc.drain() {
+                        yield token;
+                    }
+                }
+                SseChunk::ToolCallDelta(chunks) => {
+                    // Last line was a delta with no explicit finish — drain anyway.
+                    tool_acc.process(&chunks);
+                    for token in tool_acc.drain() {
+                        yield token;
+                    }
+                }
+                SseChunk::Empty => {}
+            }
+        }
+
+        // If tool calls were accumulated but never flushed (no finish_reason
+        // line), drain them now.
+        if !tool_acc.is_empty() {
+            for token in tool_acc.drain() {
+                yield token;
+            }
+        }
+    };
+
+    Box::pin(stream)
 }
 
 // --- Provider implementation ---
@@ -341,65 +407,7 @@ impl Provider for OpenAiProvider {
             return Err(map_error_status(status.as_u16(), &body_text));
         }
 
-        let stream = async_stream::try_stream! {
-            let mut byte_stream = response.bytes_stream();
-            let mut buffer = String::new();
-            let mut tool_acc = ToolCallAccumulator::new();
-
-            while let Some(chunk) = byte_stream.next().await {
-                let bytes = chunk.map_err(|e| ProviderError::Network(e.to_string()))?;
-                buffer.push_str(&String::from_utf8_lossy(&bytes));
-
-                while let Some(pos) = buffer.find('\n') {
-                    let line = buffer[..pos].trim_end_matches('\r').to_string();
-                    buffer = buffer[pos + 1..].to_string();
-
-                    match parse_sse_line(&line)? {
-                        SseChunk::TextDelta(text) => yield Token::Text { text },
-                        SseChunk::ToolCallDelta(chunks) => {
-                            tool_acc.process(&chunks);
-                        }
-                        SseChunk::FinishToolCalls => {
-                            for token in tool_acc.drain() {
-                                yield token;
-                            }
-                        }
-                        SseChunk::Empty => {}
-                    }
-                }
-            }
-
-            // Flush remaining buffer.
-            let remaining = buffer.trim();
-            if !remaining.is_empty() {
-                match parse_sse_line(remaining)? {
-                    SseChunk::TextDelta(text) => yield Token::Text { text },
-                    SseChunk::FinishToolCalls => {
-                        for token in tool_acc.drain() {
-                            yield token;
-                        }
-                    }
-                    SseChunk::ToolCallDelta(chunks) => {
-                        // Last line was a delta with no explicit finish — drain anyway.
-                        tool_acc.process(&chunks);
-                        for token in tool_acc.drain() {
-                            yield token;
-                        }
-                    }
-                    SseChunk::Empty => {}
-                }
-            }
-
-            // If tool calls were accumulated but never flushed (no finish_reason
-            // line), drain them now.
-            if !tool_acc.is_empty() {
-                for token in tool_acc.drain() {
-                    yield token;
-                }
-            }
-        };
-
-        Ok(Box::pin(stream))
+        Ok(parse_sse_stream(response))
     }
 }
 
@@ -660,6 +668,7 @@ mod tests {
     #[ignore] // Requires a live API key: OPENAI_API_KEY=... cargo test -- --ignored
     async fn integration_live_streaming() {
         let config = ProviderConfig {
+            provider_type: "openai".into(),
             api_key: std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set"),
             model: "gpt-4".into(),
             endpoint: "https://api.openai.com/v1".into(),

@@ -1,3 +1,4 @@
+pub mod lmstudio;
 pub mod openai;
 
 use std::future::Future;
@@ -59,4 +60,25 @@ pub trait Provider: Send + Sync {
         messages: Vec<Message>,
         tools: Option<Vec<serde_json::Value>>,
     ) -> impl Future<Output = Result<TokenStream, ProviderError>> + Send;
+}
+
+/// Enum dispatch over all supported providers. This avoids the need for
+/// `dyn Provider` (which is not object-safe due to `impl Future` return)
+/// while keeping `main.rs` free of generics.
+pub enum AnyProvider {
+    OpenAi(openai::OpenAiProvider),
+    LmStudio(lmstudio::LmStudioProvider),
+}
+
+impl Provider for AnyProvider {
+    async fn complete(
+        &self,
+        messages: Vec<Message>,
+        tools: Option<Vec<serde_json::Value>>,
+    ) -> Result<TokenStream, ProviderError> {
+        match self {
+            Self::OpenAi(p) => p.complete(messages, tools).await,
+            Self::LmStudio(p) => p.complete(messages, tools).await,
+        }
+    }
 }

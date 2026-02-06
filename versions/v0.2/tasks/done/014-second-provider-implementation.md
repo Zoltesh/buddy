@@ -13,30 +13,30 @@ A user can switch between two different LLM providers by changing their `buddy.t
 - Add a `provider.type` field to config to select the provider:
   ```toml
   [provider]
-  type = "openai"  # or "anthropic"
+  type = "openai"  # or "lmstudio"
   api_key = "..."
   model = "..."
   endpoint = "..."
   ```
-- Implement the chosen provider (recommend Anthropic for maximum API-shape difference):
-  - Streaming responses via the provider's native streaming format
-  - Tool-call support (Anthropic uses `tool_use` content blocks, distinct from OpenAI's `tool_calls`)
+- Implement the chosen provider (LM Studio — OpenAI-compatible local server):
+  - Streaming responses via SSE (same protocol as OpenAI)
+  - Tool-call support (OpenAI-compatible format)
   - Error mapping to `ProviderError` variants
 - The provider is selected at startup based on `provider.type`:
   - Refactor `main.rs` to construct the correct provider dynamically
-  - Use `Box<dyn Provider>` or an enum dispatch — whichever keeps the code cleanest
+  - Use an `AnyProvider` enum dispatch — keeps the code cleanest
 - If `provider.type` is omitted, default to `"openai"` for backward compatibility
 - Update `buddy.example.toml` with examples for both providers
 
 ## Acceptance Criteria
 
-- [ ] Setting `provider.type = "anthropic"` (or `"ollama"`) uses the new provider
-- [ ] Setting `provider.type = "openai"` (or omitting it) continues to use `OpenAiProvider`
-- [ ] The new provider streams responses token by token
-- [ ] The new provider supports tool calls and works with the tool-call loop
-- [ ] Invalid `provider.type` values produce a clear startup error
-- [ ] No OpenAI-specific logic exists in shared code paths (provider, API layer, etc.)
-- [ ] The `Provider` trait was NOT modified to accommodate the new provider (if it was, document why)
+- [x] Setting `provider.type = "lmstudio"` uses the new provider
+- [x] Setting `provider.type = "openai"` (or omitting it) continues to use `OpenAiProvider`
+- [x] The new provider streams responses token by token
+- [x] The new provider supports tool calls and works with the tool-call loop
+- [x] Invalid `provider.type` values produce a clear startup error
+- [x] No OpenAI-specific logic exists in shared code paths (provider, API layer, etc.)
+- [x] The `Provider` trait was NOT modified to accommodate the new provider
 
 ## Test Cases
 

@@ -55,11 +55,18 @@ const DEFAULT_SYSTEM_PROMPT: &str = "You are a helpful, friendly AI assistant.";
 
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct ProviderConfig {
+    #[serde(default = "default_provider_type", rename = "type")]
+    pub provider_type: String,
+    #[serde(default)]
     pub api_key: String,
     pub model: String,
     pub endpoint: String,
     #[serde(default = "default_system_prompt")]
     pub system_prompt: String,
+}
+
+fn default_provider_type() -> String {
+    "openai".to_string()
 }
 
 fn default_system_prompt() -> String {
@@ -146,14 +153,39 @@ endpoint = "https://api.openai.com/v1"
     }
 
     #[test]
-    fn missing_api_key_produces_clear_error() {
+    fn default_provider_type_is_openai() {
+        let toml = r#"
+[provider]
+api_key = "sk-test"
+model = "gpt-4"
+endpoint = "https://api.openai.com/v1"
+"#;
+        let config = Config::parse(toml).unwrap();
+        assert_eq!(config.provider.provider_type, "openai");
+    }
+
+    #[test]
+    fn explicit_provider_type_is_parsed() {
+        let toml = r#"
+[provider]
+type = "lmstudio"
+model = "deepseek-coder"
+endpoint = "http://localhost:1234/v1"
+"#;
+        let config = Config::parse(toml).unwrap();
+        assert_eq!(config.provider.provider_type, "lmstudio");
+        assert_eq!(config.provider.api_key, "");
+    }
+
+    #[test]
+    fn api_key_defaults_to_empty_when_omitted() {
         let toml = r#"
 [provider]
 model = "gpt-4"
 endpoint = "https://api.openai.com/v1"
 "#;
-        let err = Config::parse(toml).unwrap_err();
-        assert!(err.contains("api_key"), "error should mention api_key: {err}");
+        let config = Config::parse(toml).unwrap();
+        assert_eq!(config.provider.api_key, "");
     }
 
     #[test]
