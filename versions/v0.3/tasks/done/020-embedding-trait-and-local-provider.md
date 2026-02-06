@@ -33,13 +33,13 @@ buddy can embed text into vectors locally without any external API calls. The em
 
 ## Acceptance Criteria
 
-- [ ] `Embedder` trait compiles and is object-safe (`Arc<dyn Embedder>` works)
-- [ ] `LocalEmbedder` embeds text into 384-dimensional vectors using `all-MiniLM-L6-v2`
-- [ ] Batch embedding works (multiple texts in one call)
-- [ ] `dimensions()` returns `384` for the default model
-- [ ] `model_name()` returns `"all-MiniLM-L6-v2"`
-- [ ] When `[models.embedding]` is not configured, `AppState.embedder` is `None`
-- [ ] Embedding errors produce clear `EmbedError` messages
+- [x] `Embedder` trait compiles and is object-safe (`Arc<dyn Embedder>` works)
+- [x] `LocalEmbedder` embeds text into 384-dimensional vectors using `all-MiniLM-L6-v2`
+- [x] Batch embedding works (multiple texts in one call)
+- [x] `dimensions()` returns `384` for the default model
+- [x] `model_name()` returns `"all-MiniLM-L6-v2"`
+- [x] When `[models.embedding]` is not configured, `AppState.embedder` is `None`
+- [x] Embedding errors produce clear `EmbedError` messages
 
 ## Test Cases
 

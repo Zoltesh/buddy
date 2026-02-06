@@ -8,6 +8,7 @@ use tower_http::services::ServeDir;
 
 mod api;
 mod config;
+mod embedding;
 mod provider;
 mod skill;
 pub mod store;
@@ -96,12 +97,31 @@ async fn main() {
     let provider_count = chain_entries.len();
     let provider = ProviderChain::new(chain_entries);
 
+    // Build the optional embedder from config.
+    let embedder: Option<Arc<dyn embedding::Embedder>> = config
+        .models
+        .embedding
+        .as_ref()
+        .and_then(|slot| {
+            slot.providers
+                .iter()
+                .find(|e| e.provider_type == "local")
+        })
+        .map(|_| {
+            let e = embedding::local::LocalEmbedder::new().unwrap_or_else(|e| {
+                eprintln!("Error: failed to initialize local embedder: {e}");
+                std::process::exit(1);
+            });
+            Arc::new(e) as Arc<dyn embedding::Embedder>
+        });
+
     let registry = build_registry(&config.skills);
     let skill_count = registry.len();
     let state = Arc::new(AppState {
         provider,
         registry,
         store,
+        embedder: embedder.clone(),
     });
 
     let app = Router::new()
@@ -118,13 +138,19 @@ async fn main() {
             std::process::exit(1);
         });
 
+    let embedder_status = match &embedder {
+        Some(e) => format!("{} ({}d)", e.model_name(), e.dimensions()),
+        None => "none".into(),
+    };
+
     println!("buddy server started");
-    println!("  address:  http://{addr}");
-    println!("  provider: {primary_type}");
-    println!("  model:    {primary_model}");
-    println!("  chain:    {provider_count} provider(s)");
-    println!("  skills:   {skill_count} registered");
-    println!("  database: {db_path}");
+    println!("  address:    http://{addr}");
+    println!("  provider:   {primary_type}");
+    println!("  model:      {primary_model}");
+    println!("  chain:      {provider_count} provider(s)");
+    println!("  embedder:   {embedder_status}");
+    println!("  skills:     {skill_count} registered");
+    println!("  database:   {db_path}");
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
