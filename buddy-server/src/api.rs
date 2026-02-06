@@ -45,6 +45,7 @@ pub struct ChatRequest {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ChatEvent {
     ConversationMeta { conversation_id: String },
+    Warning { message: String },
     TokenDelta { content: String },
     ToolCallStart { id: String, name: String, arguments: String },
     ToolCallResult { id: String, content: String },
@@ -330,6 +331,9 @@ async fn run_tool_loop<P: Provider>(
                         })
                         .await;
                 }
+                Ok(Token::Warning { message }) => {
+                    let _ = tx.send(ChatEvent::Warning { message }).await;
+                }
                 Ok(Token::ToolCall {
                     id,
                     name,
@@ -453,10 +457,12 @@ mod tests {
     use tower::ServiceExt;
     use tower_http::services::ServeDir;
 
+    use crate::provider::ProviderChain;
     use crate::skill::SkillRegistry;
     use crate::testutil::{
-        FailingSkill, MockEchoSkill, MockProvider, MockResponse, SequencedProvider,
-        make_chat_body, make_chat_body_with_conversation, post_chat, post_chat_raw,
+        ConfigurableMockProvider, FailingSkill, MockEchoSkill, MockProvider, MockResponse,
+        SequencedProvider, make_chat_body, make_chat_body_with_conversation, post_chat,
+        post_chat_raw,
     };
 
     // ── Helpers ─────────────────────────────────────────────────────────
@@ -844,6 +850,54 @@ mod tests {
 
             assert!(has_start, "expected ToolCallStart in SSE stream");
             assert!(has_result, "expected ToolCallResult in SSE stream");
+        }
+
+        #[tokio::test]
+        async fn fallback_emits_warning_event_in_sse_stream() {
+            let chain = ProviderChain::new(vec![
+                (
+                    ConfigurableMockProvider::FailNetwork("down".into()),
+                    "primary".into(),
+                ),
+                (
+                    ConfigurableMockProvider::Succeed(vec!["fallback response".into()]),
+                    "fallback-model".into(),
+                ),
+            ]);
+            let state = Arc::new(AppState {
+                provider: chain,
+                registry: SkillRegistry::new(),
+                store: crate::store::Store::open_in_memory().unwrap(),
+            });
+            let app = Router::new()
+                .route(
+                    "/api/chat",
+                    post(chat_handler::<ProviderChain<ConfigurableMockProvider>>),
+                )
+                .with_state(state);
+
+            let events = post_chat(app, &make_chat_body()).await;
+
+            // Warning should appear before the token delta.
+            let warning_idx = events
+                .iter()
+                .position(|e| matches!(e, ChatEvent::Warning { .. }))
+                .expect("expected a Warning event in the SSE stream");
+            let delta_idx = events
+                .iter()
+                .position(|e| matches!(e, ChatEvent::TokenDelta { .. }))
+                .expect("expected a TokenDelta event");
+            assert!(
+                warning_idx < delta_idx,
+                "Warning should come before TokenDelta"
+            );
+
+            // Verify the warning mentions the fallback model.
+            assert!(matches!(
+                &events[warning_idx],
+                ChatEvent::Warning { message } if message.contains("fallback-model")
+            ));
+            assert!(events.last() == Some(&ChatEvent::Done));
         }
     }
 

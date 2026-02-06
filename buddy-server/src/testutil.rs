@@ -177,6 +177,35 @@ impl Provider for SequencedProvider {
     }
 }
 
+// ── Configurable mock provider (for fallback chain tests) ───────────────
+
+/// A mock provider whose behavior (succeed or fail) is fixed at construction.
+pub enum ConfigurableMockProvider {
+    Succeed(Vec<String>),
+    FailNetwork(String),
+}
+
+impl Provider for ConfigurableMockProvider {
+    async fn complete(
+        &self,
+        _messages: Vec<Message>,
+        _tools: Option<Vec<serde_json::Value>>,
+    ) -> Result<TokenStream, ProviderError> {
+        match self {
+            Self::Succeed(tokens) => {
+                let tokens = tokens.clone();
+                let stream = async_stream::try_stream! {
+                    for text in tokens {
+                        yield Token::Text { text };
+                    }
+                };
+                Ok(Box::pin(stream))
+            }
+            Self::FailNetwork(msg) => Err(ProviderError::Network(msg.clone())),
+        }
+    }
+}
+
 // ── HTTP test helpers ───────────────────────────────────────────────────
 
 pub fn parse_sse_events(body: &str) -> Vec<ChatEvent> {

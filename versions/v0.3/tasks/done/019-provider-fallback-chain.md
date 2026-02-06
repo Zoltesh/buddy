@@ -25,21 +25,21 @@ Chat requests transparently fall back to secondary providers when the primary is
 
 ## Acceptance Criteria
 
-- [ ] When the primary provider returns a network error, the next provider in the chain is tried
-- [ ] When the primary provider returns a rate-limit error, the next provider is tried
-- [ ] Auth errors are NOT retried with fallback providers
-- [ ] When all providers fail, the last error is returned
-- [ ] A `ChatEvent::Warning` is emitted when falling back to a non-primary provider
-- [ ] Single-provider chains work identically to a bare provider
-- [ ] The tool-call loop works correctly with `ProviderChain`
-- [ ] Existing tests pass with `ProviderChain` wrapping a single provider
+- [x] When the primary provider returns a network error, the next provider in the chain is tried
+- [x] When the primary provider returns a rate-limit error, the next provider is tried
+- [x] Auth errors are NOT retried with fallback providers
+- [x] When all providers fail, the last error is returned
+- [x] A `ChatEvent::Warning` is emitted when falling back to a non-primary provider
+- [x] Single-provider chains work identically to a bare provider
+- [x] The tool-call loop works correctly with `ProviderChain`
+- [x] Existing tests pass with `ProviderChain` wrapping a single provider
 
 ## Test Cases
 
-- Create a chain with two mock providers; first returns `Network` error, second returns text; assert the second provider is called and text is returned
-- Create a chain with two mock providers; first returns `RateLimit` error; assert fallback to second
-- Create a chain with two mock providers; first returns `Auth` error; assert fallback is NOT attempted and `Auth` error is returned
-- Create a chain with three mock providers; first two return `Network` errors, third succeeds; assert third provider's response is returned
-- Create a chain with two mock providers; both return `Network` errors; assert the last error is returned
-- Create a chain with one provider that succeeds; assert it works identically to calling the provider directly
-- Assert that when fallback occurs, the SSE stream includes a `Warning` event before the response
+- [x] Create a chain with two mock providers; first returns `Network` error, second returns text; assert the second provider is called and text is returned
+- [x] Create a chain with two mock providers; first returns `RateLimit` error; assert fallback to second
+- [x] Create a chain with two mock providers; first returns `Auth` error; assert fallback is NOT attempted and `Auth` error is returned
+- [x] Create a chain with three mock providers; first two return `Network` errors, third succeeds; assert third provider's response is returned
+- [x] Create a chain with two mock providers; both return `Network` errors; assert the last error is returned
+- [x] Create a chain with one provider that succeeds; assert it works identically to calling the provider directly
+- [x] Assert that when fallback occurs, the SSE stream includes a `Warning` event before the response
