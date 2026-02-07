@@ -33,19 +33,19 @@ Users can test whether a provider endpoint is reachable and the credentials are 
 
 ## Acceptance Criteria
 
-- [ ] `POST /api/config/test-provider` accepts a provider entry and returns a result
-- [ ] Successful connection returns `{ "status": "ok" }`
-- [ ] Connection failure returns `{ "status": "error", "message": "..." }` with a descriptive message
-- [ ] Missing env var returns an immediate error without attempting connection
-- [ ] Unknown provider type returns a validation error
-- [ ] Request times out after 5 seconds if the endpoint is unresponsive
-- [ ] No state is modified by the test
+- [x] `POST /api/config/test-provider` accepts a provider entry and returns a result
+- [x] Successful connection returns `{ "status": "ok" }`
+- [x] Connection failure returns `{ "status": "error", "message": "..." }` with a descriptive message
+- [x] Missing env var returns an immediate error without attempting connection
+- [x] Unknown provider type returns a validation error
+- [x] Request times out after 5 seconds if the endpoint is unresponsive
+- [x] No state is modified by the test
 
 ## Test Cases
 
-- [ ] POST a provider entry with an unreachable endpoint (e.g., `http://127.0.0.1:1`); assert `status: "error"` with a connection error message
-- [ ] POST a provider entry with a missing `api_key_env` value (env var not set); assert `status: "error"` mentioning the env var name
-- [ ] POST a provider entry with an unknown `type`; assert 400 validation error
-- [ ] POST a provider entry with an empty `model`; assert 400 validation error
-- [ ] Assert the test endpoint does not modify the in-memory config or `buddy.toml`
-- [ ] Assert the request completes within the timeout even if the endpoint hangs (use a test server that never responds)
+- [x] POST a provider entry with an unreachable endpoint (e.g., `http://127.0.0.1:1`); assert `status: "error"` with a connection error message
+- [x] POST a provider entry with a missing `api_key_env` value (env var not set); assert `status: "error"` mentioning the env var name
+- [x] POST a provider entry with an unknown `type`; assert 400 validation error
+- [x] POST a provider entry with an empty `model`; assert 400 validation error
+- [x] Assert the test endpoint does not modify the in-memory config or `buddy.toml`
+- [x] Assert the request completes within the timeout even if the endpoint hangs (use a test server that never responds)

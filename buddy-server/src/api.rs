@@ -520,6 +520,144 @@ pub async fn put_config_memory<P: Provider + 'static>(
     Json(config.clone()).into_response()
 }
 
+// ── Provider connection test ────────────────────────────────────────────
+
+#[derive(Serialize, Deserialize)]
+pub struct TestProviderResponse {
+    pub status: String,
+    pub message: String,
+}
+
+/// `POST /api/config/test-provider` — dry-run connectivity check for a provider.
+pub async fn test_provider<P: Provider + 'static>(
+    State(_state): State<Arc<AppState<P>>>,
+    Json(entry): Json<crate::config::ProviderEntry>,
+) -> axum::response::Response {
+    // Validate provider type.
+    if !["openai", "lmstudio", "local"].contains(&entry.provider_type.as_str()) {
+        let errors = vec![FieldError {
+            field: "type".into(),
+            message: format!(
+                "unknown provider type '{}'; expected openai, lmstudio, or local",
+                entry.provider_type
+            ),
+        }];
+        return (StatusCode::BAD_REQUEST, Json(ValidationErrorResponse { errors }))
+            .into_response();
+    }
+
+    // Validate model is not empty.
+    if entry.model.is_empty() {
+        let errors = vec![FieldError {
+            field: "model".into(),
+            message: "must not be empty".into(),
+        }];
+        return (StatusCode::BAD_REQUEST, Json(ValidationErrorResponse { errors }))
+            .into_response();
+    }
+
+    // Resolve API key from env.
+    let api_key = match entry.resolve_api_key() {
+        Ok(key) => key,
+        Err(msg) => {
+            return Json(TestProviderResponse {
+                status: "error".into(),
+                message: msg,
+            })
+            .into_response();
+        }
+    };
+
+    // OpenAI type requires an API key.
+    if entry.provider_type == "openai" && api_key.is_empty() {
+        return Json(TestProviderResponse {
+            status: "error".into(),
+            message: "api_key_env is required when type = \"openai\"".into(),
+        })
+        .into_response();
+    }
+
+    // Local embedding providers have no remote endpoint to test.
+    if entry.provider_type == "local" {
+        return Json(TestProviderResponse {
+            status: "ok".into(),
+            message: "Local provider does not require a connection test".into(),
+        })
+        .into_response();
+    }
+
+    let endpoint = match &entry.endpoint {
+        Some(ep) => ep.clone(),
+        None => {
+            return Json(TestProviderResponse {
+                status: "error".into(),
+                message: "endpoint is required for remote providers".into(),
+            })
+            .into_response();
+        }
+    };
+
+    // Build a reqwest client with a 5-second timeout.
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            return Json(TestProviderResponse {
+                status: "error".into(),
+                message: format!("failed to build HTTP client: {e}"),
+            })
+            .into_response();
+        }
+    };
+
+    // Send a minimal non-streaming chat completion request.
+    let url = format!("{}/chat/completions", endpoint.trim_end_matches('/'));
+    let body = serde_json::json!({
+        "model": entry.model,
+        "messages": [{"role": "user", "content": "hi"}],
+        "max_tokens": 1,
+        "stream": false,
+    });
+
+    let mut request = client.post(&url).json(&body);
+    if !api_key.is_empty() {
+        request = request.header("Authorization", format!("Bearer {api_key}"));
+    }
+
+    let result = request.send().await;
+
+    match result {
+        Ok(response) => {
+            let status_code = response.status();
+            if status_code.is_success() {
+                Json(TestProviderResponse {
+                    status: "ok".into(),
+                    message: "Connected successfully".into(),
+                })
+                .into_response()
+            } else {
+                let body_text = response.text().await.unwrap_or_default();
+                let error = crate::provider::openai::map_error_status(
+                    status_code.as_u16(),
+                    &body_text,
+                );
+                Json(TestProviderResponse {
+                    status: "error".into(),
+                    message: format!("{error}"),
+                })
+                .into_response()
+            }
+        }
+        Err(e) => Json(TestProviderResponse {
+            status: "error".into(),
+            message: format!("Connection failed: {e}"),
+        })
+        .into_response(),
+    }
+}
+
 // ── Memory management handlers ──────────────────────────────────────────
 
 /// `POST /api/memory/migrate` — re-embed all stored memories using the current model.
@@ -3179,6 +3317,268 @@ endpoint = "http://localhost:1234/v1"
             assert_eq!(err.errors.len(), 4, "expected 4 validation errors, got: {:?}", err.errors);
 
             std::fs::remove_dir_all(&dir).ok();
+        }
+
+        // ── test-provider endpoint tests ────────────────────────────────
+
+        fn test_provider_app() -> Router {
+            let state = Arc::new(AppState {
+                provider: arc_swap::ArcSwap::from_pointee(MockProvider {
+                    tokens: vec!["hi".into()],
+                }),
+                registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
+                store: crate::store::Store::open_in_memory().unwrap(),
+                embedder: arc_swap::ArcSwap::from_pointee(None),
+                vector_store: arc_swap::ArcSwap::from_pointee(None),
+                working_memory: crate::skill::working_memory::new_working_memory_map(),
+                memory_config: arc_swap::ArcSwap::from_pointee(
+                    crate::config::MemoryConfig::default(),
+                ),
+                warnings: crate::warning::new_shared_warnings(),
+                pending_approvals: new_pending_approvals(),
+                conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
+                approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
+                approval_timeout: std::time::Duration::from_secs(1),
+                config: std::sync::RwLock::new(test_config()),
+                config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
+                on_config_change: None,
+            });
+            Router::new()
+                .route(
+                    "/api/config/test-provider",
+                    post(test_provider::<MockProvider>),
+                )
+                .route("/api/config", get(get_config::<MockProvider>))
+                .with_state(state)
+        }
+
+        #[tokio::test]
+        async fn test_provider_unknown_type_returns_400() {
+            let app = test_provider_app();
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/api/config/test-provider")
+                        .header("content-type", "application/json")
+                        .body(Body::from(
+                            serde_json::json!({
+                                "type": "unknown",
+                                "model": "some-model",
+                                "endpoint": "http://localhost:1234/v1"
+                            })
+                            .to_string(),
+                        ))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert!(json["errors"][0]["message"]
+                .as_str()
+                .unwrap()
+                .contains("unknown provider type"));
+        }
+
+        #[tokio::test]
+        async fn test_provider_empty_model_returns_400() {
+            let app = test_provider_app();
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/api/config/test-provider")
+                        .header("content-type", "application/json")
+                        .body(Body::from(
+                            serde_json::json!({
+                                "type": "openai",
+                                "model": "",
+                                "endpoint": "http://localhost:1234/v1"
+                            })
+                            .to_string(),
+                        ))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert!(json["errors"][0]["message"]
+                .as_str()
+                .unwrap()
+                .contains("must not be empty"));
+        }
+
+        #[tokio::test]
+        async fn test_provider_missing_env_var_returns_error() {
+            let app = test_provider_app();
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/api/config/test-provider")
+                        .header("content-type", "application/json")
+                        .body(Body::from(
+                            serde_json::json!({
+                                "type": "openai",
+                                "model": "gpt-4",
+                                "endpoint": "https://api.openai.com/v1",
+                                "api_key_env": "BUDDY_TEST_NOTSET_032"
+                            })
+                            .to_string(),
+                        ))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), StatusCode::OK);
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(json["status"], "error");
+            assert!(json["message"]
+                .as_str()
+                .unwrap()
+                .contains("BUDDY_TEST_NOTSET_032"));
+        }
+
+        #[tokio::test]
+        async fn test_provider_unreachable_endpoint_returns_error() {
+            let app = test_provider_app();
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/api/config/test-provider")
+                        .header("content-type", "application/json")
+                        .body(Body::from(
+                            serde_json::json!({
+                                "type": "lmstudio",
+                                "model": "test-model",
+                                "endpoint": "http://127.0.0.1:1"
+                            })
+                            .to_string(),
+                        ))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), StatusCode::OK);
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(json["status"], "error");
+            assert!(json["message"]
+                .as_str()
+                .unwrap()
+                .contains("Connection failed"));
+        }
+
+        #[tokio::test]
+        async fn test_provider_does_not_modify_config() {
+            let app = test_provider_app();
+
+            // Read config before.
+            let before = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("GET")
+                        .uri("/api/config")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let before_bytes = before.into_body().collect().await.unwrap().to_bytes();
+
+            // Fire test-provider (will fail — unreachable endpoint).
+            let _ = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/api/config/test-provider")
+                        .header("content-type", "application/json")
+                        .body(Body::from(
+                            serde_json::json!({
+                                "type": "lmstudio",
+                                "model": "test-model",
+                                "endpoint": "http://127.0.0.1:1"
+                            })
+                            .to_string(),
+                        ))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+
+            // Read config after.
+            let after = app
+                .oneshot(
+                    Request::builder()
+                        .method("GET")
+                        .uri("/api/config")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let after_bytes = after.into_body().collect().await.unwrap().to_bytes();
+
+            assert_eq!(before_bytes, after_bytes);
+        }
+
+        #[tokio::test]
+        async fn test_provider_timeout_when_endpoint_hangs() {
+            // Start a TCP listener that accepts but never responds.
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+
+            // Keep the listener alive but never read/write.
+            let _handle = tokio::spawn(async move {
+                loop {
+                    let _ = listener.accept().await;
+                }
+            });
+
+            let app = test_provider_app();
+            let start = std::time::Instant::now();
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/api/config/test-provider")
+                        .header("content-type", "application/json")
+                        .body(Body::from(
+                            serde_json::json!({
+                                "type": "lmstudio",
+                                "model": "test-model",
+                                "endpoint": format!("http://{addr}")
+                            })
+                            .to_string(),
+                        ))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let elapsed = start.elapsed();
+
+            assert_eq!(response.status(), StatusCode::OK);
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(json["status"], "error");
+
+            // Should complete within ~5s (with slack), not hang forever.
+            assert!(
+                elapsed < std::time::Duration::from_secs(10),
+                "request took too long: {elapsed:?}"
+            );
         }
     }
 
