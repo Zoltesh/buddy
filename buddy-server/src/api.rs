@@ -67,6 +67,7 @@ pub struct AppState<P> {
     pub store: crate::store::Store,
     pub embedder: Option<std::sync::Arc<dyn crate::embedding::Embedder>>,
     pub vector_store: Option<std::sync::Arc<dyn crate::memory::VectorStore>>,
+    pub working_memory: crate::skill::working_memory::WorkingMemoryMap,
 }
 
 // ── Conversation CRUD handlers ──────────────────────────────────────────
@@ -420,8 +421,32 @@ async fn run_tool_loop<P: Provider>(
     }
 
     for _iteration in 0..MAX_TOOL_ITERATIONS {
+        // If the conversation has non-empty working memory, inject it as a system
+        // message so the LLM can see its own notes.
+        let mut provider_messages = messages.clone();
+        {
+            let wm_map = state.working_memory.lock().unwrap();
+            if let Some(wm) = wm_map.get(&conversation_id) {
+                if !wm.is_empty() {
+                    provider_messages.insert(
+                        0,
+                        Message {
+                            role: Role::System,
+                            content: MessageContent::Text {
+                                text: format!(
+                                    "[Working Memory]\n{}",
+                                    wm.to_context_string()
+                                ),
+                            },
+                            timestamp: Utc::now(),
+                        },
+                    );
+                }
+            }
+        }
+
         // Call the provider.
-        let token_stream = match state.provider.complete(messages.clone(), tools.clone()).await {
+        let token_stream = match state.provider.complete(provider_messages, tools.clone()).await {
             Ok(s) => s,
             Err(e) => {
                 let _ = tx.send(ChatEvent::Error { message: e.to_string() }).await;
@@ -509,8 +534,15 @@ async fn run_tool_loop<P: Provider>(
             // Execute the skill.
             let result_content = match state.registry.get(name) {
                 Some(skill) => {
-                    let input: serde_json::Value = serde_json::from_str(arguments)
+                    let mut input: serde_json::Value = serde_json::from_str(arguments)
                         .unwrap_or_else(|_| serde_json::json!({}));
+                    // Inject conversation context so skills can access per-conversation state.
+                    if let Some(obj) = input.as_object_mut() {
+                        obj.insert(
+                            "conversation_id".to_string(),
+                            serde_json::Value::String(conversation_id.clone()),
+                        );
+                    }
                     match skill.execute(input).await {
                         Ok(output) => serde_json::to_string(&output)
                             .unwrap_or_else(|_| "{}".to_string()),
@@ -601,6 +633,7 @@ mod tests {
             store: crate::store::Store::open_in_memory().unwrap(),
             embedder: None,
             vector_store: None,
+            working_memory: crate::skill::working_memory::new_working_memory_map(),
         });
         Router::new()
             .route("/api/chat", post(chat_handler::<MockProvider>))
@@ -614,6 +647,7 @@ mod tests {
             store: crate::store::Store::open_in_memory().unwrap(),
             embedder: None,
             vector_store: None,
+            working_memory: crate::skill::working_memory::new_working_memory_map(),
         });
         Router::new()
             .route("/api/chat", post(chat_handler::<MockProvider>))
@@ -628,6 +662,7 @@ mod tests {
             store: crate::store::Store::open_in_memory().unwrap(),
             embedder: None,
             vector_store: None,
+            working_memory: crate::skill::working_memory::new_working_memory_map(),
         });
         Router::new()
             .route("/api/chat", post(chat_handler::<SequencedProvider>))
@@ -641,6 +676,7 @@ mod tests {
             store: crate::store::Store::open_in_memory().unwrap(),
             embedder: None,
             vector_store: None,
+            working_memory: crate::skill::working_memory::new_working_memory_map(),
         });
         let router = Router::new()
             .route("/api/chat", post(chat_handler::<MockProvider>))
@@ -993,6 +1029,7 @@ mod tests {
                 store: crate::store::Store::open_in_memory().unwrap(),
                 embedder: None,
                 vector_store: None,
+                working_memory: crate::skill::working_memory::new_working_memory_map(),
             });
             let app = Router::new()
                 .route(
@@ -1203,6 +1240,7 @@ mod tests {
                 store: crate::store::Store::open_in_memory().unwrap(),
                 embedder: None,
                 vector_store: None,
+                working_memory: crate::skill::working_memory::new_working_memory_map(),
             });
             let app = Router::new()
                 .route("/api/chat", post(chat_handler::<SequencedProvider>))

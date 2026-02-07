@@ -130,7 +130,10 @@ async fn main() {
         Arc::new(vs) as Arc<dyn memory::VectorStore>
     });
 
-    let registry = build_registry(&config.skills);
+    let working_memory = skill::working_memory::new_working_memory_map();
+    let mut registry = build_registry(&config.skills);
+    registry.register(Box::new(skill::working_memory::MemoryWriteSkill::new(working_memory.clone())));
+    registry.register(Box::new(skill::working_memory::MemoryReadSkill::new(working_memory.clone())));
     let skill_count = registry.len();
     let state = Arc::new(AppState {
         provider,
@@ -138,6 +141,7 @@ async fn main() {
         store,
         embedder: embedder.clone(),
         vector_store,
+        working_memory,
     });
 
     let app = Router::new()

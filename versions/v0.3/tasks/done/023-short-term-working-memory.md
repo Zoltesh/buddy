@@ -32,23 +32,23 @@ The LLM can maintain working context within a conversation — tracking names, p
 
 ## Acceptance Criteria
 
-- [ ] `memory_write` with `action: "set"` stores a key-value pair retrievable by `memory_read`
-- [ ] `memory_write` with `action: "note"` appends a free-form note
-- [ ] `memory_write` with `action: "delete"` removes a key
-- [ ] `memory_write` with `action: "clear"` empties the entire scratchpad
-- [ ] `memory_read` with a key returns that key's value
-- [ ] `memory_read` without a key returns all stored data
-- [ ] Working memory is per-conversation (two conversations have independent scratchpads)
-- [ ] Working memory is cleared on server restart (not persisted)
-- [ ] Non-empty working memory is included in the system prompt context
-- [ ] Both skills appear in `tool_definitions()` with correct schemas
+- [x] `memory_write` with `action: "set"` stores a key-value pair retrievable by `memory_read`
+- [x] `memory_write` with `action: "note"` appends a free-form note
+- [x] `memory_write` with `action: "delete"` removes a key
+- [x] `memory_write` with `action: "clear"` empties the entire scratchpad
+- [x] `memory_read` with a key returns that key's value
+- [x] `memory_read` without a key returns all stored data
+- [x] Working memory is per-conversation (two conversations have independent scratchpads)
+- [x] Working memory is cleared on server restart (not persisted)
+- [x] Non-empty working memory is included in the system prompt context
+- [x] Both skills appear in `tool_definitions()` with correct schemas
 
 ## Test Cases
 
-- Call `memory_write` with `{ "action": "set", "key": "name", "value": "Alice" }`; call `memory_read` with `{ "key": "name" }`; assert result contains `"Alice"`
-- Call `memory_write` with `{ "action": "note", "value": "User prefers dark mode" }`; call `memory_read` with no key; assert notes contain the text
-- Call `memory_write` with `{ "action": "delete", "key": "name" }` after setting it; call `memory_read` with `{ "key": "name" }`; assert not found
-- Call `memory_write` with `{ "action": "clear" }` after setting several entries; call `memory_read`; assert empty
-- Write to conversation "A"; read from conversation "B"; assert B's scratchpad is empty
-- Call `memory_write` with invalid action (e.g. `"action": "foo"`); assert `SkillError::InvalidInput`
-- Call `memory_write` with `"set"` but missing `key`; assert `SkillError::InvalidInput`
+- [x] Call `memory_write` with `{ "action": "set", "key": "name", "value": "Alice" }`; call `memory_read` with `{ "key": "name" }`; assert result contains `"Alice"`
+- [x] Call `memory_write` with `{ "action": "note", "value": "User prefers dark mode" }`; call `memory_read` with no key; assert notes contain the text
+- [x] Call `memory_write` with `{ "action": "delete", "key": "name" }` after setting it; call `memory_read` with `{ "key": "name" }`; assert not found
+- [x] Call `memory_write` with `{ "action": "clear" }` after setting several entries; call `memory_read`; assert empty
+- [x] Write to conversation "A"; read from conversation "B"; assert B's scratchpad is empty
+- [x] Call `memory_write` with invalid action (e.g. `"action": "foo"`); assert `SkillError::InvalidInput`
+- [x] Call `memory_write` with `"set"` but missing `key`; assert `SkillError::InvalidInput`
