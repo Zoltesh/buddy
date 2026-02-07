@@ -1,5 +1,6 @@
 pub mod fetch_url;
 pub mod read_file;
+pub mod recall;
 pub mod remember;
 pub mod working_memory;
 pub mod write_file;

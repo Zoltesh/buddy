@@ -39,21 +39,21 @@ The LLM can explicitly search its long-term memory to find previously stored fac
 
 ## Acceptance Criteria
 
-- [ ] `recall` skill embeds the query and searches the vector store
-- [ ] Results are returned ordered by similarity score (highest first)
-- [ ] The `limit` parameter caps the number of results
-- [ ] Default limit is 5 when not specified
-- [ ] Calling `recall` without an embedding model returns a clear error
-- [ ] Searching an empty store returns an empty results list (not an error)
-- [ ] The skill appears in `tool_definitions()` with correct schema
-- [ ] Results include source text, category, score, and timestamp
+- [x] `recall` skill embeds the query and searches the vector store
+- [x] Results are returned ordered by similarity score (highest first)
+- [x] The `limit` parameter caps the number of results
+- [x] Default limit is 5 when not specified
+- [x] Calling `recall` without an embedding model returns a clear error
+- [x] Searching an empty store returns an empty results list (not an error)
+- [x] The skill appears in `tool_definitions()` with correct schema
+- [x] Results include source text, category, score, and timestamp
 
 ## Test Cases
 
-- Store 3 memories via `remember`; call `recall` with a related query; assert relevant memories are returned with scores
-- Call `recall` with `limit: 1`; assert only 1 result is returned
-- Call `recall` with `limit` omitted; assert default limit of 5 is used
-- Call `recall` on an empty vector store; assert empty results, no error
-- Call `recall` when no embedder is configured; assert `SkillError::ExecutionFailed`
-- Call `recall` with empty `query`; assert `SkillError::InvalidInput`
-- Store memories about "cooking" and "programming"; recall "food recipes"; assert cooking-related memories rank higher
+- [x] Store 3 memories via `remember`; call `recall` with a related query; assert relevant memories are returned with scores
+- [x] Call `recall` with `limit: 1`; assert only 1 result is returned
+- [x] Call `recall` with `limit` omitted; assert default limit of 5 is used
+- [x] Call `recall` on an empty vector store; assert empty results, no error
+- [x] Call `recall` when no embedder is configured; assert `SkillError::ExecutionFailed`
+- [x] Call `recall` with empty `query`; assert `SkillError::InvalidInput`
+- [x] Store memories about "cooking" and "programming"; recall "food recipes"; assert cooking-related memories rank higher

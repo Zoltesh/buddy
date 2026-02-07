@@ -136,6 +136,7 @@ async fn main() {
     registry.register(Box::new(skill::working_memory::MemoryReadSkill::new(working_memory.clone())));
     if let (Some(emb), Some(vs)) = (&embedder, &vector_store) {
         registry.register(Box::new(skill::remember::RememberSkill::new(emb.clone(), vs.clone())));
+        registry.register(Box::new(skill::recall::RecallSkill::new(emb.clone(), vs.clone())));
     }
     let skill_count = registry.len();
     let state = Arc::new(AppState {
