@@ -35,20 +35,20 @@ Users are clearly informed when buddy is operating in a degraded mode (e.g. no e
 
 ## Acceptance Criteria
 
-- [ ] `Warning` struct and `WarningCollector` are implemented
-- [ ] `GET /api/warnings` returns current warnings as JSON
-- [ ] Startup without `[models.embedding]` produces a `no_embedding_model` warning
-- [ ] Startup with one chat provider produces a `single_chat_provider` info
-- [ ] Warnings are included as a `ChatEvent::Warnings` event in SSE chat streams
-- [ ] Warnings can be cleared when the underlying issue is resolved
-- [ ] Warning messages are human-readable and actionable (tell the user what to do)
+- [x] `Warning` struct and `WarningCollector` are implemented
+- [x] `GET /api/warnings` returns current warnings as JSON
+- [x] Startup without `[models.embedding]` produces a `no_embedding_model` warning
+- [x] Startup with one chat provider produces a `single_chat_provider` info
+- [x] Warnings are included as a `ChatEvent::Warnings` event in SSE chat streams
+- [x] Warnings can be cleared when the underlying issue is resolved
+- [x] Warning messages are human-readable and actionable (tell the user what to do)
 
 ## Test Cases
 
-- Start with no `[models.embedding]` config; call `GET /api/warnings`; assert `no_embedding_model` warning is present
-- Start with a valid full config; call `GET /api/warnings`; assert no warnings (or only informational)
-- Start with one chat provider; assert `single_chat_provider` info is present
-- Add a warning at runtime; call `GET /api/warnings`; assert it appears
-- Clear a warning by code; call `GET /api/warnings`; assert it is removed
-- Send a chat request; assert the SSE stream begins with a `Warnings` event (if warnings exist)
-- Assert warning messages include guidance (e.g. "edit buddy.toml under [models.embedding]")
+- [x] Start with no `[models.embedding]` config; call `GET /api/warnings`; assert `no_embedding_model` warning is present
+- [x] Start with a valid full config; call `GET /api/warnings`; assert no warnings (or only informational)
+- [x] Start with one chat provider; assert `single_chat_provider` info is present
+- [x] Add a warning at runtime; call `GET /api/warnings`; assert it appears
+- [x] Clear a warning by code; call `GET /api/warnings`; assert it is removed
+- [x] Send a chat request; assert the SSE stream begins with a `Warnings` event (if warnings exist)
+- [x] Assert warning messages include guidance (e.g. "edit buddy.toml under [models.embedding]")

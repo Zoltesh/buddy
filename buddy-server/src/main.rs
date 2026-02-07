@@ -16,8 +16,9 @@ pub mod store;
 #[cfg(test)]
 mod testutil;
 mod types;
+mod warning;
 
-use api::{chat_handler, clear_memory, create_conversation, delete_conversation, get_conversation, list_conversations, migrate_memory, AppState};
+use api::{chat_handler, clear_memory, create_conversation, delete_conversation, get_conversation, get_warnings, list_conversations, migrate_memory, AppState};
 use config::SkillsConfig;
 use provider::{AnyProvider, ProviderChain};
 use provider::lmstudio::LmStudioProvider;
@@ -139,6 +140,43 @@ async fn main() {
         registry.register(Box::new(skill::recall::RecallSkill::new(emb.clone(), vs.clone())));
     }
     let skill_count = registry.len();
+
+    // Collect startup warnings for degraded states.
+    let warnings = warning::new_shared_warnings();
+    {
+        let mut collector = warnings.write().unwrap();
+        if config.models.embedding.is_none() {
+            collector.add(warning::Warning {
+                code: "no_embedding_model".into(),
+                message: "No embedding model configured — memory features are disabled. Add a [models.embedding] section to buddy.toml.".into(),
+                severity: warning::WarningSeverity::Warning,
+            });
+        }
+        if embedder.is_some() && vector_store.is_none() {
+            collector.add(warning::Warning {
+                code: "no_vector_store".into(),
+                message: "Vector store failed to initialize — long-term memory is unavailable.".into(),
+                severity: warning::WarningSeverity::Warning,
+            });
+        }
+        if provider_count == 1 {
+            collector.add(warning::Warning {
+                code: "single_chat_provider".into(),
+                message: "Only one chat provider configured — no fallback available. Add additional [[models.chat.providers]] entries to buddy.toml for redundancy.".into(),
+                severity: warning::WarningSeverity::Info,
+            });
+        }
+        if let Some(vs) = &vector_store {
+            if vs.needs_migration() {
+                collector.add(warning::Warning {
+                    code: "embedding_dimension_mismatch".into(),
+                    message: "Stored embeddings don't match the current model — run POST /api/memory/migrate to re-embed.".into(),
+                    severity: warning::WarningSeverity::Warning,
+                });
+            }
+        }
+    }
+
     let state = Arc::new(AppState {
         provider,
         registry,
@@ -147,6 +185,7 @@ async fn main() {
         vector_store,
         working_memory,
         memory_config: config.memory.clone(),
+        warnings,
     });
 
     let app = Router::new()
@@ -155,6 +194,7 @@ async fn main() {
         .route("/api/conversations/{id}", get(get_conversation::<AppProvider>).delete(delete_conversation::<AppProvider>))
         .route("/api/memory/migrate", post(migrate_memory::<AppProvider>))
         .route("/api/memory", axum::routing::delete(clear_memory::<AppProvider>))
+        .route("/api/warnings", get(get_warnings::<AppProvider>))
         .with_state(state)
         .fallback_service(ServeDir::new("frontend/dist"));
 

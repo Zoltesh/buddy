@@ -56,6 +56,7 @@ pub struct MemorySnippet {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ChatEvent {
     ConversationMeta { conversation_id: String },
+    Warnings { warnings: Vec<crate::warning::Warning> },
     Warning { message: String },
     MemoryContext { memories: Vec<MemorySnippet> },
     TokenDelta { content: String },
@@ -81,6 +82,7 @@ pub struct AppState<P> {
     pub vector_store: Option<std::sync::Arc<dyn crate::memory::VectorStore>>,
     pub working_memory: crate::skill::working_memory::WorkingMemoryMap,
     pub memory_config: crate::config::MemoryConfig,
+    pub warnings: crate::warning::SharedWarnings,
 }
 
 // ── Conversation CRUD handlers ──────────────────────────────────────────
@@ -168,6 +170,16 @@ pub async fn delete_conversation<P: Provider + 'static>(
             }),
         ))
     }
+}
+
+// ── Warnings endpoint ───────────────────────────────────────────────────
+
+/// `GET /api/warnings` — return current system warnings.
+pub async fn get_warnings<P: Provider + 'static>(
+    State(state): State<Arc<AppState<P>>>,
+) -> Json<Vec<crate::warning::Warning>> {
+    let collector = state.warnings.read().unwrap();
+    Json(collector.list().to_vec())
 }
 
 // ── Memory management handlers ──────────────────────────────────────────
@@ -433,6 +445,15 @@ async fn run_tool_loop<P: Provider>(
     // Persist only new incoming messages (existing ones are already in the DB).
     for msg in &messages[persist_from..] {
         persist_message(&state.store, &conversation_id, msg);
+    }
+
+    // Emit current warnings at the start of the stream.
+    let startup_warnings = {
+        let collector = state.warnings.read().unwrap();
+        collector.list().to_vec()
+    };
+    if !startup_warnings.is_empty() {
+        let _ = tx.send(ChatEvent::Warnings { warnings: startup_warnings }).await;
     }
 
     // Automatic context retrieval: search long-term memory for relevant memories.
@@ -717,6 +738,7 @@ mod tests {
             vector_store: None,
             working_memory: crate::skill::working_memory::new_working_memory_map(),
             memory_config: crate::config::MemoryConfig::default(),
+            warnings: crate::warning::new_shared_warnings(),
         });
         Router::new()
             .route("/api/chat", post(chat_handler::<MockProvider>))
@@ -732,6 +754,7 @@ mod tests {
             vector_store: None,
             working_memory: crate::skill::working_memory::new_working_memory_map(),
             memory_config: crate::config::MemoryConfig::default(),
+            warnings: crate::warning::new_shared_warnings(),
         });
         Router::new()
             .route("/api/chat", post(chat_handler::<MockProvider>))
@@ -748,6 +771,7 @@ mod tests {
             vector_store: None,
             working_memory: crate::skill::working_memory::new_working_memory_map(),
             memory_config: crate::config::MemoryConfig::default(),
+            warnings: crate::warning::new_shared_warnings(),
         });
         Router::new()
             .route("/api/chat", post(chat_handler::<SequencedProvider>))
@@ -763,6 +787,7 @@ mod tests {
             vector_store: None,
             working_memory: crate::skill::working_memory::new_working_memory_map(),
             memory_config: crate::config::MemoryConfig::default(),
+            warnings: crate::warning::new_shared_warnings(),
         });
         let router = Router::new()
             .route("/api/chat", post(chat_handler::<MockProvider>))
@@ -1117,6 +1142,7 @@ mod tests {
                 vector_store: None,
                 working_memory: crate::skill::working_memory::new_working_memory_map(),
                 memory_config: crate::config::MemoryConfig::default(),
+                warnings: crate::warning::new_shared_warnings(),
             });
             let app = Router::new()
                 .route(
@@ -1329,6 +1355,7 @@ mod tests {
                 vector_store: None,
                 working_memory: crate::skill::working_memory::new_working_memory_map(),
                 memory_config: crate::config::MemoryConfig::default(),
+                warnings: crate::warning::new_shared_warnings(),
             });
             let app = Router::new()
                 .route("/api/chat", post(chat_handler::<SequencedProvider>))
@@ -1371,6 +1398,236 @@ mod tests {
             assert!(
                 matches!(&events[0], ChatEvent::ConversationMeta { conversation_id } if !conversation_id.is_empty()),
                 "SSE stream must start with ConversationMeta"
+            );
+        }
+    }
+
+    // ── Warning system tests ──────────────────────────────────────────────
+
+    mod warnings {
+        use super::*;
+        use crate::warning::{new_shared_warnings, Warning, WarningSeverity};
+
+        fn warnings_app(
+            tokens: Vec<String>,
+            setup: impl FnOnce(&mut crate::warning::WarningCollector),
+        ) -> Router {
+            let warnings = new_shared_warnings();
+            {
+                let mut collector = warnings.write().unwrap();
+                setup(&mut collector);
+            }
+            let state = Arc::new(AppState {
+                provider: MockProvider { tokens },
+                registry: SkillRegistry::new(),
+                store: crate::store::Store::open_in_memory().unwrap(),
+                embedder: None,
+                vector_store: None,
+                working_memory: crate::skill::working_memory::new_working_memory_map(),
+                memory_config: crate::config::MemoryConfig::default(),
+                warnings,
+            });
+            Router::new()
+                .route("/api/chat", post(chat_handler::<MockProvider>))
+                .route("/api/warnings", get(get_warnings::<MockProvider>))
+                .with_state(state)
+        }
+
+        #[tokio::test]
+        async fn no_embedding_warning_present() {
+            let app = warnings_app(vec![], |c| {
+                c.add(Warning {
+                    code: "no_embedding_model".into(),
+                    message: "No embedding model configured — memory features are disabled. Add a [models.embedding] section to buddy.toml.".into(),
+                    severity: WarningSeverity::Warning,
+                });
+            });
+
+            let response = app
+                .oneshot(Request::builder().uri("/api/warnings").body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let body = response.into_body().collect().await.unwrap().to_bytes();
+            let list: Vec<Warning> = serde_json::from_slice(&body).unwrap();
+            assert_eq!(list.len(), 1);
+            assert_eq!(list[0].code, "no_embedding_model");
+        }
+
+        #[tokio::test]
+        async fn full_config_no_warnings() {
+            let app = warnings_app(vec![], |_| {});
+
+            let response = app
+                .oneshot(Request::builder().uri("/api/warnings").body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let body = response.into_body().collect().await.unwrap().to_bytes();
+            let list: Vec<Warning> = serde_json::from_slice(&body).unwrap();
+            assert!(list.is_empty());
+        }
+
+        #[tokio::test]
+        async fn single_chat_provider_info() {
+            let app = warnings_app(vec![], |c| {
+                c.add(Warning {
+                    code: "single_chat_provider".into(),
+                    message: "Only one chat provider configured — no fallback available. Add additional [[models.chat.providers]] entries to buddy.toml for redundancy.".into(),
+                    severity: WarningSeverity::Info,
+                });
+            });
+
+            let response = app
+                .oneshot(Request::builder().uri("/api/warnings").body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            let body = response.into_body().collect().await.unwrap().to_bytes();
+            let list: Vec<Warning> = serde_json::from_slice(&body).unwrap();
+            assert_eq!(list.len(), 1);
+            assert_eq!(list[0].code, "single_chat_provider");
+            assert_eq!(list[0].severity, WarningSeverity::Info);
+        }
+
+        #[tokio::test]
+        async fn runtime_warning_appears() {
+            let warnings = new_shared_warnings();
+            let state = Arc::new(AppState {
+                provider: MockProvider { tokens: vec![] },
+                registry: SkillRegistry::new(),
+                store: crate::store::Store::open_in_memory().unwrap(),
+                embedder: None,
+                vector_store: None,
+                working_memory: crate::skill::working_memory::new_working_memory_map(),
+                memory_config: crate::config::MemoryConfig::default(),
+                warnings: warnings.clone(),
+            });
+            let app = Router::new()
+                .route("/api/warnings", get(get_warnings::<MockProvider>))
+                .with_state(state);
+
+            // Add a warning at runtime.
+            {
+                let mut collector = warnings.write().unwrap();
+                collector.add(Warning {
+                    code: "runtime_issue".into(),
+                    message: "Something went wrong at runtime.".into(),
+                    severity: WarningSeverity::Warning,
+                });
+            }
+
+            let response = app
+                .oneshot(Request::builder().uri("/api/warnings").body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            let body = response.into_body().collect().await.unwrap().to_bytes();
+            let list: Vec<Warning> = serde_json::from_slice(&body).unwrap();
+            assert_eq!(list.len(), 1);
+            assert_eq!(list[0].code, "runtime_issue");
+        }
+
+        #[tokio::test]
+        async fn clear_warning_removes_it() {
+            let warnings = new_shared_warnings();
+            {
+                let mut collector = warnings.write().unwrap();
+                collector.add(Warning {
+                    code: "to_clear".into(),
+                    message: "Will be cleared.".into(),
+                    severity: WarningSeverity::Warning,
+                });
+                collector.add(Warning {
+                    code: "keep_me".into(),
+                    message: "Should remain.".into(),
+                    severity: WarningSeverity::Info,
+                });
+            }
+            let state = Arc::new(AppState {
+                provider: MockProvider { tokens: vec![] },
+                registry: SkillRegistry::new(),
+                store: crate::store::Store::open_in_memory().unwrap(),
+                embedder: None,
+                vector_store: None,
+                working_memory: crate::skill::working_memory::new_working_memory_map(),
+                memory_config: crate::config::MemoryConfig::default(),
+                warnings: warnings.clone(),
+            });
+            let app = Router::new()
+                .route("/api/warnings", get(get_warnings::<MockProvider>))
+                .with_state(state);
+
+            // Clear one warning.
+            {
+                let mut collector = warnings.write().unwrap();
+                collector.clear("to_clear");
+            }
+
+            let response = app
+                .oneshot(Request::builder().uri("/api/warnings").body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            let body = response.into_body().collect().await.unwrap().to_bytes();
+            let list: Vec<Warning> = serde_json::from_slice(&body).unwrap();
+            assert_eq!(list.len(), 1);
+            assert_eq!(list[0].code, "keep_me");
+        }
+
+        #[tokio::test]
+        async fn sse_stream_includes_warnings_event() {
+            let app = warnings_app(vec!["Hello".into()], |c| {
+                c.add(Warning {
+                    code: "test_warning".into(),
+                    message: "A test warning.".into(),
+                    severity: WarningSeverity::Warning,
+                });
+            });
+
+            let events = post_chat_raw(app, &make_chat_body()).await;
+
+            // ConversationMeta should be first, then Warnings before TokenDelta.
+            assert!(matches!(&events[0], ChatEvent::ConversationMeta { .. }));
+            let warnings_idx = events
+                .iter()
+                .position(|e| matches!(e, ChatEvent::Warnings { .. }))
+                .expect("expected a Warnings event in the SSE stream");
+            let delta_idx = events
+                .iter()
+                .position(|e| matches!(e, ChatEvent::TokenDelta { .. }))
+                .expect("expected a TokenDelta event");
+            assert!(
+                warnings_idx < delta_idx,
+                "Warnings should come before TokenDelta"
+            );
+
+            // Verify the warning content.
+            if let ChatEvent::Warnings { warnings } = &events[warnings_idx] {
+                assert_eq!(warnings.len(), 1);
+                assert_eq!(warnings[0].code, "test_warning");
+            } else {
+                panic!("expected Warnings event");
+            }
+        }
+
+        #[tokio::test]
+        async fn warning_messages_include_guidance() {
+            let app = warnings_app(vec![], |c| {
+                c.add(Warning {
+                    code: "no_embedding_model".into(),
+                    message: "No embedding model configured — memory features are disabled. Add a [models.embedding] section to buddy.toml.".into(),
+                    severity: WarningSeverity::Warning,
+                });
+            });
+
+            let response = app
+                .oneshot(Request::builder().uri("/api/warnings").body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            let body = response.into_body().collect().await.unwrap().to_bytes();
+            let list: Vec<Warning> = serde_json::from_slice(&body).unwrap();
+            assert!(
+                list[0].message.contains("buddy.toml"),
+                "warning message should include guidance referencing buddy.toml: {}",
+                list[0].message
             );
         }
     }
