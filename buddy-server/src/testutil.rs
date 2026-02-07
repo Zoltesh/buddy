@@ -16,7 +16,7 @@ use tower::ServiceExt;
 
 use crate::api::{ChatEvent, ChatRequest};
 use crate::provider::{Provider, ProviderError, Token, TokenStream};
-use crate::skill::{Skill, SkillError};
+use crate::skill::{PermissionLevel, Skill, SkillError};
 use crate::types::{Message, MessageContent, Role};
 
 // ── Mock skills ─────────────────────────────────────────────────────────
@@ -96,6 +96,74 @@ impl Skill for MockNoOpSkill {
         _input: serde_json::Value,
     ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SkillError>> + Send + '_>> {
         Box::pin(async { Ok(serde_json::json!({ "ok": true })) })
+    }
+}
+
+/// A skill that echoes its input with `PermissionLevel::Mutating`.
+pub struct MockMutatingSkill;
+
+impl Skill for MockMutatingSkill {
+    fn name(&self) -> &str {
+        "mutating"
+    }
+    fn description(&self) -> &str {
+        "Mutating echo"
+    }
+    fn permission_level(&self) -> PermissionLevel {
+        PermissionLevel::Mutating
+    }
+    fn input_schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": { "value": { "type": "string" } },
+            "required": ["value"]
+        })
+    }
+    fn execute(
+        &self,
+        input: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SkillError>> + Send + '_>> {
+        Box::pin(async move {
+            let value = input
+                .get("value")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| SkillError::InvalidInput("missing required field: value".into()))?;
+            Ok(serde_json::json!({ "echo": value }))
+        })
+    }
+}
+
+/// A skill that echoes its input with `PermissionLevel::Network`.
+pub struct MockNetworkSkill;
+
+impl Skill for MockNetworkSkill {
+    fn name(&self) -> &str {
+        "network"
+    }
+    fn description(&self) -> &str {
+        "Network echo"
+    }
+    fn permission_level(&self) -> PermissionLevel {
+        PermissionLevel::Network
+    }
+    fn input_schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": { "value": { "type": "string" } },
+            "required": ["value"]
+        })
+    }
+    fn execute(
+        &self,
+        input: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SkillError>> + Send + '_>> {
+        Box::pin(async move {
+            let value = input
+                .get("value")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| SkillError::InvalidInput("missing required field: value".into()))?;
+            Ok(serde_json::json!({ "echo": value }))
+        })
     }
 }
 

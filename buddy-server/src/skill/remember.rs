@@ -8,7 +8,7 @@ use uuid::Uuid;
 use crate::embedding::Embedder;
 use crate::memory::{VectorEntry, VectorStore};
 
-use super::{Skill, SkillError};
+use super::{PermissionLevel, Skill, SkillError};
 
 /// Skill that saves facts to long-term vector memory.
 pub struct RememberSkill {
@@ -32,6 +32,10 @@ impl Skill for RememberSkill {
 
     fn description(&self) -> &str {
         "Save a fact, preference, or important information to long-term memory for later retrieval across conversations."
+    }
+
+    fn permission_level(&self) -> PermissionLevel {
+        PermissionLevel::Mutating
     }
 
     fn input_schema(&self) -> serde_json::Value {

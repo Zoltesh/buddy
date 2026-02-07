@@ -18,7 +18,7 @@ mod testutil;
 mod types;
 mod warning;
 
-use api::{chat_handler, clear_memory, create_conversation, delete_conversation, get_conversation, get_warnings, list_conversations, migrate_memory, AppState};
+use api::{approve_handler, chat_handler, clear_memory, create_conversation, delete_conversation, get_conversation, get_warnings, list_conversations, migrate_memory, new_pending_approvals, AppState};
 use config::SkillsConfig;
 use provider::{AnyProvider, ProviderChain};
 use provider::lmstudio::LmStudioProvider;
@@ -177,6 +177,24 @@ async fn main() {
         }
     }
 
+    // Build per-skill approval overrides from config.
+    let mut approval_overrides = std::collections::HashMap::new();
+    if let Some(ref cfg) = config.skills.read_file {
+        if let Some(policy) = cfg.approval {
+            approval_overrides.insert("read_file".to_string(), policy);
+        }
+    }
+    if let Some(ref cfg) = config.skills.write_file {
+        if let Some(policy) = cfg.approval {
+            approval_overrides.insert("write_file".to_string(), policy);
+        }
+    }
+    if let Some(ref cfg) = config.skills.fetch_url {
+        if let Some(policy) = cfg.approval {
+            approval_overrides.insert("fetch_url".to_string(), policy);
+        }
+    }
+
     let state = Arc::new(AppState {
         provider,
         registry,
@@ -186,12 +204,17 @@ async fn main() {
         working_memory,
         memory_config: config.memory.clone(),
         warnings,
+        pending_approvals: new_pending_approvals(),
+        conversation_approvals: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+        approval_overrides,
+        approval_timeout: std::time::Duration::from_secs(60),
     });
 
     let app = Router::new()
         .route("/api/chat", post(chat_handler::<AppProvider>))
         .route("/api/conversations", get(list_conversations::<AppProvider>).post(create_conversation::<AppProvider>))
         .route("/api/conversations/{id}", get(get_conversation::<AppProvider>).delete(delete_conversation::<AppProvider>))
+        .route("/api/chat/{conversation_id}/approve", post(approve_handler::<AppProvider>))
         .route("/api/memory/migrate", post(migrate_memory::<AppProvider>))
         .route("/api/memory", axum::routing::delete(clear_memory::<AppProvider>))
         .route("/api/warnings", get(get_warnings::<AppProvider>))

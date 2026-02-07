@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
-use super::{Skill, SkillError};
+use super::{PermissionLevel, Skill, SkillError};
 
 /// Per-conversation short-term scratchpad.
 ///
@@ -99,6 +99,10 @@ impl Skill for MemoryWriteSkill {
 
     fn description(&self) -> &str {
         "Write to the conversation's working memory scratchpad. Supports set (key-value), note (free-form), delete (remove key), and clear (wipe all)."
+    }
+
+    fn permission_level(&self) -> PermissionLevel {
+        PermissionLevel::Mutating
     }
 
     fn input_schema(&self) -> serde_json::Value {

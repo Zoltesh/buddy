@@ -1,5 +1,5 @@
 use clap::Parser;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 const DEFAULT_HOST: &str = "127.0.0.1";
@@ -139,19 +139,37 @@ pub struct SkillsConfig {
     pub fetch_url: Option<FetchUrlConfig>,
 }
 
+/// Per-skill approval policy for mutating or network skills.
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+pub enum ApprovalPolicy {
+    /// Ask every time (default for Mutating and Network).
+    Always,
+    /// Ask once per conversation, then auto-approve for that skill.
+    Once,
+    /// Never ask (auto-approve).
+    Trust,
+}
+
 #[derive(Debug, Deserialize, PartialEq, Clone)]
 pub struct ReadFileConfig {
     pub allowed_directories: Vec<String>,
+    #[serde(default)]
+    pub approval: Option<ApprovalPolicy>,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Clone)]
 pub struct WriteFileConfig {
     pub allowed_directories: Vec<String>,
+    #[serde(default)]
+    pub approval: Option<ApprovalPolicy>,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Clone)]
 pub struct FetchUrlConfig {
     pub allowed_domains: Vec<String>,
+    #[serde(default)]
+    pub approval: Option<ApprovalPolicy>,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Clone)]

@@ -51,27 +51,27 @@ Users maintain control over what buddy does on their behalf. Read-only skills ex
 
 ## Acceptance Criteria
 
-- [ ] Every skill declares a `PermissionLevel`
-- [ ] `ReadOnly` skills execute without approval
-- [ ] `Mutating` skills emit `ApprovalRequest` and wait for user response
-- [ ] `Network` skills emit `ApprovalRequest` and wait for user response
-- [ ] Approved requests execute the skill and return results to the LLM
-- [ ] Denied requests return a "denied" tool result to the LLM (not a crash)
-- [ ] Per-skill `approval` config overrides default behavior
-- [ ] `trust` policy auto-approves without user interaction
-- [ ] `once` policy asks once per conversation then auto-approves
-- [ ] Approval timeout treats the request as denied
-- [ ] `POST /api/chat/{conversation_id}/approve` endpoint works correctly
+- [x] Every skill declares a `PermissionLevel`
+- [x] `ReadOnly` skills execute without approval
+- [x] `Mutating` skills emit `ApprovalRequest` and wait for user response
+- [x] `Network` skills emit `ApprovalRequest` and wait for user response
+- [x] Approved requests execute the skill and return results to the LLM
+- [x] Denied requests return a "denied" tool result to the LLM (not a crash)
+- [x] Per-skill `approval` config overrides default behavior
+- [x] `trust` policy auto-approves without user interaction
+- [x] `once` policy asks once per conversation then auto-approves
+- [x] Approval timeout treats the request as denied
+- [x] `POST /api/chat/{conversation_id}/approve` endpoint works correctly
 
 ## Test Cases
 
-- Execute `read_file` skill; assert it runs without approval request
-- Execute `write_file` skill with default config; assert `ApprovalRequest` event is emitted
-- Approve a `write_file` request; assert the skill executes and returns results
-- Deny a `write_file` request; assert a "denied" tool result is returned to the LLM
-- Configure `write_file` with `approval = "trust"`; execute it; assert no approval request
-- Configure `write_file` with `approval = "once"`; execute twice in same conversation; assert approval requested only on first call
-- Execute a `Network` skill (`fetch_url`); assert `ApprovalRequest` is emitted
-- Let an approval request timeout; assert it is treated as denied
-- Assert `ApprovalRequest` event includes skill name, arguments, and permission level
-- Assert denied tool result message is informative (e.g. "User denied execution of write_file")
+- [x] Execute `read_file` skill; assert it runs without approval request
+- [x] Execute `write_file` skill with default config; assert `ApprovalRequest` event is emitted
+- [x] Approve a `write_file` request; assert the skill executes and returns results
+- [x] Deny a `write_file` request; assert a "denied" tool result is returned to the LLM
+- [x] Configure `write_file` with `approval = "trust"`; execute it; assert no approval request
+- [x] Configure `write_file` with `approval = "once"`; execute twice in same conversation; assert approval requested only on first call
+- [x] Execute a `Network` skill (`fetch_url`); assert `ApprovalRequest` is emitted
+- [x] Let an approval request timeout; assert it is treated as denied
+- [x] Assert `ApprovalRequest` event includes skill name, arguments, and permission level
+- [x] Assert denied tool result message is informative (e.g. "User denied execution of write_file")

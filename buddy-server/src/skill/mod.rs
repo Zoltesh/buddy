@@ -9,7 +9,21 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 
+use serde::{Deserialize, Serialize};
+
 use crate::config::SkillsConfig;
+
+/// Declares how a skill interacts with the outside world.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PermissionLevel {
+    /// No side effects (e.g. read_file, memory_read).
+    ReadOnly,
+    /// Writes to filesystem or state (e.g. write_file, memory_write).
+    Mutating,
+    /// Makes outbound network requests (e.g. fetch_url).
+    Network,
+}
 
 /// Errors that can occur when executing a skill.
 #[derive(Debug)]
@@ -47,6 +61,11 @@ pub trait Skill: Send + Sync {
 
     /// JSON Schema describing the expected input.
     fn input_schema(&self) -> serde_json::Value;
+
+    /// The permission level of this skill. Defaults to `ReadOnly`.
+    fn permission_level(&self) -> PermissionLevel {
+        PermissionLevel::ReadOnly
+    }
 
     /// Execute the skill with the given input and return a result.
     fn execute(
@@ -242,6 +261,7 @@ mod tests {
         let config = SkillsConfig {
             read_file: Some(ReadFileConfig {
                 allowed_directories: vec!["/tmp".into()],
+                approval: None,
             }),
             write_file: None,
             fetch_url: None,
@@ -260,12 +280,15 @@ mod tests {
         let config = SkillsConfig {
             read_file: Some(ReadFileConfig {
                 allowed_directories: vec!["/tmp".into()],
+                approval: None,
             }),
             write_file: Some(WriteFileConfig {
                 allowed_directories: vec!["/tmp".into()],
+                approval: None,
             }),
             fetch_url: Some(FetchUrlConfig {
                 allowed_domains: vec!["example.com".into()],
+                approval: None,
             }),
         };
         let registry = build_registry(&config);

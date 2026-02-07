@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use crate::config::FetchUrlConfig;
 
-use super::{Skill, SkillError};
+use super::{PermissionLevel, Skill, SkillError};
 
 /// Skill that fetches URLs via HTTP GET, restricted to allowlisted domains.
 pub struct FetchUrlSkill {
@@ -51,6 +51,10 @@ impl Skill for FetchUrlSkill {
 
     fn description(&self) -> &str {
         "Fetch the contents of a URL via HTTP GET"
+    }
+
+    fn permission_level(&self) -> PermissionLevel {
+        PermissionLevel::Network
     }
 
     fn input_schema(&self) -> serde_json::Value {
@@ -130,6 +134,7 @@ mod tests {
     async fn fetch_url_rejects_non_allowlisted_domain() {
         let config = FetchUrlConfig {
             allowed_domains: vec!["example.com".into()],
+            approval: None,
         };
         let skill = FetchUrlSkill::new(&config);
         let result = skill
@@ -148,6 +153,7 @@ mod tests {
     async fn fetch_url_with_allowlisted_domain() {
         let config = FetchUrlConfig {
             allowed_domains: vec!["example.com".into()],
+            approval: None,
         };
         let skill = FetchUrlSkill::new(&config);
         let result = skill

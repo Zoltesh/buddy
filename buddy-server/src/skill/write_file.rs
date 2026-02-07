@@ -4,7 +4,7 @@ use std::pin::Pin;
 
 use crate::config::WriteFileConfig;
 
-use super::{Skill, SkillError};
+use super::{PermissionLevel, Skill, SkillError};
 
 /// Skill that writes file contents to sandboxed directories.
 pub struct WriteFileSkill {
@@ -126,6 +126,10 @@ impl Skill for WriteFileSkill {
 
     fn description(&self) -> &str {
         "Write content to a file in an allowed directory"
+    }
+
+    fn permission_level(&self) -> PermissionLevel {
+        PermissionLevel::Mutating
     }
 
     fn input_schema(&self) -> serde_json::Value {

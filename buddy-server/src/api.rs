@@ -12,6 +12,7 @@
 //! - Works transparently with HTTP proxies and load balancers
 //! - WebSocket can be added later if bidirectional communication is needed
 
+use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 use std::sync::Arc;
 
@@ -24,8 +25,11 @@ use chrono::Utc;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
+use tokio::sync::{oneshot, Mutex};
 
+use crate::config::ApprovalPolicy;
 use crate::provider::{Provider, Token};
+use crate::skill::PermissionLevel;
 use crate::store::title_from_message;
 use crate::types::{Message, MessageContent, Role};
 
@@ -62,6 +66,7 @@ pub enum ChatEvent {
     TokenDelta { content: String },
     ToolCallStart { id: String, name: String, arguments: String },
     ToolCallResult { id: String, content: String },
+    ApprovalRequest { id: String, skill_name: String, arguments: serde_json::Value, permission_level: String },
     Done,
     Error { message: String },
 }
@@ -71,6 +76,24 @@ pub enum ChatEvent {
 pub struct ApiError {
     pub code: String,
     pub message: String,
+}
+
+/// Pending approval requests awaiting user response.
+pub type PendingApprovals = Arc<Mutex<HashMap<String, oneshot::Sender<bool>>>>;
+
+/// Skills already approved once per conversation (`once` policy).
+pub type ConversationApprovals = Arc<Mutex<HashMap<String, HashSet<String>>>>;
+
+/// Create a new empty `PendingApprovals` map.
+pub fn new_pending_approvals() -> PendingApprovals {
+    Arc::new(Mutex::new(HashMap::new()))
+}
+
+/// Request body for `POST /api/chat/{conversation_id}/approve`.
+#[derive(Deserialize)]
+pub struct ApproveRequest {
+    pub approval_id: String,
+    pub approved: bool,
 }
 
 /// Shared application state.
@@ -83,6 +106,10 @@ pub struct AppState<P> {
     pub working_memory: crate::skill::working_memory::WorkingMemoryMap,
     pub memory_config: crate::config::MemoryConfig,
     pub warnings: crate::warning::SharedWarnings,
+    pub pending_approvals: PendingApprovals,
+    pub conversation_approvals: ConversationApprovals,
+    pub approval_overrides: HashMap<String, ApprovalPolicy>,
+    pub approval_timeout: std::time::Duration,
 }
 
 // ── Conversation CRUD handlers ──────────────────────────────────────────
@@ -295,6 +322,34 @@ pub async fn clear_memory<P: Provider + 'static>(
     Ok(StatusCode::NO_CONTENT)
 }
 
+// ── Approval handler ─────────────────────────────────────────────────────
+
+/// `POST /api/chat/{conversation_id}/approve` — approve or deny a pending skill execution.
+pub async fn approve_handler<P: Provider + 'static>(
+    State(state): State<Arc<AppState<P>>>,
+    Path(_conversation_id): Path<String>,
+    Json(body): Json<ApproveRequest>,
+) -> Result<StatusCode, (StatusCode, Json<ApiError>)> {
+    let sender = {
+        let mut pending = state.pending_approvals.lock().await;
+        pending.remove(&body.approval_id)
+    };
+
+    match sender {
+        Some(tx) => {
+            let _ = tx.send(body.approved);
+            Ok(StatusCode::OK)
+        }
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(ApiError {
+                code: "not_found".into(),
+                message: format!("approval '{}' not found or already resolved", body.approval_id),
+            }),
+        )),
+    }
+}
+
 // ── Chat handler ────────────────────────────────────────────────────────
 
 /// `POST /api/chat` — accepts a `ChatRequest` and streams `ChatEvent` frames via SSE.
@@ -421,6 +476,89 @@ fn persist_message(state: &impl AsRef<crate::store::Store>, conversation_id: &st
     let store = state.as_ref();
     if let Err(e) = store.append_message(conversation_id, message) {
         eprintln!("warning: failed to persist message: {e}");
+    }
+}
+
+/// Check whether a skill execution should proceed, applying the approval policy.
+///
+/// Returns `true` if the skill is approved (by policy, prior approval, or user action),
+/// `false` if denied or timed out.
+async fn check_approval<P: Provider>(
+    state: &Arc<AppState<P>>,
+    tx: &tokio::sync::mpsc::Sender<ChatEvent>,
+    conversation_id: &str,
+    skill_name: &str,
+    arguments: &str,
+    permission_level: PermissionLevel,
+) -> bool {
+    // Resolve effective policy: config override, or default Always for non-ReadOnly.
+    let policy = state
+        .approval_overrides
+        .get(skill_name)
+        .copied()
+        .unwrap_or(ApprovalPolicy::Always);
+
+    match policy {
+        ApprovalPolicy::Trust => return true,
+        ApprovalPolicy::Once => {
+            let approvals = state.conversation_approvals.lock().await;
+            if let Some(skills) = approvals.get(conversation_id) {
+                if skills.contains(skill_name) {
+                    return true;
+                }
+            }
+        }
+        ApprovalPolicy::Always => {}
+    }
+
+    // Need to ask the user.
+    let approval_id = uuid::Uuid::new_v4().to_string();
+    let (sender, receiver) = oneshot::channel::<bool>();
+
+    {
+        let mut pending = state.pending_approvals.lock().await;
+        pending.insert(approval_id.clone(), sender);
+    }
+
+    let args_value: serde_json::Value = serde_json::from_str(arguments)
+        .unwrap_or_else(|_| serde_json::json!({}));
+
+    let perm_str = match permission_level {
+        PermissionLevel::ReadOnly => "read_only",
+        PermissionLevel::Mutating => "mutating",
+        PermissionLevel::Network => "network",
+    };
+
+    let _ = tx
+        .send(ChatEvent::ApprovalRequest {
+            id: approval_id.clone(),
+            skill_name: skill_name.to_string(),
+            arguments: args_value,
+            permission_level: perm_str.to_string(),
+        })
+        .await;
+
+    let result = tokio::time::timeout(state.approval_timeout, receiver).await;
+
+    // Cleanup pending entry regardless of outcome.
+    {
+        let mut pending = state.pending_approvals.lock().await;
+        pending.remove(&approval_id);
+    }
+
+    match result {
+        Ok(Ok(true)) => {
+            // Record for `once` policy.
+            if policy == ApprovalPolicy::Once {
+                let mut approvals = state.conversation_approvals.lock().await;
+                approvals
+                    .entry(conversation_id.to_string())
+                    .or_default()
+                    .insert(skill_name.to_string());
+            }
+            true
+        }
+        _ => false,
     }
 }
 
@@ -634,22 +772,35 @@ async fn run_tool_loop<P: Provider>(
             persist_message(&state.store, &conversation_id, &tool_call_msg);
             messages.push(tool_call_msg);
 
-            // Execute the skill.
+            // Execute the skill (with approval check for non-ReadOnly skills).
             let result_content = match state.registry.get(name) {
                 Some(skill) => {
-                    let mut input: serde_json::Value = serde_json::from_str(arguments)
-                        .unwrap_or_else(|_| serde_json::json!({}));
-                    // Inject conversation context so skills can access per-conversation state.
-                    if let Some(obj) = input.as_object_mut() {
-                        obj.insert(
-                            "conversation_id".to_string(),
-                            serde_json::Value::String(conversation_id.clone()),
-                        );
-                    }
-                    match skill.execute(input).await {
-                        Ok(output) => serde_json::to_string(&output)
-                            .unwrap_or_else(|_| "{}".to_string()),
-                        Err(e) => format!("Error: {e}"),
+                    let perm = skill.permission_level();
+                    let approved = if perm == PermissionLevel::ReadOnly {
+                        true
+                    } else {
+                        check_approval(
+                            &state, &tx, &conversation_id, name, arguments, perm,
+                        ).await
+                    };
+
+                    if !approved {
+                        format!("User denied execution of {name}")
+                    } else {
+                        let mut input: serde_json::Value = serde_json::from_str(arguments)
+                            .unwrap_or_else(|_| serde_json::json!({}));
+                        // Inject conversation context so skills can access per-conversation state.
+                        if let Some(obj) = input.as_object_mut() {
+                            obj.insert(
+                                "conversation_id".to_string(),
+                                serde_json::Value::String(conversation_id.clone()),
+                            );
+                        }
+                        match skill.execute(input).await {
+                            Ok(output) => serde_json::to_string(&output)
+                                .unwrap_or_else(|_| "{}".to_string()),
+                            Err(e) => format!("Error: {e}"),
+                        }
                     }
                 }
                 None => format!("Error: unknown tool '{name}'"),
@@ -739,6 +890,10 @@ mod tests {
             working_memory: crate::skill::working_memory::new_working_memory_map(),
             memory_config: crate::config::MemoryConfig::default(),
             warnings: crate::warning::new_shared_warnings(),
+            pending_approvals: new_pending_approvals(),
+            conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
+            approval_overrides: HashMap::new(),
+            approval_timeout: std::time::Duration::from_secs(1),
         });
         Router::new()
             .route("/api/chat", post(chat_handler::<MockProvider>))
@@ -755,6 +910,10 @@ mod tests {
             working_memory: crate::skill::working_memory::new_working_memory_map(),
             memory_config: crate::config::MemoryConfig::default(),
             warnings: crate::warning::new_shared_warnings(),
+            pending_approvals: new_pending_approvals(),
+            conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
+            approval_overrides: HashMap::new(),
+            approval_timeout: std::time::Duration::from_secs(1),
         });
         Router::new()
             .route("/api/chat", post(chat_handler::<MockProvider>))
@@ -772,6 +931,10 @@ mod tests {
             working_memory: crate::skill::working_memory::new_working_memory_map(),
             memory_config: crate::config::MemoryConfig::default(),
             warnings: crate::warning::new_shared_warnings(),
+            pending_approvals: new_pending_approvals(),
+            conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
+            approval_overrides: HashMap::new(),
+            approval_timeout: std::time::Duration::from_secs(1),
         });
         Router::new()
             .route("/api/chat", post(chat_handler::<SequencedProvider>))
@@ -788,6 +951,10 @@ mod tests {
             working_memory: crate::skill::working_memory::new_working_memory_map(),
             memory_config: crate::config::MemoryConfig::default(),
             warnings: crate::warning::new_shared_warnings(),
+            pending_approvals: new_pending_approvals(),
+            conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
+            approval_overrides: HashMap::new(),
+            approval_timeout: std::time::Duration::from_secs(1),
         });
         let router = Router::new()
             .route("/api/chat", post(chat_handler::<MockProvider>))
@@ -1143,6 +1310,10 @@ mod tests {
                 working_memory: crate::skill::working_memory::new_working_memory_map(),
                 memory_config: crate::config::MemoryConfig::default(),
                 warnings: crate::warning::new_shared_warnings(),
+                pending_approvals: new_pending_approvals(),
+                conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
+                approval_overrides: HashMap::new(),
+                approval_timeout: std::time::Duration::from_secs(1),
             });
             let app = Router::new()
                 .route(
@@ -1356,6 +1527,10 @@ mod tests {
                 working_memory: crate::skill::working_memory::new_working_memory_map(),
                 memory_config: crate::config::MemoryConfig::default(),
                 warnings: crate::warning::new_shared_warnings(),
+                pending_approvals: new_pending_approvals(),
+                conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
+                approval_overrides: HashMap::new(),
+                approval_timeout: std::time::Duration::from_secs(1),
             });
             let app = Router::new()
                 .route("/api/chat", post(chat_handler::<SequencedProvider>))
@@ -1426,6 +1601,10 @@ mod tests {
                 working_memory: crate::skill::working_memory::new_working_memory_map(),
                 memory_config: crate::config::MemoryConfig::default(),
                 warnings,
+                pending_approvals: new_pending_approvals(),
+                conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
+                approval_overrides: HashMap::new(),
+                approval_timeout: std::time::Duration::from_secs(1),
             });
             Router::new()
                 .route("/api/chat", post(chat_handler::<MockProvider>))
@@ -1501,6 +1680,10 @@ mod tests {
                 working_memory: crate::skill::working_memory::new_working_memory_map(),
                 memory_config: crate::config::MemoryConfig::default(),
                 warnings: warnings.clone(),
+                pending_approvals: new_pending_approvals(),
+                conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
+                approval_overrides: HashMap::new(),
+                approval_timeout: std::time::Duration::from_secs(1),
             });
             let app = Router::new()
                 .route("/api/warnings", get(get_warnings::<MockProvider>))
@@ -1551,6 +1734,10 @@ mod tests {
                 working_memory: crate::skill::working_memory::new_working_memory_map(),
                 memory_config: crate::config::MemoryConfig::default(),
                 warnings: warnings.clone(),
+                pending_approvals: new_pending_approvals(),
+                conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
+                approval_overrides: HashMap::new(),
+                approval_timeout: std::time::Duration::from_secs(1),
             });
             let app = Router::new()
                 .route("/api/warnings", get(get_warnings::<MockProvider>))
@@ -1629,6 +1816,406 @@ mod tests {
                 "warning message should include guidance referencing buddy.toml: {}",
                 list[0].message
             );
+        }
+    }
+
+    // ── Approval tests ─────────────────────────────────────────────────
+
+    mod approval {
+        use super::*;
+        use crate::config::ApprovalPolicy;
+        use crate::testutil::{MockMutatingSkill, MockNetworkSkill};
+
+        fn registry_with_mutating() -> SkillRegistry {
+            let mut r = SkillRegistry::new();
+            r.register(Box::new(MockMutatingSkill));
+            r
+        }
+
+        fn registry_with_network() -> SkillRegistry {
+            let mut r = SkillRegistry::new();
+            r.register(Box::new(MockNetworkSkill));
+            r
+        }
+
+        fn approval_app(
+            responses: Vec<MockResponse>,
+            registry: SkillRegistry,
+            overrides: HashMap<String, ApprovalPolicy>,
+            timeout: std::time::Duration,
+        ) -> (Arc<AppState<SequencedProvider>>, Router) {
+            let state = Arc::new(AppState {
+                provider: SequencedProvider::new(responses),
+                registry,
+                store: crate::store::Store::open_in_memory().unwrap(),
+                embedder: None,
+                vector_store: None,
+                working_memory: crate::skill::working_memory::new_working_memory_map(),
+                memory_config: crate::config::MemoryConfig::default(),
+                warnings: crate::warning::new_shared_warnings(),
+                pending_approvals: new_pending_approvals(),
+                conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
+                approval_overrides: overrides,
+                approval_timeout: timeout,
+            });
+            let router = Router::new()
+                .route("/api/chat", post(chat_handler::<SequencedProvider>))
+                .with_state(state.clone());
+            (state, router)
+        }
+
+        // 1. ReadOnly executes without approval
+        #[tokio::test]
+        async fn readonly_executes_without_approval() {
+            let (_, app) = approval_app(
+                vec![
+                    MockResponse::ToolCalls(vec![(
+                        "c1".into(),
+                        "echo".into(),
+                        r#"{"value":"hello"}"#.into(),
+                    )]),
+                    MockResponse::Text(vec!["Done.".into()]),
+                ],
+                registry_with_echo(),
+                HashMap::new(),
+                std::time::Duration::from_secs(1),
+            );
+
+            let events = post_chat(app, &make_chat_body()).await;
+
+            // No ApprovalRequest in the stream.
+            assert!(
+                !events.iter().any(|e| matches!(e, ChatEvent::ApprovalRequest { .. })),
+                "ReadOnly skill should not emit ApprovalRequest"
+            );
+            // Skill executed successfully.
+            assert!(events.iter().any(|e| matches!(
+                e,
+                ChatEvent::ToolCallResult { content, .. } if content.contains("hello")
+            )));
+            assert!(events.last() == Some(&ChatEvent::Done));
+        }
+
+        // 2. Mutating emits ApprovalRequest — timeout → denied
+        #[tokio::test]
+        async fn mutating_emits_approval_request_and_times_out() {
+            let (_, app) = approval_app(
+                vec![
+                    MockResponse::ToolCalls(vec![(
+                        "c1".into(),
+                        "mutating".into(),
+                        r#"{"value":"hello"}"#.into(),
+                    )]),
+                    MockResponse::Text(vec!["Done.".into()]),
+                ],
+                registry_with_mutating(),
+                HashMap::new(),
+                std::time::Duration::from_millis(50),
+            );
+
+            let events = post_chat(app, &make_chat_body()).await;
+
+            // ApprovalRequest should be in the stream.
+            assert!(
+                events.iter().any(|e| matches!(e, ChatEvent::ApprovalRequest { .. })),
+                "Mutating skill should emit ApprovalRequest"
+            );
+            // Should be denied (timeout).
+            assert!(events.iter().any(|e| matches!(
+                e,
+                ChatEvent::ToolCallResult { content, .. } if content.contains("User denied execution of mutating")
+            )));
+        }
+
+        // 3. Approve mutating skill
+        #[tokio::test]
+        async fn approve_mutating_skill_executes() {
+            let (state, app) = approval_app(
+                vec![
+                    MockResponse::ToolCalls(vec![(
+                        "c1".into(),
+                        "mutating".into(),
+                        r#"{"value":"hello"}"#.into(),
+                    )]),
+                    MockResponse::Text(vec!["Done.".into()]),
+                ],
+                registry_with_mutating(),
+                HashMap::new(),
+                std::time::Duration::from_secs(5),
+            );
+
+            // Background task that auto-approves.
+            let pending = state.pending_approvals.clone();
+            tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                    let mut map = pending.lock().await;
+                    let keys: Vec<String> = map.keys().cloned().collect();
+                    for key in keys {
+                        if let Some(tx) = map.remove(&key) {
+                            let _ = tx.send(true);
+                        }
+                    }
+                }
+            });
+
+            let events = post_chat(app, &make_chat_body()).await;
+
+            // Skill should have executed (echo result).
+            assert!(events.iter().any(|e| matches!(
+                e,
+                ChatEvent::ToolCallResult { content, .. } if content.contains("hello")
+            )));
+            assert!(events.last() == Some(&ChatEvent::Done));
+        }
+
+        // 4. Deny mutating skill
+        #[tokio::test]
+        async fn deny_mutating_skill_returns_denied() {
+            let (state, app) = approval_app(
+                vec![
+                    MockResponse::ToolCalls(vec![(
+                        "c1".into(),
+                        "mutating".into(),
+                        r#"{"value":"hello"}"#.into(),
+                    )]),
+                    MockResponse::Text(vec!["Done.".into()]),
+                ],
+                registry_with_mutating(),
+                HashMap::new(),
+                std::time::Duration::from_secs(5),
+            );
+
+            // Background task that denies.
+            let pending = state.pending_approvals.clone();
+            tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                    let mut map = pending.lock().await;
+                    let keys: Vec<String> = map.keys().cloned().collect();
+                    for key in keys {
+                        if let Some(tx) = map.remove(&key) {
+                            let _ = tx.send(false);
+                        }
+                    }
+                }
+            });
+
+            let events = post_chat(app, &make_chat_body()).await;
+
+            assert!(events.iter().any(|e| matches!(
+                e,
+                ChatEvent::ToolCallResult { content, .. } if content.contains("User denied execution of mutating")
+            )));
+        }
+
+        // 5. Trust policy auto-approves
+        #[tokio::test]
+        async fn trust_policy_auto_approves() {
+            let mut overrides = HashMap::new();
+            overrides.insert("mutating".into(), ApprovalPolicy::Trust);
+
+            let (_, app) = approval_app(
+                vec![
+                    MockResponse::ToolCalls(vec![(
+                        "c1".into(),
+                        "mutating".into(),
+                        r#"{"value":"hello"}"#.into(),
+                    )]),
+                    MockResponse::Text(vec!["Done.".into()]),
+                ],
+                registry_with_mutating(),
+                overrides,
+                std::time::Duration::from_secs(1),
+            );
+
+            let events = post_chat(app, &make_chat_body()).await;
+
+            // No ApprovalRequest.
+            assert!(
+                !events.iter().any(|e| matches!(e, ChatEvent::ApprovalRequest { .. })),
+                "Trust policy should not emit ApprovalRequest"
+            );
+            // Skill executed.
+            assert!(events.iter().any(|e| matches!(
+                e,
+                ChatEvent::ToolCallResult { content, .. } if content.contains("hello")
+            )));
+        }
+
+        // 6. Once policy — first requires approval, second auto-approves
+        #[tokio::test]
+        async fn once_policy_asks_first_then_auto_approves() {
+            let mut overrides = HashMap::new();
+            overrides.insert("mutating".into(), ApprovalPolicy::Once);
+
+            let (state, app) = approval_app(
+                vec![
+                    // First tool call.
+                    MockResponse::ToolCalls(vec![(
+                        "c1".into(),
+                        "mutating".into(),
+                        r#"{"value":"first"}"#.into(),
+                    )]),
+                    // Second tool call.
+                    MockResponse::ToolCalls(vec![(
+                        "c2".into(),
+                        "mutating".into(),
+                        r#"{"value":"second"}"#.into(),
+                    )]),
+                    MockResponse::Text(vec!["Done.".into()]),
+                ],
+                registry_with_mutating(),
+                overrides,
+                std::time::Duration::from_secs(5),
+            );
+
+            // Auto-approve the first request.
+            let pending = state.pending_approvals.clone();
+            tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                    let mut map = pending.lock().await;
+                    let keys: Vec<String> = map.keys().cloned().collect();
+                    for key in keys {
+                        if let Some(tx) = map.remove(&key) {
+                            let _ = tx.send(true);
+                        }
+                    }
+                }
+            });
+
+            let events = post_chat(app, &make_chat_body()).await;
+
+            // Should have exactly one ApprovalRequest (for the first call).
+            let approval_count = events
+                .iter()
+                .filter(|e| matches!(e, ChatEvent::ApprovalRequest { .. }))
+                .count();
+            assert_eq!(
+                approval_count, 1,
+                "Once policy should emit ApprovalRequest only on first call"
+            );
+
+            // Both calls should have executed.
+            let result_count = events
+                .iter()
+                .filter(|e| matches!(e, ChatEvent::ToolCallResult { content, .. } if content.contains("echo")))
+                .count();
+            assert_eq!(result_count, 2, "Both tool calls should have executed");
+        }
+
+        // 7. Network skill emits ApprovalRequest
+        #[tokio::test]
+        async fn network_skill_emits_approval_request() {
+            let (_, app) = approval_app(
+                vec![
+                    MockResponse::ToolCalls(vec![(
+                        "c1".into(),
+                        "network".into(),
+                        r#"{"value":"hello"}"#.into(),
+                    )]),
+                    MockResponse::Text(vec!["Done.".into()]),
+                ],
+                registry_with_network(),
+                HashMap::new(),
+                std::time::Duration::from_millis(50),
+            );
+
+            let events = post_chat(app, &make_chat_body()).await;
+
+            assert!(
+                events.iter().any(|e| matches!(e, ChatEvent::ApprovalRequest { .. })),
+                "Network skill should emit ApprovalRequest"
+            );
+        }
+
+        // 8. Timeout treated as denied
+        #[tokio::test]
+        async fn timeout_treated_as_denied() {
+            let (_, app) = approval_app(
+                vec![
+                    MockResponse::ToolCalls(vec![(
+                        "c1".into(),
+                        "mutating".into(),
+                        r#"{"value":"hello"}"#.into(),
+                    )]),
+                    MockResponse::Text(vec!["Done.".into()]),
+                ],
+                registry_with_mutating(),
+                HashMap::new(),
+                std::time::Duration::from_millis(50),
+            );
+
+            let events = post_chat(app, &make_chat_body()).await;
+
+            assert!(events.iter().any(|e| matches!(
+                e,
+                ChatEvent::ToolCallResult { content, .. } if content.contains("User denied")
+            )));
+        }
+
+        // 9. ApprovalRequest event shape
+        #[tokio::test]
+        async fn approval_request_event_shape() {
+            let (_, app) = approval_app(
+                vec![
+                    MockResponse::ToolCalls(vec![(
+                        "c1".into(),
+                        "mutating".into(),
+                        r#"{"value":"hello"}"#.into(),
+                    )]),
+                    MockResponse::Text(vec!["Done.".into()]),
+                ],
+                registry_with_mutating(),
+                HashMap::new(),
+                std::time::Duration::from_millis(50),
+            );
+
+            let events = post_chat(app, &make_chat_body()).await;
+
+            let approval = events.iter().find(|e| matches!(e, ChatEvent::ApprovalRequest { .. }));
+            assert!(approval.is_some(), "should contain ApprovalRequest");
+
+            if let Some(ChatEvent::ApprovalRequest { id, skill_name, arguments, permission_level }) = approval {
+                assert!(!id.is_empty(), "approval id should not be empty");
+                assert_eq!(skill_name, "mutating");
+                assert_eq!(arguments["value"], "hello");
+                assert_eq!(permission_level, "mutating");
+            }
+        }
+
+        // 10. Denied message is informative
+        #[tokio::test]
+        async fn denied_message_is_informative() {
+            let (_, app) = approval_app(
+                vec![
+                    MockResponse::ToolCalls(vec![(
+                        "c1".into(),
+                        "mutating".into(),
+                        r#"{"value":"hello"}"#.into(),
+                    )]),
+                    MockResponse::Text(vec!["Done.".into()]),
+                ],
+                registry_with_mutating(),
+                HashMap::new(),
+                std::time::Duration::from_millis(50),
+            );
+
+            let events = post_chat(app, &make_chat_body()).await;
+
+            let denied = events.iter().find(|e| matches!(
+                e,
+                ChatEvent::ToolCallResult { content, .. } if content.contains("denied")
+            ));
+            assert!(denied.is_some(), "should contain denied tool result");
+
+            if let Some(ChatEvent::ToolCallResult { content, .. }) = denied {
+                assert!(
+                    content.contains("User denied execution of"),
+                    "denied message should be informative: {content}"
+                );
+            }
         }
     }
 }
