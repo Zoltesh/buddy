@@ -15,7 +15,7 @@ struct Cli {
     config: PathBuf,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
 pub struct Config {
     #[serde(default)]
     pub server: ServerConfig,
@@ -30,7 +30,7 @@ pub struct Config {
     pub memory: MemoryConfig,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
 pub struct ServerConfig {
     #[serde(default = "default_host")]
     pub host: String,
@@ -57,18 +57,18 @@ fn default_port() -> u16 {
 
 const DEFAULT_SYSTEM_PROMPT: &str = "You are a helpful, friendly AI assistant.";
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
 pub struct ModelsConfig {
     pub chat: ModelSlot,
     pub embedding: Option<ModelSlot>,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
 pub struct ModelSlot {
     pub providers: Vec<ProviderEntry>,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
 pub struct ProviderEntry {
     #[serde(default = "default_provider_type", rename = "type")]
     pub provider_type: String,
@@ -96,7 +96,7 @@ fn default_provider_type() -> String {
     "openai".to_string()
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
 pub struct ChatConfig {
     #[serde(default = "default_system_prompt")]
     pub system_prompt: String,
@@ -114,7 +114,7 @@ fn default_system_prompt() -> String {
     DEFAULT_SYSTEM_PROMPT.to_string()
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
 pub struct StorageConfig {
     #[serde(default = "default_database")]
     pub database: String,
@@ -132,7 +132,7 @@ fn default_database() -> String {
     DEFAULT_DATABASE.to_string()
 }
 
-#[derive(Debug, Deserialize, PartialEq, Default)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone, Default)]
 pub struct SkillsConfig {
     pub read_file: Option<ReadFileConfig>,
     pub write_file: Option<WriteFileConfig>,
@@ -151,28 +151,28 @@ pub enum ApprovalPolicy {
     Trust,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Clone)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
 pub struct ReadFileConfig {
     pub allowed_directories: Vec<String>,
     #[serde(default)]
     pub approval: Option<ApprovalPolicy>,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Clone)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
 pub struct WriteFileConfig {
     pub allowed_directories: Vec<String>,
     #[serde(default)]
     pub approval: Option<ApprovalPolicy>,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Clone)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
 pub struct FetchUrlConfig {
     pub allowed_domains: Vec<String>,
     #[serde(default)]
     pub approval: Option<ApprovalPolicy>,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Clone)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
 pub struct MemoryConfig {
     #[serde(default = "default_auto_retrieve")]
     pub auto_retrieve: bool,

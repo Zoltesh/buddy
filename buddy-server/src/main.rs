@@ -18,7 +18,7 @@ mod testutil;
 mod types;
 mod warning;
 
-use api::{approve_handler, chat_handler, clear_memory, create_conversation, delete_conversation, get_conversation, get_warnings, list_conversations, migrate_memory, new_pending_approvals, AppState};
+use api::{approve_handler, chat_handler, clear_memory, create_conversation, delete_conversation, get_config, get_conversation, get_warnings, list_conversations, migrate_memory, new_pending_approvals, AppState};
 use config::SkillsConfig;
 use provider::{AnyProvider, ProviderChain};
 use provider::lmstudio::LmStudioProvider;
@@ -36,13 +36,13 @@ async fn main() {
     });
 
     let addr = config.bind_address();
-    let system_prompt = &config.chat.system_prompt;
-    let db_path = &config.storage.database;
+    let system_prompt = config.chat.system_prompt.clone();
+    let db_path = config.storage.database.clone();
 
     // Validate skills configuration before proceeding.
     validate_skills_config(&config.skills);
 
-    let store = Store::open(Path::new(db_path)).unwrap_or_else(|e| {
+    let store = Store::open(Path::new(&db_path)).unwrap_or_else(|e| {
         eprintln!("Error: failed to initialize database: {e}");
         std::process::exit(1);
     });
@@ -73,14 +73,14 @@ async fn main() {
                     &api_key,
                     &entry.model,
                     endpoint,
-                    system_prompt,
+                    &system_prompt,
                 ))
             }
             "lmstudio" => {
                 AnyProvider::LmStudio(LmStudioProvider::new(
                     &entry.model,
                     endpoint,
-                    system_prompt,
+                    &system_prompt,
                 ))
             }
             other => {
@@ -94,8 +94,8 @@ async fn main() {
         chain_entries.push((provider, entry.model.clone()));
     }
 
-    let primary_type = &config.models.chat.providers[0].provider_type;
-    let primary_model = &config.models.chat.providers[0].model;
+    let primary_type = config.models.chat.providers[0].provider_type.clone();
+    let primary_model = config.models.chat.providers[0].model.clone();
     let provider_count = chain_entries.len();
     let provider = ProviderChain::new(chain_entries);
 
@@ -208,6 +208,7 @@ async fn main() {
         conversation_approvals: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
         approval_overrides,
         approval_timeout: std::time::Duration::from_secs(60),
+        config: std::sync::RwLock::new(config),
     });
 
     let app = Router::new()
@@ -218,6 +219,7 @@ async fn main() {
         .route("/api/memory/migrate", post(migrate_memory::<AppProvider>))
         .route("/api/memory", axum::routing::delete(clear_memory::<AppProvider>))
         .route("/api/warnings", get(get_warnings::<AppProvider>))
+        .route("/api/config", get(get_config::<AppProvider>))
         .with_state(state)
         .fallback_service(ServeDir::new("frontend/dist"));
 

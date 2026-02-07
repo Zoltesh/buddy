@@ -19,15 +19,15 @@ The frontend can fetch the full server configuration (models, skills, chat, memo
 
 ## Acceptance Criteria
 
-- [ ] `GET /api/config` returns the current config as JSON
-- [ ] All config structs implement `Serialize`
-- [ ] API key env var names are returned but resolved secrets are not
-- [ ] Config is stored in `AppState` behind `Arc<RwLock<Config>>`
-- [ ] Response structure mirrors the TOML file layout
+- [x] `GET /api/config` returns the current config as JSON
+- [x] All config structs implement `Serialize`
+- [x] API key env var names are returned but resolved secrets are not
+- [x] Config is stored in `AppState` behind `Arc<RwLock<Config>>`
+- [x] Response structure mirrors the TOML file layout
 
 ## Test Cases
 
-- [ ] Call `GET /api/config` with a full config (all sections populated); assert 200 and JSON contains `models.chat.providers`, `skills`, `chat.system_prompt`, `server.host`, `server.port`
-- [ ] Call `GET /api/config` with a minimal config (no embedding, no skills); assert 200 and JSON has `models.embedding` as null, `skills` sections as null
-- [ ] Assert `api_key_env` field is present in provider entries but no resolved key value appears anywhere in the response
-- [ ] Assert the returned JSON can be deserialized back into a `Config` struct (round-trip sanity check)
+- [x] Call `GET /api/config` with a full config (all sections populated); assert 200 and JSON contains `models.chat.providers`, `skills`, `chat.system_prompt`, `server.host`, `server.port`
+- [x] Call `GET /api/config` with a minimal config (no embedding, no skills); assert 200 and JSON has `models.embedding` as null, `skills` sections as null
+- [x] Assert `api_key_env` field is present in provider entries but no resolved key value appears anywhere in the response
+- [x] Assert the returned JSON can be deserialized back into a `Config` struct (round-trip sanity check)

@@ -110,6 +110,7 @@ pub struct AppState<P> {
     pub conversation_approvals: ConversationApprovals,
     pub approval_overrides: HashMap<String, ApprovalPolicy>,
     pub approval_timeout: std::time::Duration,
+    pub config: std::sync::RwLock<crate::config::Config>,
 }
 
 // ── Conversation CRUD handlers ──────────────────────────────────────────
@@ -207,6 +208,16 @@ pub async fn get_warnings<P: Provider + 'static>(
 ) -> Json<Vec<crate::warning::Warning>> {
     let collector = state.warnings.read().unwrap();
     Json(collector.list().to_vec())
+}
+
+// ── Config handlers ─────────────────────────────────────────────────────
+
+/// `GET /api/config` — return the current configuration as JSON.
+pub async fn get_config<P: Provider + 'static>(
+    State(state): State<Arc<AppState<P>>>,
+) -> Json<crate::config::Config> {
+    let config = state.config.read().unwrap();
+    Json(config.clone())
 }
 
 // ── Memory management handlers ──────────────────────────────────────────
@@ -868,6 +879,18 @@ mod tests {
 
     // ── Helpers ─────────────────────────────────────────────────────────
 
+    fn test_config() -> crate::config::Config {
+        crate::config::Config::parse(
+            r#"
+[[models.chat.providers]]
+type = "lmstudio"
+model = "test-model"
+endpoint = "http://localhost:1234/v1"
+"#,
+        )
+        .unwrap()
+    }
+
     fn registry_with_echo() -> SkillRegistry {
         let mut r = SkillRegistry::new();
         r.register(Box::new(MockEchoSkill));
@@ -894,6 +917,7 @@ mod tests {
             conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
             approval_overrides: HashMap::new(),
             approval_timeout: std::time::Duration::from_secs(1),
+            config: std::sync::RwLock::new(test_config()),
         });
         Router::new()
             .route("/api/chat", post(chat_handler::<MockProvider>))
@@ -914,6 +938,7 @@ mod tests {
             conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
             approval_overrides: HashMap::new(),
             approval_timeout: std::time::Duration::from_secs(1),
+            config: std::sync::RwLock::new(test_config()),
         });
         Router::new()
             .route("/api/chat", post(chat_handler::<MockProvider>))
@@ -935,6 +960,7 @@ mod tests {
             conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
             approval_overrides: HashMap::new(),
             approval_timeout: std::time::Duration::from_secs(1),
+            config: std::sync::RwLock::new(test_config()),
         });
         Router::new()
             .route("/api/chat", post(chat_handler::<SequencedProvider>))
@@ -955,6 +981,7 @@ mod tests {
             conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
             approval_overrides: HashMap::new(),
             approval_timeout: std::time::Duration::from_secs(1),
+            config: std::sync::RwLock::new(test_config()),
         });
         let router = Router::new()
             .route("/api/chat", post(chat_handler::<MockProvider>))
@@ -1314,6 +1341,7 @@ mod tests {
                 conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
                 approval_overrides: HashMap::new(),
                 approval_timeout: std::time::Duration::from_secs(1),
+                config: std::sync::RwLock::new(test_config()),
             });
             let app = Router::new()
                 .route(
@@ -1531,6 +1559,7 @@ mod tests {
                 conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
                 approval_overrides: HashMap::new(),
                 approval_timeout: std::time::Duration::from_secs(1),
+                config: std::sync::RwLock::new(test_config()),
             });
             let app = Router::new()
                 .route("/api/chat", post(chat_handler::<SequencedProvider>))
@@ -1605,6 +1634,7 @@ mod tests {
                 conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
                 approval_overrides: HashMap::new(),
                 approval_timeout: std::time::Duration::from_secs(1),
+                config: std::sync::RwLock::new(test_config()),
             });
             Router::new()
                 .route("/api/chat", post(chat_handler::<MockProvider>))
@@ -1684,6 +1714,7 @@ mod tests {
                 conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
                 approval_overrides: HashMap::new(),
                 approval_timeout: std::time::Duration::from_secs(1),
+                config: std::sync::RwLock::new(test_config()),
             });
             let app = Router::new()
                 .route("/api/warnings", get(get_warnings::<MockProvider>))
@@ -1738,6 +1769,7 @@ mod tests {
                 conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
                 approval_overrides: HashMap::new(),
                 approval_timeout: std::time::Duration::from_secs(1),
+                config: std::sync::RwLock::new(test_config()),
             });
             let app = Router::new()
                 .route("/api/warnings", get(get_warnings::<MockProvider>))
@@ -1857,6 +1889,7 @@ mod tests {
                 conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
                 approval_overrides: overrides,
                 approval_timeout: timeout,
+                config: std::sync::RwLock::new(test_config()),
             });
             let router = Router::new()
                 .route("/api/chat", post(chat_handler::<SequencedProvider>))
@@ -2216,6 +2249,256 @@ mod tests {
                     "denied message should be informative: {content}"
                 );
             }
+        }
+    }
+
+    mod config_api {
+        use super::*;
+
+        fn config_app(config: crate::config::Config) -> Router {
+            let state = Arc::new(AppState {
+                provider: MockProvider {
+                    tokens: vec!["hi".into()],
+                },
+                registry: SkillRegistry::new(),
+                store: crate::store::Store::open_in_memory().unwrap(),
+                embedder: None,
+                vector_store: None,
+                working_memory: crate::skill::working_memory::new_working_memory_map(),
+                memory_config: crate::config::MemoryConfig::default(),
+                warnings: crate::warning::new_shared_warnings(),
+                pending_approvals: new_pending_approvals(),
+                conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
+                approval_overrides: HashMap::new(),
+                approval_timeout: std::time::Duration::from_secs(1),
+                config: std::sync::RwLock::new(config),
+            });
+            Router::new()
+                .route("/api/config", get(get_config::<MockProvider>))
+                .with_state(state)
+        }
+
+        #[tokio::test]
+        async fn full_config_returns_all_sections() {
+            let config = crate::config::Config::parse(
+                r#"
+[server]
+host = "0.0.0.0"
+port = 8080
+
+[[models.chat.providers]]
+type = "openai"
+model = "gpt-4"
+endpoint = "https://api.openai.com/v1"
+api_key_env = "OPENAI_API_KEY"
+
+[[models.chat.providers]]
+type = "lmstudio"
+model = "deepseek-coder"
+endpoint = "http://localhost:1234/v1"
+
+[[models.embedding.providers]]
+type = "local"
+model = "all-minilm"
+
+[chat]
+system_prompt = "Be helpful."
+
+[skills.read_file]
+allowed_directories = ["/tmp"]
+
+[skills.write_file]
+allowed_directories = ["/tmp"]
+
+[skills.fetch_url]
+allowed_domains = ["example.com"]
+
+[memory]
+auto_retrieve = false
+auto_retrieve_limit = 5
+similarity_threshold = 0.8
+"#,
+            )
+            .unwrap();
+
+            let app = config_app(config);
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("GET")
+                        .uri("/api/config")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), StatusCode::OK);
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let json: serde_json::Value =
+                serde_json::from_slice(&bytes).expect("response should be valid JSON");
+
+            // Models section
+            let chat_providers = &json["models"]["chat"]["providers"];
+            assert_eq!(chat_providers.as_array().unwrap().len(), 2);
+            assert_eq!(chat_providers[0]["type"], "openai");
+            assert_eq!(chat_providers[0]["model"], "gpt-4");
+            assert_eq!(chat_providers[1]["type"], "lmstudio");
+
+            let emb_providers = &json["models"]["embedding"]["providers"];
+            assert_eq!(emb_providers.as_array().unwrap().len(), 1);
+            assert_eq!(emb_providers[0]["type"], "local");
+
+            // Chat section
+            assert_eq!(json["chat"]["system_prompt"], "Be helpful.");
+
+            // Server section
+            assert_eq!(json["server"]["host"], "0.0.0.0");
+            assert_eq!(json["server"]["port"], 8080);
+
+            // Skills section
+            assert!(json["skills"]["read_file"].is_object());
+            assert!(json["skills"]["write_file"].is_object());
+            assert!(json["skills"]["fetch_url"].is_object());
+
+            // Memory section
+            assert_eq!(json["memory"]["auto_retrieve"], false);
+            assert_eq!(json["memory"]["auto_retrieve_limit"], 5);
+        }
+
+        #[tokio::test]
+        async fn minimal_config_returns_nulls_for_optional_sections() {
+            let config = crate::config::Config::parse(
+                r#"
+[[models.chat.providers]]
+type = "lmstudio"
+model = "test-model"
+endpoint = "http://localhost:1234/v1"
+"#,
+            )
+            .unwrap();
+
+            let app = config_app(config);
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("GET")
+                        .uri("/api/config")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), StatusCode::OK);
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+
+            assert!(json["models"]["embedding"].is_null());
+            assert!(json["skills"]["read_file"].is_null());
+            assert!(json["skills"]["write_file"].is_null());
+            assert!(json["skills"]["fetch_url"].is_null());
+        }
+
+        #[tokio::test]
+        async fn api_key_env_present_but_secret_not_leaked() {
+            let config = crate::config::Config::parse(
+                r#"
+[[models.chat.providers]]
+type = "openai"
+model = "gpt-4"
+endpoint = "https://api.openai.com/v1"
+api_key_env = "BUDDY_TEST_SECRET_029"
+"#,
+            )
+            .unwrap();
+
+            let app = config_app(config);
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("GET")
+                        .uri("/api/config")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let body = String::from_utf8(bytes.to_vec()).unwrap();
+
+            // The env var name should appear in the response.
+            assert!(
+                body.contains("BUDDY_TEST_SECRET_029"),
+                "api_key_env name should be present"
+            );
+
+            // Set the env var to a known value and verify it does NOT appear.
+            unsafe { std::env::set_var("BUDDY_TEST_SECRET_029", "super-secret-key-value") };
+            assert!(
+                !body.contains("super-secret-key-value"),
+                "resolved secret must not appear in the response"
+            );
+            unsafe { std::env::remove_var("BUDDY_TEST_SECRET_029") };
+        }
+
+        #[tokio::test]
+        async fn round_trip_json_to_config() {
+            let config = crate::config::Config::parse(
+                r#"
+[server]
+host = "127.0.0.1"
+port = 3000
+
+[[models.chat.providers]]
+type = "openai"
+model = "gpt-4"
+endpoint = "https://api.openai.com/v1"
+api_key_env = "MY_KEY"
+
+[[models.embedding.providers]]
+type = "local"
+model = "all-minilm"
+
+[chat]
+system_prompt = "Hello"
+
+[skills.read_file]
+allowed_directories = ["/tmp"]
+
+[memory]
+auto_retrieve = true
+auto_retrieve_limit = 3
+similarity_threshold = 0.5
+"#,
+            )
+            .unwrap();
+
+            let app = config_app(config);
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("GET")
+                        .uri("/api/config")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let deserialized: crate::config::Config =
+                serde_json::from_slice(&bytes).expect("should deserialize back into Config");
+
+            assert_eq!(deserialized.server.host, "127.0.0.1");
+            assert_eq!(deserialized.server.port, 3000);
+            assert_eq!(deserialized.models.chat.providers.len(), 1);
+            assert_eq!(deserialized.models.chat.providers[0].model, "gpt-4");
+            assert!(deserialized.models.embedding.is_some());
+            assert_eq!(deserialized.chat.system_prompt, "Hello");
+            assert!(deserialized.skills.read_file.is_some());
+            assert!(deserialized.memory.auto_retrieve);
         }
     }
 }
