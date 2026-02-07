@@ -22,3 +22,5 @@ buddy.toml
 
 # Database
 buddy.db*
+
+.fastembed_cache/
