@@ -20,6 +20,7 @@ use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::sse::{Event, Sse};
+use axum::response::IntoResponse;
 use axum::Json;
 use chrono::Utc;
 use futures_core::Stream;
@@ -111,6 +112,7 @@ pub struct AppState<P> {
     pub approval_overrides: HashMap<String, ApprovalPolicy>,
     pub approval_timeout: std::time::Duration,
     pub config: std::sync::RwLock<crate::config::Config>,
+    pub config_path: std::path::PathBuf,
 }
 
 // ── Conversation CRUD handlers ──────────────────────────────────────────
@@ -218,6 +220,223 @@ pub async fn get_config<P: Provider + 'static>(
 ) -> Json<crate::config::Config> {
     let config = state.config.read().unwrap();
     Json(config.clone())
+}
+
+// ── Config write types and helpers ───────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct FieldError {
+    pub field: String,
+    pub message: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ValidationErrorResponse {
+    pub errors: Vec<FieldError>,
+}
+
+fn validate_models(models: &crate::config::ModelsConfig) -> Vec<FieldError> {
+    let mut errors = Vec::new();
+    if models.chat.providers.is_empty() {
+        errors.push(FieldError {
+            field: "models.chat.providers".into(),
+            message: "must not be empty".into(),
+        });
+    }
+    for (i, p) in models.chat.providers.iter().enumerate() {
+        if !["openai", "lmstudio", "local"].contains(&p.provider_type.as_str()) {
+            errors.push(FieldError {
+                field: format!("models.chat.providers[{i}].type"),
+                message: format!(
+                    "unknown provider type '{}'; expected openai, lmstudio, or local",
+                    p.provider_type
+                ),
+            });
+        }
+        if p.model.is_empty() {
+            errors.push(FieldError {
+                field: format!("models.chat.providers[{i}].model"),
+                message: "must not be empty".into(),
+            });
+        }
+    }
+    if let Some(ref emb) = models.embedding {
+        for (i, p) in emb.providers.iter().enumerate() {
+            if !["openai", "lmstudio", "local"].contains(&p.provider_type.as_str()) {
+                errors.push(FieldError {
+                    field: format!("models.embedding.providers[{i}].type"),
+                    message: format!(
+                        "unknown provider type '{}'; expected openai, lmstudio, or local",
+                        p.provider_type
+                    ),
+                });
+            }
+            if p.model.is_empty() {
+                errors.push(FieldError {
+                    field: format!("models.embedding.providers[{i}].model"),
+                    message: "must not be empty".into(),
+                });
+            }
+        }
+    }
+    errors
+}
+
+fn validate_server(server: &crate::config::ServerConfig) -> Vec<FieldError> {
+    let mut errors = Vec::new();
+    if server.port == 0 {
+        errors.push(FieldError {
+            field: "server.port".into(),
+            message: "must be between 1 and 65535".into(),
+        });
+    }
+    errors
+}
+
+fn validate_skills(skills: &crate::config::SkillsConfig) -> Vec<FieldError> {
+    let mut errors = Vec::new();
+    if let Some(ref rf) = skills.read_file {
+        for (i, dir) in rf.allowed_directories.iter().enumerate() {
+            let path = std::path::Path::new(dir);
+            if !path.is_dir() {
+                errors.push(FieldError {
+                    field: format!("skills.read_file.allowed_directories[{i}]"),
+                    message: format!("'{}' does not exist or is not a directory", dir),
+                });
+            }
+        }
+    }
+    if let Some(ref wf) = skills.write_file {
+        for (i, dir) in wf.allowed_directories.iter().enumerate() {
+            let path = std::path::Path::new(dir);
+            if !path.is_dir() {
+                errors.push(FieldError {
+                    field: format!("skills.write_file.allowed_directories[{i}]"),
+                    message: format!("'{}' does not exist or is not a directory", dir),
+                });
+            }
+        }
+    }
+    if let Some(ref fu) = skills.fetch_url {
+        for (i, domain) in fu.allowed_domains.iter().enumerate() {
+            if domain.is_empty() {
+                errors.push(FieldError {
+                    field: format!("skills.fetch_url.allowed_domains[{i}]"),
+                    message: "must not be empty".into(),
+                });
+            }
+        }
+    }
+    errors
+}
+
+fn atomic_write(path: &std::path::Path, content: &str) -> Result<(), String> {
+    let parent = path.parent().ok_or_else(|| "config path has no parent directory".to_string())?;
+    let tmp_path = parent.join(".buddy.toml.tmp");
+    std::fs::write(&tmp_path, content)
+        .map_err(|e| format!("failed to write temp file: {e}"))?;
+    std::fs::rename(&tmp_path, path)
+        .map_err(|e| format!("failed to rename temp file: {e}"))?;
+    Ok(())
+}
+
+// ── Config write handlers ───────────────────────────────────────────────
+
+/// `PUT /api/config/models` — update the models section.
+pub async fn put_config_models<P: Provider + 'static>(
+    State(state): State<Arc<AppState<P>>>,
+    Json(models): Json<crate::config::ModelsConfig>,
+) -> axum::response::Response {
+    let errors = validate_models(&models);
+    if !errors.is_empty() {
+        return (StatusCode::BAD_REQUEST, Json(ValidationErrorResponse { errors })).into_response();
+    }
+    let mut config = state.config.write().unwrap();
+    config.models = models;
+    let toml = config.to_toml_string();
+    if let Err(e) = atomic_write(&state.config_path, &toml) {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiError { code: "write_error".into(), message: e }),
+        ).into_response();
+    }
+    Json(config.clone()).into_response()
+}
+
+/// `PUT /api/config/skills` — update the skills section.
+pub async fn put_config_skills<P: Provider + 'static>(
+    State(state): State<Arc<AppState<P>>>,
+    Json(skills): Json<crate::config::SkillsConfig>,
+) -> axum::response::Response {
+    let errors = validate_skills(&skills);
+    if !errors.is_empty() {
+        return (StatusCode::BAD_REQUEST, Json(ValidationErrorResponse { errors })).into_response();
+    }
+    let mut config = state.config.write().unwrap();
+    config.skills = skills;
+    let toml = config.to_toml_string();
+    if let Err(e) = atomic_write(&state.config_path, &toml) {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiError { code: "write_error".into(), message: e }),
+        ).into_response();
+    }
+    Json(config.clone()).into_response()
+}
+
+/// `PUT /api/config/chat` — update the chat section.
+pub async fn put_config_chat<P: Provider + 'static>(
+    State(state): State<Arc<AppState<P>>>,
+    Json(chat): Json<crate::config::ChatConfig>,
+) -> axum::response::Response {
+    let mut config = state.config.write().unwrap();
+    config.chat = chat;
+    let toml = config.to_toml_string();
+    if let Err(e) = atomic_write(&state.config_path, &toml) {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiError { code: "write_error".into(), message: e }),
+        ).into_response();
+    }
+    Json(config.clone()).into_response()
+}
+
+/// `PUT /api/config/server` — update the server section.
+pub async fn put_config_server<P: Provider + 'static>(
+    State(state): State<Arc<AppState<P>>>,
+    Json(server): Json<crate::config::ServerConfig>,
+) -> axum::response::Response {
+    let errors = validate_server(&server);
+    if !errors.is_empty() {
+        return (StatusCode::BAD_REQUEST, Json(ValidationErrorResponse { errors })).into_response();
+    }
+    let mut config = state.config.write().unwrap();
+    config.server = server;
+    let toml = config.to_toml_string();
+    if let Err(e) = atomic_write(&state.config_path, &toml) {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiError { code: "write_error".into(), message: e }),
+        ).into_response();
+    }
+    Json(config.clone()).into_response()
+}
+
+/// `PUT /api/config/memory` — update the memory section.
+pub async fn put_config_memory<P: Provider + 'static>(
+    State(state): State<Arc<AppState<P>>>,
+    Json(memory): Json<crate::config::MemoryConfig>,
+) -> axum::response::Response {
+    let mut config = state.config.write().unwrap();
+    config.memory = memory;
+    let toml = config.to_toml_string();
+    if let Err(e) = atomic_write(&state.config_path, &toml) {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiError { code: "write_error".into(), message: e }),
+        ).into_response();
+    }
+    Json(config.clone()).into_response()
 }
 
 // ── Memory management handlers ──────────────────────────────────────────
@@ -918,6 +1137,7 @@ endpoint = "http://localhost:1234/v1"
             approval_overrides: HashMap::new(),
             approval_timeout: std::time::Duration::from_secs(1),
             config: std::sync::RwLock::new(test_config()),
+            config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
         });
         Router::new()
             .route("/api/chat", post(chat_handler::<MockProvider>))
@@ -939,6 +1159,7 @@ endpoint = "http://localhost:1234/v1"
             approval_overrides: HashMap::new(),
             approval_timeout: std::time::Duration::from_secs(1),
             config: std::sync::RwLock::new(test_config()),
+            config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
         });
         Router::new()
             .route("/api/chat", post(chat_handler::<MockProvider>))
@@ -961,6 +1182,7 @@ endpoint = "http://localhost:1234/v1"
             approval_overrides: HashMap::new(),
             approval_timeout: std::time::Duration::from_secs(1),
             config: std::sync::RwLock::new(test_config()),
+            config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
         });
         Router::new()
             .route("/api/chat", post(chat_handler::<SequencedProvider>))
@@ -982,6 +1204,7 @@ endpoint = "http://localhost:1234/v1"
             approval_overrides: HashMap::new(),
             approval_timeout: std::time::Duration::from_secs(1),
             config: std::sync::RwLock::new(test_config()),
+            config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
         });
         let router = Router::new()
             .route("/api/chat", post(chat_handler::<MockProvider>))
@@ -1342,6 +1565,7 @@ endpoint = "http://localhost:1234/v1"
                 approval_overrides: HashMap::new(),
                 approval_timeout: std::time::Duration::from_secs(1),
                 config: std::sync::RwLock::new(test_config()),
+                config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
             });
             let app = Router::new()
                 .route(
@@ -1560,6 +1784,7 @@ endpoint = "http://localhost:1234/v1"
                 approval_overrides: HashMap::new(),
                 approval_timeout: std::time::Duration::from_secs(1),
                 config: std::sync::RwLock::new(test_config()),
+                config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
             });
             let app = Router::new()
                 .route("/api/chat", post(chat_handler::<SequencedProvider>))
@@ -1635,6 +1860,7 @@ endpoint = "http://localhost:1234/v1"
                 approval_overrides: HashMap::new(),
                 approval_timeout: std::time::Duration::from_secs(1),
                 config: std::sync::RwLock::new(test_config()),
+                config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
             });
             Router::new()
                 .route("/api/chat", post(chat_handler::<MockProvider>))
@@ -1715,6 +1941,7 @@ endpoint = "http://localhost:1234/v1"
                 approval_overrides: HashMap::new(),
                 approval_timeout: std::time::Duration::from_secs(1),
                 config: std::sync::RwLock::new(test_config()),
+                config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
             });
             let app = Router::new()
                 .route("/api/warnings", get(get_warnings::<MockProvider>))
@@ -1770,6 +1997,7 @@ endpoint = "http://localhost:1234/v1"
                 approval_overrides: HashMap::new(),
                 approval_timeout: std::time::Duration::from_secs(1),
                 config: std::sync::RwLock::new(test_config()),
+                config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
             });
             let app = Router::new()
                 .route("/api/warnings", get(get_warnings::<MockProvider>))
@@ -1890,6 +2118,7 @@ endpoint = "http://localhost:1234/v1"
                 approval_overrides: overrides,
                 approval_timeout: timeout,
                 config: std::sync::RwLock::new(test_config()),
+                config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
             });
             let router = Router::new()
                 .route("/api/chat", post(chat_handler::<SequencedProvider>))
@@ -2272,6 +2501,7 @@ endpoint = "http://localhost:1234/v1"
                 approval_overrides: HashMap::new(),
                 approval_timeout: std::time::Duration::from_secs(1),
                 config: std::sync::RwLock::new(config),
+                config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
             });
             Router::new()
                 .route("/api/config", get(get_config::<MockProvider>))
@@ -2499,6 +2729,351 @@ similarity_threshold = 0.5
             assert_eq!(deserialized.chat.system_prompt, "Hello");
             assert!(deserialized.skills.read_file.is_some());
             assert!(deserialized.memory.auto_retrieve);
+        }
+
+        /// Helper that creates a temp dir with a real config file and returns (temp_dir, Router).
+        fn config_write_app() -> (std::path::PathBuf, Router) {
+            use std::sync::atomic::{AtomicU64, Ordering};
+            static COUNTER: AtomicU64 = AtomicU64::new(0);
+            let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+            let dir = std::env::temp_dir().join(format!("buddy-config-write-{}-{}", std::process::id(), id));
+            std::fs::create_dir_all(&dir).unwrap();
+            let config_path = dir.join("buddy.toml");
+            let initial_toml = r#"
+[[models.chat.providers]]
+type = "lmstudio"
+model = "test-model"
+endpoint = "http://localhost:1234/v1"
+"#;
+            std::fs::write(&config_path, initial_toml).unwrap();
+            let config = crate::config::Config::parse(initial_toml).unwrap();
+            let state = Arc::new(AppState {
+                provider: MockProvider { tokens: vec!["hi".into()] },
+                registry: SkillRegistry::new(),
+                store: crate::store::Store::open_in_memory().unwrap(),
+                embedder: None,
+                vector_store: None,
+                working_memory: crate::skill::working_memory::new_working_memory_map(),
+                memory_config: crate::config::MemoryConfig::default(),
+                warnings: crate::warning::new_shared_warnings(),
+                pending_approvals: new_pending_approvals(),
+                conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
+                approval_overrides: HashMap::new(),
+                approval_timeout: std::time::Duration::from_secs(1),
+                config: std::sync::RwLock::new(config),
+                config_path,
+            });
+            let router = Router::new()
+                .route("/api/config", get(get_config::<MockProvider>))
+                .route("/api/config/models", axum::routing::put(put_config_models::<MockProvider>))
+                .route("/api/config/skills", axum::routing::put(put_config_skills::<MockProvider>))
+                .route("/api/config/chat", axum::routing::put(put_config_chat::<MockProvider>))
+                .route("/api/config/server", axum::routing::put(put_config_server::<MockProvider>))
+                .route("/api/config/memory", axum::routing::put(put_config_memory::<MockProvider>))
+                .with_state(state);
+            (dir, router)
+        }
+
+        #[tokio::test]
+        async fn put_valid_models_persists_to_disk() {
+            let (dir, app) = config_write_app();
+            let body = serde_json::json!({
+                "chat": {
+                    "providers": [{
+                        "type": "openai",
+                        "model": "gpt-4o",
+                        "endpoint": "https://api.openai.com/v1",
+                        "api_key_env": "MY_KEY"
+                    }]
+                }
+            });
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("PUT")
+                        .uri("/api/config/models")
+                        .header("content-type", "application/json")
+                        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+
+            let disk = std::fs::read_to_string(dir.join("buddy.toml")).unwrap();
+            let reparsed = crate::config::Config::parse(&disk).unwrap();
+            assert_eq!(reparsed.models.chat.providers[0].model, "gpt-4o");
+            assert_eq!(reparsed.models.chat.providers[0].provider_type, "openai");
+
+            std::fs::remove_dir_all(&dir).ok();
+        }
+
+        #[tokio::test]
+        async fn put_models_empty_providers_returns_400() {
+            let (dir, app) = config_write_app();
+            let body = serde_json::json!({
+                "chat": { "providers": [] }
+            });
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("PUT")
+                        .uri("/api/config/models")
+                        .header("content-type", "application/json")
+                        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let err: ValidationErrorResponse = serde_json::from_slice(&bytes).unwrap();
+            assert!(err.errors.iter().any(|e| e.field.contains("models.chat.providers")));
+
+            std::fs::remove_dir_all(&dir).ok();
+        }
+
+        #[tokio::test]
+        async fn put_models_unknown_provider_type_returns_400() {
+            let (dir, app) = config_write_app();
+            let body = serde_json::json!({
+                "chat": {
+                    "providers": [{
+                        "type": "anthropic",
+                        "model": "claude"
+                    }]
+                }
+            });
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("PUT")
+                        .uri("/api/config/models")
+                        .header("content-type", "application/json")
+                        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let err: ValidationErrorResponse = serde_json::from_slice(&bytes).unwrap();
+            assert!(err.errors.iter().any(|e| e.field.contains("type")));
+
+            std::fs::remove_dir_all(&dir).ok();
+        }
+
+        #[tokio::test]
+        async fn put_models_empty_model_string_returns_400() {
+            let (dir, app) = config_write_app();
+            let body = serde_json::json!({
+                "chat": {
+                    "providers": [{
+                        "type": "openai",
+                        "model": ""
+                    }]
+                }
+            });
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("PUT")
+                        .uri("/api/config/models")
+                        .header("content-type", "application/json")
+                        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let err: ValidationErrorResponse = serde_json::from_slice(&bytes).unwrap();
+            assert!(err.errors.iter().any(|e| e.field.contains("model")));
+
+            std::fs::remove_dir_all(&dir).ok();
+        }
+
+        #[tokio::test]
+        async fn put_skills_updates_skills_preserves_others() {
+            let (dir, app) = config_write_app();
+            let tmp = std::env::temp_dir();
+            let body = serde_json::json!({
+                "read_file": {
+                    "allowed_directories": [tmp.to_str().unwrap()]
+                }
+            });
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("PUT")
+                        .uri("/api/config/skills")
+                        .header("content-type", "application/json")
+                        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+
+            let disk = std::fs::read_to_string(dir.join("buddy.toml")).unwrap();
+            let reparsed = crate::config::Config::parse(&disk).unwrap();
+            assert!(reparsed.skills.read_file.is_some());
+            // Models section should be unchanged.
+            assert_eq!(reparsed.models.chat.providers[0].model, "test-model");
+
+            std::fs::remove_dir_all(&dir).ok();
+        }
+
+        #[tokio::test]
+        async fn put_chat_persists_system_prompt() {
+            let (dir, app) = config_write_app();
+            let body = serde_json::json!({
+                "system_prompt": "You are a pirate."
+            });
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("PUT")
+                        .uri("/api/config/chat")
+                        .header("content-type", "application/json")
+                        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+
+            let disk = std::fs::read_to_string(dir.join("buddy.toml")).unwrap();
+            let reparsed = crate::config::Config::parse(&disk).unwrap();
+            assert_eq!(reparsed.chat.system_prompt, "You are a pirate.");
+
+            std::fs::remove_dir_all(&dir).ok();
+        }
+
+        #[tokio::test]
+        async fn put_server_persists_port() {
+            let (dir, app) = config_write_app();
+            let body = serde_json::json!({
+                "host": "0.0.0.0",
+                "port": 8080
+            });
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("PUT")
+                        .uri("/api/config/server")
+                        .header("content-type", "application/json")
+                        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+
+            let disk = std::fs::read_to_string(dir.join("buddy.toml")).unwrap();
+            let reparsed = crate::config::Config::parse(&disk).unwrap();
+            assert_eq!(reparsed.server.port, 8080);
+            assert_eq!(reparsed.server.host, "0.0.0.0");
+
+            std::fs::remove_dir_all(&dir).ok();
+        }
+
+        #[tokio::test]
+        async fn put_memory_persists() {
+            let (dir, app) = config_write_app();
+            let body = serde_json::json!({
+                "auto_retrieve": false,
+                "auto_retrieve_limit": 10,
+                "similarity_threshold": 0.9
+            });
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("PUT")
+                        .uri("/api/config/memory")
+                        .header("content-type", "application/json")
+                        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+
+            let disk = std::fs::read_to_string(dir.join("buddy.toml")).unwrap();
+            let reparsed = crate::config::Config::parse(&disk).unwrap();
+            assert!(!reparsed.memory.auto_retrieve);
+            assert_eq!(reparsed.memory.auto_retrieve_limit, 10);
+
+            std::fs::remove_dir_all(&dir).ok();
+        }
+
+        #[tokio::test]
+        async fn get_config_reflects_put_change() {
+            let (dir, app) = config_write_app();
+            let body = serde_json::json!({
+                "system_prompt": "Changed prompt."
+            });
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("PUT")
+                        .uri("/api/config/chat")
+                        .header("content-type", "application/json")
+                        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("GET")
+                        .uri("/api/config")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(json["chat"]["system_prompt"], "Changed prompt.");
+
+            std::fs::remove_dir_all(&dir).ok();
+        }
+
+        #[tokio::test]
+        async fn validation_returns_all_failures() {
+            let (dir, app) = config_write_app();
+            let body = serde_json::json!({
+                "chat": {
+                    "providers": [
+                        { "type": "unknown1", "model": "" },
+                        { "type": "unknown2", "model": "" }
+                    ]
+                }
+            });
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("PUT")
+                        .uri("/api/config/models")
+                        .header("content-type", "application/json")
+                        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let err: ValidationErrorResponse = serde_json::from_slice(&bytes).unwrap();
+            // Should have 4 errors: 2 unknown types + 2 empty models
+            assert_eq!(err.errors.len(), 4, "expected 4 validation errors, got: {:?}", err.errors);
+
+            std::fs::remove_dir_all(&dir).ok();
         }
     }
 }

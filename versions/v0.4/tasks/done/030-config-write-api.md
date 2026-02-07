@@ -37,27 +37,27 @@ The Settings UI can save configuration changes through backend API endpoints. Ch
 
 ## Acceptance Criteria
 
-- [ ] `PUT /api/config/models` updates the models section and persists to `buddy.toml`
-- [ ] `PUT /api/config/skills` updates the skills section and persists
-- [ ] `PUT /api/config/chat` updates the chat section and persists
-- [ ] `PUT /api/config/server` updates the server section and persists
-- [ ] `PUT /api/config/memory` updates the memory section and persists
-- [ ] Validation rejects empty `models.chat.providers` with a structured error
-- [ ] Validation rejects unknown `provider_type` values
-- [ ] Validation rejects empty `model` strings
-- [ ] Write is atomic (temp file + rename)
-- [ ] In-memory config is updated after successful write
-- [ ] Existing config sections not included in the request body are preserved
+- [x] `PUT /api/config/models` updates the models section and persists to `buddy.toml`
+- [x] `PUT /api/config/skills` updates the skills section and persists
+- [x] `PUT /api/config/chat` updates the chat section and persists
+- [x] `PUT /api/config/server` updates the server section and persists
+- [x] `PUT /api/config/memory` updates the memory section and persists
+- [x] Validation rejects empty `models.chat.providers` with a structured error
+- [x] Validation rejects unknown `provider_type` values
+- [x] Validation rejects empty `model` strings
+- [x] Write is atomic (temp file + rename)
+- [x] In-memory config is updated after successful write
+- [x] Existing config sections not included in the request body are preserved
 
 ## Test Cases
 
-- [ ] PUT valid models config; read `buddy.toml` from disk; assert it contains the updated providers
-- [ ] PUT models with empty `providers` array; assert 400 with validation error on `models.chat.providers`
-- [ ] PUT models with unknown `provider_type`; assert 400 with validation error
-- [ ] PUT models with empty `model` string; assert 400 with validation error
-- [ ] PUT valid skills config; assert skills section is updated and other sections are unchanged
-- [ ] PUT chat config with new `system_prompt`; assert it persists
-- [ ] PUT server config with valid port; assert it persists
-- [ ] PUT memory config; assert it persists
-- [ ] Call `GET /api/config` after a successful PUT; assert the in-memory config reflects the change
-- [ ] Assert validation errors return all failures (not just the first one)
+- [x] PUT valid models config; read `buddy.toml` from disk; assert it contains the updated providers
+- [x] PUT models with empty `providers` array; assert 400 with validation error on `models.chat.providers`
+- [x] PUT models with unknown `provider_type`; assert 400 with validation error
+- [x] PUT models with empty `model` string; assert 400 with validation error
+- [x] PUT valid skills config; assert skills section is updated and other sections are unchanged
+- [x] PUT chat config with new `system_prompt`; assert it persists
+- [x] PUT server config with valid port; assert it persists
+- [x] PUT memory config; assert it persists
+- [x] Call `GET /api/config` after a successful PUT; assert the in-memory config reflects the change
+- [x] Assert validation errors return all failures (not just the first one)

@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use axum::routing::{get, post};
+use axum::routing::{get, post, put};
 use axum::Router;
 use tokio::signal;
 use tower_http::services::ServeDir;
@@ -18,7 +18,7 @@ mod testutil;
 mod types;
 mod warning;
 
-use api::{approve_handler, chat_handler, clear_memory, create_conversation, delete_conversation, get_config, get_conversation, get_warnings, list_conversations, migrate_memory, new_pending_approvals, AppState};
+use api::{approve_handler, chat_handler, clear_memory, create_conversation, delete_conversation, get_config, get_conversation, get_warnings, list_conversations, migrate_memory, new_pending_approvals, put_config_chat, put_config_memory, put_config_models, put_config_server, put_config_skills, AppState};
 use config::SkillsConfig;
 use provider::{AnyProvider, ProviderChain};
 use provider::lmstudio::LmStudioProvider;
@@ -30,7 +30,7 @@ type AppProvider = ProviderChain<AnyProvider>;
 
 #[tokio::main]
 async fn main() {
-    let config = config::Config::load().unwrap_or_else(|e| {
+    let (config, config_path) = config::Config::load().unwrap_or_else(|e| {
         eprintln!("Error: {e}");
         std::process::exit(1);
     });
@@ -209,6 +209,7 @@ async fn main() {
         approval_overrides,
         approval_timeout: std::time::Duration::from_secs(60),
         config: std::sync::RwLock::new(config),
+        config_path,
     });
 
     let app = Router::new()
@@ -220,6 +221,11 @@ async fn main() {
         .route("/api/memory", axum::routing::delete(clear_memory::<AppProvider>))
         .route("/api/warnings", get(get_warnings::<AppProvider>))
         .route("/api/config", get(get_config::<AppProvider>))
+        .route("/api/config/models", put(put_config_models::<AppProvider>))
+        .route("/api/config/skills", put(put_config_skills::<AppProvider>))
+        .route("/api/config/chat", put(put_config_chat::<AppProvider>))
+        .route("/api/config/server", put(put_config_server::<AppProvider>))
+        .route("/api/config/memory", put(put_config_memory::<AppProvider>))
         .with_state(state)
         .fallback_service(ServeDir::new("frontend/dist"));
 

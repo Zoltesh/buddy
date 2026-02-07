@@ -205,9 +205,10 @@ fn default_similarity_threshold() -> f32 {
 }
 
 impl Config {
-    pub fn load() -> Result<Self, String> {
+    pub fn load() -> Result<(Self, PathBuf), String> {
         let cli = Cli::parse();
-        Self::from_file(&cli.config)
+        let config = Self::from_file(&cli.config)?;
+        Ok((config, cli.config))
     }
 
     pub fn from_file(path: &Path) -> Result<Self, String> {
@@ -230,6 +231,10 @@ impl Config {
             );
         }
         Ok(config)
+    }
+
+    pub fn to_toml_string(&self) -> String {
+        toml::to_string_pretty(self).expect("Config should always be serializable to TOML")
     }
 
     pub fn bind_address(&self) -> String {
@@ -527,6 +532,48 @@ similarity_threshold = 0.7
         assert!(!config.memory.auto_retrieve);
         assert_eq!(config.memory.auto_retrieve_limit, 10);
         assert!((config.memory.similarity_threshold - 0.7).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn to_toml_string_round_trips() {
+        let toml_input = r#"
+[server]
+host = "0.0.0.0"
+port = 8080
+
+[[models.chat.providers]]
+type = "openai"
+model = "gpt-4"
+endpoint = "https://api.openai.com/v1"
+api_key_env = "MY_KEY"
+
+[[models.chat.providers]]
+type = "lmstudio"
+model = "deepseek-coder"
+endpoint = "http://localhost:1234/v1"
+
+[[models.embedding.providers]]
+type = "local"
+model = "all-minilm"
+
+[chat]
+system_prompt = "Be helpful."
+
+[skills.read_file]
+allowed_directories = ["/tmp"]
+
+[skills.fetch_url]
+allowed_domains = ["example.com"]
+
+[memory]
+auto_retrieve = false
+auto_retrieve_limit = 10
+similarity_threshold = 0.7
+"#;
+        let config = Config::parse(toml_input).unwrap();
+        let serialized = config.to_toml_string();
+        let reparsed = Config::parse(&serialized).unwrap();
+        assert_eq!(config, reparsed);
     }
 
     #[test]
