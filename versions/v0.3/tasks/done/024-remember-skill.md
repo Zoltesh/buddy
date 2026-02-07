@@ -34,19 +34,19 @@ The LLM can explicitly commit important information to persistent long-term memo
 
 ## Acceptance Criteria
 
-- [ ] `remember` skill embeds text and stores it in the vector store
-- [ ] Stored entries include source text, embedding, and metadata
-- [ ] Category is stored in metadata when provided
-- [ ] Calling `remember` without an embedding model returns a clear error
-- [ ] Each memory gets a unique ID
-- [ ] The skill appears in `tool_definitions()` with correct schema
-- [ ] Stored memories are retrievable via the vector store's `search` method
+- [x] `remember` skill embeds text and stores it in the vector store
+- [x] Stored entries include source text, embedding, and metadata
+- [x] Category is stored in metadata when provided
+- [x] Calling `remember` without an embedding model returns a clear error
+- [x] Each memory gets a unique ID
+- [x] The skill appears in `tool_definitions()` with correct schema
+- [x] Stored memories are retrievable via the vector store's `search` method
 
 ## Test Cases
 
-- Call `remember` with `{ "text": "User's favorite color is blue" }`; search the vector store for "favorite color"; assert the entry is found
-- Call `remember` with `{ "text": "...", "category": "preference" }`; assert stored metadata includes `"category": "preference"`
-- Call `remember` twice with different texts; assert both entries exist in the vector store
-- Call `remember` when no embedder is configured; assert `SkillError::ExecutionFailed` with a message about embedding
-- Call `remember` with empty `text`; assert `SkillError::InvalidInput`
-- Assert the stored entry's source text matches the input text exactly
+- [x] Call `remember` with `{ "text": "User's favorite color is blue" }`; search the vector store for "favorite color"; assert the entry is found
+- [x] Call `remember` with `{ "text": "...", "category": "preference" }`; assert stored metadata includes `"category": "preference"`
+- [x] Call `remember` twice with different texts; assert both entries exist in the vector store
+- [x] Call `remember` when no embedder is configured; assert `SkillError::ExecutionFailed` with a message about embedding
+- [x] Call `remember` with empty `text`; assert `SkillError::InvalidInput`
+- [x] Assert the stored entry's source text matches the input text exactly
