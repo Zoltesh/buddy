@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use chrono::Utc;
 use rusqlite::{Connection, params};
@@ -14,6 +15,7 @@ pub struct SqliteVectorStore {
     conn: Mutex<Connection>,
     model_name: String,
     dimensions: usize,
+    migration_required: AtomicBool,
 }
 
 impl SqliteVectorStore {
@@ -25,8 +27,10 @@ impl SqliteVectorStore {
             conn: Mutex::new(conn),
             model_name: model_name.to_string(),
             dimensions,
+            migration_required: AtomicBool::new(false),
         };
         store.migrate()?;
+        store.check_model_mismatch()?;
         Ok(store)
     }
 
@@ -39,8 +43,10 @@ impl SqliteVectorStore {
             conn: Mutex::new(conn),
             model_name: model_name.to_string(),
             dimensions,
+            migration_required: AtomicBool::new(false),
         };
         store.migrate()?;
+        store.check_model_mismatch()?;
         Ok(store)
     }
 
@@ -62,6 +68,29 @@ impl SqliteVectorStore {
             ",
         )
         .map_err(|e| VectorStoreError::StorageError(format!("migration failed: {e}")))?;
+        Ok(())
+    }
+
+    /// Check whether stored entries use a different model than the current one.
+    fn check_model_mismatch(&self) -> Result<(), VectorStoreError> {
+        let conn = self.conn.lock().unwrap();
+        let result: Option<(String, i64)> = conn
+            .query_row(
+                "SELECT model_name, dimensions FROM vectors LIMIT 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .ok();
+
+        if let Some((stored_model, stored_dims)) = result {
+            if stored_model != self.model_name || stored_dims as usize != self.dimensions {
+                eprintln!(
+                    "Warning: vector store model mismatch — stored: {} ({}d), current: {} ({}d). Run migration or clear memory.",
+                    stored_model, stored_dims, self.model_name, self.dimensions
+                );
+                self.migration_required.store(true, Ordering::Relaxed);
+            }
+        }
         Ok(())
     }
 }
@@ -132,6 +161,9 @@ impl VectorStore for SqliteVectorStore {
         embedding: &[f32],
         limit: usize,
     ) -> Result<Vec<SearchResult>, VectorStoreError> {
+        if self.migration_required.load(Ordering::Relaxed) {
+            return Err(VectorStoreError::MigrationRequired);
+        }
         if embedding.len() != self.dimensions {
             return Err(VectorStoreError::DimensionMismatch {
                 expected: self.dimensions,
@@ -199,6 +231,51 @@ impl VectorStore for SqliteVectorStore {
             dimensions: self.dimensions,
             entry_count: count,
         })
+    }
+
+    fn list_all(&self) -> Result<Vec<VectorEntry>, VectorStoreError> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare("SELECT id, embedding, source_text, metadata FROM vectors")
+            .map_err(|e| VectorStoreError::StorageError(format!("failed to prepare list_all: {e}")))?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                let id: String = row.get(0)?;
+                let blob: Vec<u8> = row.get(1)?;
+                let source_text: String = row.get(2)?;
+                let metadata_json: String = row.get(3)?;
+                Ok((id, blob, source_text, metadata_json))
+            })
+            .map_err(|e| VectorStoreError::StorageError(format!("list_all query failed: {e}")))?;
+
+        let mut entries = Vec::new();
+        for row in rows {
+            let (id, blob, source_text, metadata_json) = row
+                .map_err(|e| VectorStoreError::StorageError(format!("failed to read row: {e}")))?;
+            let embedding = bytes_to_embedding(&blob);
+            let metadata: serde_json::Value = serde_json::from_str(&metadata_json)
+                .map_err(|e| VectorStoreError::StorageError(format!("invalid metadata JSON: {e}")))?;
+            entries.push(VectorEntry {
+                id,
+                embedding,
+                source_text,
+                metadata,
+            });
+        }
+        Ok(entries)
+    }
+
+    fn clear(&self) -> Result<(), VectorStoreError> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM vectors", [])
+            .map_err(|e| VectorStoreError::StorageError(format!("failed to clear store: {e}")))?;
+        self.migration_required.store(false, Ordering::Relaxed);
+        Ok(())
+    }
+
+    fn needs_migration(&self) -> bool {
+        self.migration_required.load(Ordering::Relaxed)
     }
 }
 
@@ -351,5 +428,197 @@ mod tests {
         assert_eq!(results[0].metadata["tags"][0], "a");
         assert_eq!(results[0].metadata["tags"][1], "b");
         assert_eq!(results[0].metadata["count"], 42);
+    }
+
+    // ── Task 022: Embedding dimension tracking and migration ────────
+
+    fn temp_db_path(name: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("buddy-test-022-{name}.db"))
+    }
+
+    #[test]
+    fn mismatch_detected_when_model_changes() {
+        let path = temp_db_path("mismatch");
+        let _ = std::fs::remove_file(&path);
+
+        // Store entries with model A (dim 3).
+        {
+            let store = SqliteVectorStore::open(&path, "model-A", 3).unwrap();
+            store.store(make_entry("e1", vec![1.0, 0.0, 0.0], "hello")).unwrap();
+            store.store(make_entry("e2", vec![0.0, 1.0, 0.0], "world")).unwrap();
+        }
+
+        // Reopen with model B (dim 5). Should detect mismatch.
+        let store = SqliteVectorStore::open(&path, "model-B", 5).unwrap();
+        assert!(store.needs_migration(), "should detect model mismatch on startup");
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn search_blocked_when_migration_required() {
+        let path = temp_db_path("blocked");
+        let _ = std::fs::remove_file(&path);
+
+        {
+            let store = SqliteVectorStore::open(&path, "model-A", 3).unwrap();
+            store.store(make_entry("e1", vec![1.0, 0.0, 0.0], "hello")).unwrap();
+        }
+
+        let store = SqliteVectorStore::open(&path, "model-B", 5).unwrap();
+        assert!(store.needs_migration());
+
+        let err = store.search(&[1.0, 0.0, 0.0, 0.0, 0.0], 10).unwrap_err();
+        assert!(matches!(err, VectorStoreError::MigrationRequired));
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn migration_re_embeds_all_entries() {
+        let path = temp_db_path("migrate");
+        let _ = std::fs::remove_file(&path);
+
+        // Store 3 entries with model A (dim 3).
+        {
+            let store = SqliteVectorStore::open(&path, "model-A", 3).unwrap();
+            store.store(make_entry("e1", vec![1.0, 0.0, 0.0], "alpha")).unwrap();
+            store.store(make_entry("e2", vec![0.0, 1.0, 0.0], "beta")).unwrap();
+            store.store(make_entry("e3", vec![0.0, 0.0, 1.0], "gamma")).unwrap();
+        }
+
+        // Reopen with model B (dim 5).
+        let store = SqliteVectorStore::open(&path, "model-B", 5).unwrap();
+        assert!(store.needs_migration());
+
+        // Simulate migration: read all, clear, re-store with new dims.
+        let entries = store.list_all().unwrap();
+        assert_eq!(entries.len(), 3);
+
+        store.clear().unwrap();
+        assert!(!store.needs_migration(), "clear should reset migration flag");
+
+        // Store with new 5-dim embeddings.
+        for (i, entry) in entries.iter().enumerate() {
+            let mut new_emb = vec![0.0f32; 5];
+            new_emb[i] = 1.0;
+            store.store(VectorEntry {
+                id: entry.id.clone(),
+                embedding: new_emb,
+                source_text: entry.source_text.clone(),
+                metadata: entry.metadata.clone(),
+            }).unwrap();
+        }
+
+        // All 3 entries should be re-stored with new dimensions.
+        let meta = store.metadata().unwrap();
+        assert_eq!(meta.entry_count, 3);
+        assert_eq!(meta.model_name, "model-B");
+        assert_eq!(meta.dimensions, 5);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn after_migration_metadata_reflects_new_model() {
+        let path = temp_db_path("meta-after");
+        let _ = std::fs::remove_file(&path);
+
+        {
+            let store = SqliteVectorStore::open(&path, "old-model", 3).unwrap();
+            store.store(make_entry("e1", vec![1.0, 0.0, 0.0], "text")).unwrap();
+        }
+
+        let store = SqliteVectorStore::open(&path, "new-model", 4).unwrap();
+        assert!(store.needs_migration());
+
+        let entries = store.list_all().unwrap();
+        store.clear().unwrap();
+        for entry in &entries {
+            store.store(VectorEntry {
+                id: entry.id.clone(),
+                embedding: vec![1.0, 0.0, 0.0, 0.0],
+                source_text: entry.source_text.clone(),
+                metadata: entry.metadata.clone(),
+            }).unwrap();
+        }
+
+        let meta = store.metadata().unwrap();
+        assert_eq!(meta.model_name, "new-model");
+        assert_eq!(meta.dimensions, 4);
+        assert_eq!(meta.entry_count, 1);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn clear_empties_store_and_resets_metadata() {
+        let store = test_store();
+        store.store(make_entry("c1", vec![1.0, 0.0, 0.0], "one")).unwrap();
+        store.store(make_entry("c2", vec![0.0, 1.0, 0.0], "two")).unwrap();
+
+        store.clear().unwrap();
+
+        let meta = store.metadata().unwrap();
+        assert_eq!(meta.entry_count, 0);
+        assert_eq!(meta.model_name, "test-model");
+        assert_eq!(meta.dimensions, 3);
+    }
+
+    #[test]
+    fn empty_store_adopts_current_model_on_first_write() {
+        let store = SqliteVectorStore::open_in_memory("model-X", 4).unwrap();
+        assert!(!store.needs_migration(), "empty store should not need migration");
+
+        store.store(VectorEntry {
+            id: "first".to_string(),
+            embedding: vec![1.0, 0.0, 0.0, 0.0],
+            source_text: "first entry".to_string(),
+            metadata: serde_json::json!({}),
+        }).unwrap();
+
+        let meta = store.metadata().unwrap();
+        assert_eq!(meta.model_name, "model-X");
+        assert_eq!(meta.dimensions, 4);
+        assert_eq!(meta.entry_count, 1);
+    }
+
+    #[test]
+    fn search_works_after_migration() {
+        let path = temp_db_path("search-after");
+        let _ = std::fs::remove_file(&path);
+
+        {
+            let store = SqliteVectorStore::open(&path, "model-A", 3).unwrap();
+            store.store(make_entry("e1", vec![1.0, 0.0, 0.0], "alpha")).unwrap();
+            store.store(make_entry("e2", vec![0.0, 1.0, 0.0], "beta")).unwrap();
+        }
+
+        let store = SqliteVectorStore::open(&path, "model-B", 4).unwrap();
+        assert!(store.needs_migration());
+
+        // Migrate.
+        let entries = store.list_all().unwrap();
+        store.clear().unwrap();
+        store.store(VectorEntry {
+            id: entries[0].id.clone(),
+            embedding: vec![1.0, 0.0, 0.0, 0.0],
+            source_text: entries[0].source_text.clone(),
+            metadata: entries[0].metadata.clone(),
+        }).unwrap();
+        store.store(VectorEntry {
+            id: entries[1].id.clone(),
+            embedding: vec![0.0, 0.0, 0.0, 1.0],
+            source_text: entries[1].source_text.clone(),
+            metadata: entries[1].metadata.clone(),
+        }).unwrap();
+
+        // Search should now work with new dimensions.
+        let results = store.search(&[1.0, 0.0, 0.0, 0.0], 10).unwrap();
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].id, "e1", "closest match should be e1");
+        assert!(results[0].score > 0.99);
+
+        let _ = std::fs::remove_file(&path);
     }
 }

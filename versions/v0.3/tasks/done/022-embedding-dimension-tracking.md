@@ -28,23 +28,23 @@ Switching embedding models never silently corrupts memory. The system detects mi
 
 ## Acceptance Criteria
 
-- [ ] Startup detects when the configured embedding model differs from stored vectors
-- [ ] Memory searches are blocked when a dimension mismatch is detected
-- [ ] `POST /api/memory/migrate` re-embeds all entries using the new model
-- [ ] After migration, store metadata reflects the new model name and dimensions
-- [ ] `DELETE /api/memory` clears all entries and resets store metadata
-- [ ] An empty store adopts the current model's metadata on first write
-- [ ] No mixing of embeddings from different models ever occurs
+- [x] Startup detects when the configured embedding model differs from stored vectors
+- [x] Memory searches are blocked when a dimension mismatch is detected
+- [x] `POST /api/memory/migrate` re-embeds all entries using the new model
+- [x] After migration, store metadata reflects the new model name and dimensions
+- [x] `DELETE /api/memory` clears all entries and resets store metadata
+- [x] An empty store adopts the current model's metadata on first write
+- [x] No mixing of embeddings from different models ever occurs
 
 ## Test Cases
 
-- Store entries with model "A" (dim 384); switch to model "B" (dim 768); assert mismatch is detected on startup
-- With a mismatch detected, attempt a memory search; assert it is blocked (returns error or empty)
-- Trigger migration with 3 stored entries; assert all 3 are re-embedded with the new model's dimensions
-- After migration, call `metadata()`; assert model name and dimensions match the new model
-- Trigger `DELETE /api/memory`; assert store is empty and metadata is reset
-- Start with an empty store and model "A"; store one entry; assert metadata shows model "A" with correct dimensions
-- Store entries, switch models, migrate; then search; assert results use the new embeddings
+- [x] Store entries with model "A" (dim 384); switch to model "B" (dim 768); assert mismatch is detected on startup
+- [x] With a mismatch detected, attempt a memory search; assert it is blocked (returns error or empty)
+- [x] Trigger migration with 3 stored entries; assert all 3 are re-embedded with the new model's dimensions
+- [x] After migration, call `metadata()`; assert model name and dimensions match the new model
+- [x] Trigger `DELETE /api/memory`; assert store is empty and metadata is reset
+- [x] Start with an empty store and model "A"; store one entry; assert metadata shows model "A" with correct dimensions
+- [x] Store entries, switch models, migrate; then search; assert results use the new embeddings
 
 ## Notes
 

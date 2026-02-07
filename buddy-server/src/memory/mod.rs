@@ -13,6 +13,8 @@ pub enum VectorStoreError {
     DimensionMismatch { expected: usize, got: usize },
     /// Requested entry was not found.
     NotFound(String),
+    /// The embedding model has changed; migration is required before searches.
+    MigrationRequired,
 }
 
 impl fmt::Display for VectorStoreError {
@@ -23,6 +25,10 @@ impl fmt::Display for VectorStoreError {
                 write!(f, "dimension mismatch: expected {expected}, got {got}")
             }
             Self::NotFound(msg) => write!(f, "not found: {msg}"),
+            Self::MigrationRequired => write!(
+                f,
+                "embedding model has changed; run migration before searching"
+            ),
         }
     }
 }
@@ -65,4 +71,10 @@ pub trait VectorStore: Send + Sync {
     ) -> Result<Vec<SearchResult>, VectorStoreError>;
     fn delete(&self, id: &str) -> Result<(), VectorStoreError>;
     fn metadata(&self) -> Result<StoreMetadata, VectorStoreError>;
+    /// Return all stored entries (used for re-embedding during migration).
+    fn list_all(&self) -> Result<Vec<VectorEntry>, VectorStoreError>;
+    /// Delete all entries and reset migration state.
+    fn clear(&self) -> Result<(), VectorStoreError>;
+    /// Returns true when the embedding model has changed and migration is needed.
+    fn needs_migration(&self) -> bool;
 }

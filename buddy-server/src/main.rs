@@ -17,7 +17,7 @@ pub mod store;
 mod testutil;
 mod types;
 
-use api::{chat_handler, create_conversation, delete_conversation, get_conversation, list_conversations, AppState};
+use api::{chat_handler, clear_memory, create_conversation, delete_conversation, get_conversation, list_conversations, migrate_memory, AppState};
 use config::SkillsConfig;
 use provider::{AnyProvider, ProviderChain};
 use provider::lmstudio::LmStudioProvider;
@@ -144,6 +144,8 @@ async fn main() {
         .route("/api/chat", post(chat_handler::<AppProvider>))
         .route("/api/conversations", get(list_conversations::<AppProvider>).post(create_conversation::<AppProvider>))
         .route("/api/conversations/{id}", get(get_conversation::<AppProvider>).delete(delete_conversation::<AppProvider>))
+        .route("/api/memory/migrate", post(migrate_memory::<AppProvider>))
+        .route("/api/memory", axum::routing::delete(clear_memory::<AppProvider>))
         .with_state(state)
         .fallback_service(ServeDir::new("frontend/dist"));
 
