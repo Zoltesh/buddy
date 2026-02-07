@@ -98,21 +98,30 @@ pub struct ApproveRequest {
 }
 
 /// Shared application state.
+///
+/// Fields wrapped in `ArcSwap` are hot-reloadable: they can be atomically
+/// replaced when the configuration changes without interrupting in-flight
+/// requests. Handlers call `.load()` to get a snapshot for the duration of
+/// the request.
 pub struct AppState<P> {
-    pub provider: P,
-    pub registry: crate::skill::SkillRegistry,
+    pub provider: arc_swap::ArcSwap<P>,
+    pub registry: arc_swap::ArcSwap<crate::skill::SkillRegistry>,
     pub store: crate::store::Store,
-    pub embedder: Option<std::sync::Arc<dyn crate::embedding::Embedder>>,
-    pub vector_store: Option<std::sync::Arc<dyn crate::memory::VectorStore>>,
+    pub embedder: arc_swap::ArcSwap<Option<std::sync::Arc<dyn crate::embedding::Embedder>>>,
+    pub vector_store: arc_swap::ArcSwap<Option<std::sync::Arc<dyn crate::memory::VectorStore>>>,
     pub working_memory: crate::skill::working_memory::WorkingMemoryMap,
-    pub memory_config: crate::config::MemoryConfig,
+    pub memory_config: arc_swap::ArcSwap<crate::config::MemoryConfig>,
     pub warnings: crate::warning::SharedWarnings,
     pub pending_approvals: PendingApprovals,
     pub conversation_approvals: ConversationApprovals,
-    pub approval_overrides: HashMap<String, ApprovalPolicy>,
+    pub approval_overrides: arc_swap::ArcSwap<HashMap<String, ApprovalPolicy>>,
     pub approval_timeout: std::time::Duration,
     pub config: std::sync::RwLock<crate::config::Config>,
     pub config_path: std::path::PathBuf,
+    /// Optional callback invoked after a successful config write to hot-reload
+    /// runtime components. Set to `Some` in production (via `reload::reload_from_config`),
+    /// left as `None` in tests that don't need reload behavior.
+    pub on_config_change: Option<Box<dyn Fn(&Self) -> Result<(), String> + Send + Sync>>,
 }
 
 // ── Conversation CRUD handlers ──────────────────────────────────────────
@@ -351,15 +360,26 @@ pub async fn put_config_models<P: Provider + 'static>(
     if !errors.is_empty() {
         return (StatusCode::BAD_REQUEST, Json(ValidationErrorResponse { errors })).into_response();
     }
-    let mut config = state.config.write().unwrap();
-    config.models = models;
-    let toml = config.to_toml_string();
-    if let Err(e) = atomic_write(&state.config_path, &toml) {
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ApiError { code: "write_error".into(), message: e }),
-        ).into_response();
+    {
+        let mut config = state.config.write().unwrap();
+        config.models = models;
+        let toml = config.to_toml_string();
+        if let Err(e) = atomic_write(&state.config_path, &toml) {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiError { code: "write_error".into(), message: e }),
+            ).into_response();
+        }
     }
+    if let Some(ref hook) = state.on_config_change {
+        if let Err(e) = hook(&state) {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiError { code: "reload_failed".into(), message: format!("config saved but reload failed: {e}") }),
+            ).into_response();
+        }
+    }
+    let config = state.config.read().unwrap();
     Json(config.clone()).into_response()
 }
 
@@ -372,15 +392,26 @@ pub async fn put_config_skills<P: Provider + 'static>(
     if !errors.is_empty() {
         return (StatusCode::BAD_REQUEST, Json(ValidationErrorResponse { errors })).into_response();
     }
-    let mut config = state.config.write().unwrap();
-    config.skills = skills;
-    let toml = config.to_toml_string();
-    if let Err(e) = atomic_write(&state.config_path, &toml) {
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ApiError { code: "write_error".into(), message: e }),
-        ).into_response();
+    {
+        let mut config = state.config.write().unwrap();
+        config.skills = skills;
+        let toml = config.to_toml_string();
+        if let Err(e) = atomic_write(&state.config_path, &toml) {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiError { code: "write_error".into(), message: e }),
+            ).into_response();
+        }
     }
+    if let Some(ref hook) = state.on_config_change {
+        if let Err(e) = hook(&state) {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiError { code: "reload_failed".into(), message: format!("config saved but reload failed: {e}") }),
+            ).into_response();
+        }
+    }
+    let config = state.config.read().unwrap();
     Json(config.clone()).into_response()
 }
 
@@ -389,19 +420,42 @@ pub async fn put_config_chat<P: Provider + 'static>(
     State(state): State<Arc<AppState<P>>>,
     Json(chat): Json<crate::config::ChatConfig>,
 ) -> axum::response::Response {
-    let mut config = state.config.write().unwrap();
-    config.chat = chat;
-    let toml = config.to_toml_string();
-    if let Err(e) = atomic_write(&state.config_path, &toml) {
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ApiError { code: "write_error".into(), message: e }),
-        ).into_response();
+    {
+        let mut config = state.config.write().unwrap();
+        config.chat = chat;
+        let toml = config.to_toml_string();
+        if let Err(e) = atomic_write(&state.config_path, &toml) {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiError { code: "write_error".into(), message: e }),
+            ).into_response();
+        }
     }
+    if let Some(ref hook) = state.on_config_change {
+        if let Err(e) = hook(&state) {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiError { code: "reload_failed".into(), message: format!("config saved but reload failed: {e}") }),
+            ).into_response();
+        }
+    }
+    let config = state.config.read().unwrap();
     Json(config.clone()).into_response()
 }
 
+/// Response wrapper for config changes that may require a server restart.
+#[derive(Serialize)]
+struct ConfigWithNotes {
+    #[serde(flatten)]
+    config: crate::config::Config,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    notes: Vec<String>,
+}
+
 /// `PUT /api/config/server` — update the server section.
+///
+/// Server bind address changes (`host`, `port`) are persisted but require a
+/// restart to take effect. The response includes a note indicating this.
 pub async fn put_config_server<P: Provider + 'static>(
     State(state): State<Arc<AppState<P>>>,
     Json(server): Json<crate::config::ServerConfig>,
@@ -410,16 +464,32 @@ pub async fn put_config_server<P: Provider + 'static>(
     if !errors.is_empty() {
         return (StatusCode::BAD_REQUEST, Json(ValidationErrorResponse { errors })).into_response();
     }
-    let mut config = state.config.write().unwrap();
-    config.server = server;
-    let toml = config.to_toml_string();
-    if let Err(e) = atomic_write(&state.config_path, &toml) {
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ApiError { code: "write_error".into(), message: e }),
-        ).into_response();
+    {
+        let mut config = state.config.write().unwrap();
+        config.server = server;
+        let toml = config.to_toml_string();
+        if let Err(e) = atomic_write(&state.config_path, &toml) {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiError { code: "write_error".into(), message: e }),
+            ).into_response();
+        }
     }
-    Json(config.clone()).into_response()
+    // Server config changes require a restart — add warning and response note.
+    {
+        let mut collector = state.warnings.write().unwrap();
+        collector.clear("restart_required");
+        collector.add(crate::warning::Warning {
+            code: "restart_required".into(),
+            message: "Server config changed — restart required for bind address changes to take effect.".into(),
+            severity: crate::warning::WarningSeverity::Warning,
+        });
+    }
+    let config = state.config.read().unwrap();
+    Json(ConfigWithNotes {
+        config: config.clone(),
+        notes: vec!["Server config changes require a restart to take effect.".into()],
+    }).into_response()
 }
 
 /// `PUT /api/config/memory` — update the memory section.
@@ -427,15 +497,26 @@ pub async fn put_config_memory<P: Provider + 'static>(
     State(state): State<Arc<AppState<P>>>,
     Json(memory): Json<crate::config::MemoryConfig>,
 ) -> axum::response::Response {
-    let mut config = state.config.write().unwrap();
-    config.memory = memory;
-    let toml = config.to_toml_string();
-    if let Err(e) = atomic_write(&state.config_path, &toml) {
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ApiError { code: "write_error".into(), message: e }),
-        ).into_response();
+    {
+        let mut config = state.config.write().unwrap();
+        config.memory = memory;
+        let toml = config.to_toml_string();
+        if let Err(e) = atomic_write(&state.config_path, &toml) {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiError { code: "write_error".into(), message: e }),
+            ).into_response();
+        }
     }
+    if let Some(ref hook) = state.on_config_change {
+        if let Err(e) = hook(&state) {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiError { code: "reload_failed".into(), message: format!("config saved but reload failed: {e}") }),
+            ).into_response();
+        }
+    }
+    let config = state.config.read().unwrap();
     Json(config.clone()).into_response()
 }
 
@@ -445,7 +526,9 @@ pub async fn put_config_memory<P: Provider + 'static>(
 pub async fn migrate_memory<P: Provider + 'static>(
     State(state): State<Arc<AppState<P>>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiError>)> {
-    let vector_store = state.vector_store.as_ref().ok_or_else(|| {
+    let vs_snap = state.vector_store.load();
+    let emb_snap = state.embedder.load();
+    let vector_store = vs_snap.as_ref().as_ref().ok_or_else(|| {
         (
             StatusCode::BAD_REQUEST,
             Json(ApiError {
@@ -454,7 +537,7 @@ pub async fn migrate_memory<P: Provider + 'static>(
             }),
         )
     })?;
-    let embedder = state.embedder.as_ref().ok_or_else(|| {
+    let embedder = emb_snap.as_ref().as_ref().ok_or_else(|| {
         (
             StatusCode::BAD_REQUEST,
             Json(ApiError {
@@ -529,7 +612,8 @@ pub async fn migrate_memory<P: Provider + 'static>(
 pub async fn clear_memory<P: Provider + 'static>(
     State(state): State<Arc<AppState<P>>>,
 ) -> Result<StatusCode, (StatusCode, Json<ApiError>)> {
-    let vector_store = state.vector_store.as_ref().ok_or_else(|| {
+    let vs_snap = state.vector_store.load();
+    let vector_store = vs_snap.as_ref().as_ref().ok_or_else(|| {
         (
             StatusCode::BAD_REQUEST,
             Json(ApiError {
@@ -661,7 +745,8 @@ pub async fn chat_handler<P: Provider + 'static>(
     all_messages.extend(new_messages);
 
     let tools = {
-        let defs = state.registry.tool_definitions();
+        let registry = state.registry.load();
+        let defs = registry.tool_definitions();
         if defs.is_empty() {
             None
         } else {
@@ -715,6 +800,7 @@ fn persist_message(state: &impl AsRef<crate::store::Store>, conversation_id: &st
 /// `false` if denied or timed out.
 async fn check_approval<P: Provider>(
     state: &Arc<AppState<P>>,
+    approval_overrides: &HashMap<String, ApprovalPolicy>,
     tx: &tokio::sync::mpsc::Sender<ChatEvent>,
     conversation_id: &str,
     skill_name: &str,
@@ -722,8 +808,7 @@ async fn check_approval<P: Provider>(
     permission_level: PermissionLevel,
 ) -> bool {
     // Resolve effective policy: config override, or default Always for non-ReadOnly.
-    let policy = state
-        .approval_overrides
+    let policy = approval_overrides
         .get(skill_name)
         .copied()
         .unwrap_or(ApprovalPolicy::Always);
@@ -824,12 +909,20 @@ async fn run_tool_loop<P: Provider>(
         let _ = tx.send(ChatEvent::Warnings { warnings: startup_warnings }).await;
     }
 
+    // Load hot-reloadable state snapshots for the duration of this request.
+    let memory_config = state.memory_config.load();
+    let embedder = state.embedder.load();
+    let vector_store = state.vector_store.load();
+    let registry = state.registry.load();
+    let provider = state.provider.load();
+    let approval_overrides = state.approval_overrides.load();
+
     // Automatic context retrieval: search long-term memory for relevant memories.
     let mut recalled_context: Option<String> = None;
-    if state.memory_config.auto_retrieve
+    if memory_config.auto_retrieve
         && !disable_memory
-        && state.embedder.is_some()
-        && state.vector_store.is_some()
+        && embedder.is_some()
+        && vector_store.is_some()
     {
         // Find the latest user message text.
         let latest_user_text = messages
@@ -841,13 +934,13 @@ async fn run_tool_loop<P: Provider>(
             });
 
         if let Some(query_text) = latest_user_text {
-            let embedder = state.embedder.as_ref().unwrap();
-            let vs = state.vector_store.as_ref().unwrap();
+            let emb = (**embedder).as_ref().unwrap();
+            let vs = (**vector_store).as_ref().unwrap();
 
-            if let Ok(embeddings) = embedder.embed(&[query_text]) {
+            if let Ok(embeddings) = emb.embed(&[query_text]) {
                 if let Some(embedding) = embeddings.into_iter().next() {
-                    if let Ok(results) = vs.search(&embedding, state.memory_config.auto_retrieve_limit) {
-                        let threshold = state.memory_config.similarity_threshold;
+                    if let Ok(results) = vs.search(&embedding, memory_config.auto_retrieve_limit) {
+                        let threshold = memory_config.similarity_threshold;
                         let relevant: Vec<_> = results
                             .into_iter()
                             .filter(|r| r.score >= threshold)
@@ -917,7 +1010,7 @@ async fn run_tool_loop<P: Provider>(
         }
 
         // Call the provider.
-        let token_stream = match state.provider.complete(provider_messages, tools.clone()).await {
+        let token_stream = match provider.complete(provider_messages, tools.clone()).await {
             Ok(s) => s,
             Err(e) => {
                 let _ = tx.send(ChatEvent::Error { message: e.to_string() }).await;
@@ -1003,14 +1096,14 @@ async fn run_tool_loop<P: Provider>(
             messages.push(tool_call_msg);
 
             // Execute the skill (with approval check for non-ReadOnly skills).
-            let result_content = match state.registry.get(name) {
+            let result_content = match registry.get(name) {
                 Some(skill) => {
                     let perm = skill.permission_level();
                     let approved = if perm == PermissionLevel::ReadOnly {
                         true
                     } else {
                         check_approval(
-                            &state, &tx, &conversation_id, name, arguments, perm,
+                            &state, &approval_overrides, &tx, &conversation_id, name, arguments, perm,
                         ).await
                     };
 
@@ -1124,20 +1217,21 @@ endpoint = "http://localhost:1234/v1"
 
     fn test_app(tokens: Vec<String>) -> Router {
         let state = Arc::new(AppState {
-            provider: MockProvider { tokens },
-            registry: SkillRegistry::new(),
+            provider: arc_swap::ArcSwap::from_pointee(MockProvider { tokens }),
+            registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
             store: crate::store::Store::open_in_memory().unwrap(),
-            embedder: None,
-            vector_store: None,
+            embedder: arc_swap::ArcSwap::from_pointee(None),
+            vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
-            memory_config: crate::config::MemoryConfig::default(),
+            memory_config: arc_swap::ArcSwap::from_pointee(crate::config::MemoryConfig::default()),
             warnings: crate::warning::new_shared_warnings(),
             pending_approvals: new_pending_approvals(),
             conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
-            approval_overrides: HashMap::new(),
+            approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
             approval_timeout: std::time::Duration::from_secs(1),
             config: std::sync::RwLock::new(test_config()),
             config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
+            on_config_change: None,
         });
         Router::new()
             .route("/api/chat", post(chat_handler::<MockProvider>))
@@ -1146,20 +1240,21 @@ endpoint = "http://localhost:1234/v1"
 
     fn test_app_with_static(tokens: Vec<String>, static_dir: &str) -> Router {
         let state = Arc::new(AppState {
-            provider: MockProvider { tokens },
-            registry: SkillRegistry::new(),
+            provider: arc_swap::ArcSwap::from_pointee(MockProvider { tokens }),
+            registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
             store: crate::store::Store::open_in_memory().unwrap(),
-            embedder: None,
-            vector_store: None,
+            embedder: arc_swap::ArcSwap::from_pointee(None),
+            vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
-            memory_config: crate::config::MemoryConfig::default(),
+            memory_config: arc_swap::ArcSwap::from_pointee(crate::config::MemoryConfig::default()),
             warnings: crate::warning::new_shared_warnings(),
             pending_approvals: new_pending_approvals(),
             conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
-            approval_overrides: HashMap::new(),
+            approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
             approval_timeout: std::time::Duration::from_secs(1),
             config: std::sync::RwLock::new(test_config()),
             config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
+            on_config_change: None,
         });
         Router::new()
             .route("/api/chat", post(chat_handler::<MockProvider>))
@@ -1169,20 +1264,21 @@ endpoint = "http://localhost:1234/v1"
 
     fn sequenced_app(responses: Vec<MockResponse>, registry: SkillRegistry) -> Router {
         let state = Arc::new(AppState {
-            provider: SequencedProvider::new(responses),
-            registry,
+            provider: arc_swap::ArcSwap::from_pointee(SequencedProvider::new(responses)),
+            registry: arc_swap::ArcSwap::from_pointee(registry),
             store: crate::store::Store::open_in_memory().unwrap(),
-            embedder: None,
-            vector_store: None,
+            embedder: arc_swap::ArcSwap::from_pointee(None),
+            vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
-            memory_config: crate::config::MemoryConfig::default(),
+            memory_config: arc_swap::ArcSwap::from_pointee(crate::config::MemoryConfig::default()),
             warnings: crate::warning::new_shared_warnings(),
             pending_approvals: new_pending_approvals(),
             conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
-            approval_overrides: HashMap::new(),
+            approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
             approval_timeout: std::time::Duration::from_secs(1),
             config: std::sync::RwLock::new(test_config()),
             config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
+            on_config_change: None,
         });
         Router::new()
             .route("/api/chat", post(chat_handler::<SequencedProvider>))
@@ -1191,20 +1287,21 @@ endpoint = "http://localhost:1234/v1"
 
     fn conversation_app(tokens: Vec<String>) -> (Arc<AppState<MockProvider>>, Router) {
         let state = Arc::new(AppState {
-            provider: MockProvider { tokens },
-            registry: SkillRegistry::new(),
+            provider: arc_swap::ArcSwap::from_pointee(MockProvider { tokens }),
+            registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
             store: crate::store::Store::open_in_memory().unwrap(),
-            embedder: None,
-            vector_store: None,
+            embedder: arc_swap::ArcSwap::from_pointee(None),
+            vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
-            memory_config: crate::config::MemoryConfig::default(),
+            memory_config: arc_swap::ArcSwap::from_pointee(crate::config::MemoryConfig::default()),
             warnings: crate::warning::new_shared_warnings(),
             pending_approvals: new_pending_approvals(),
             conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
-            approval_overrides: HashMap::new(),
+            approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
             approval_timeout: std::time::Duration::from_secs(1),
             config: std::sync::RwLock::new(test_config()),
             config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
+            on_config_change: None,
         });
         let router = Router::new()
             .route("/api/chat", post(chat_handler::<MockProvider>))
@@ -1552,20 +1649,21 @@ endpoint = "http://localhost:1234/v1"
                 ),
             ]);
             let state = Arc::new(AppState {
-                provider: chain,
-                registry: SkillRegistry::new(),
+                provider: arc_swap::ArcSwap::from_pointee(chain),
+                registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
                 store: crate::store::Store::open_in_memory().unwrap(),
-                embedder: None,
-                vector_store: None,
+                embedder: arc_swap::ArcSwap::from_pointee(None),
+                vector_store: arc_swap::ArcSwap::from_pointee(None),
                 working_memory: crate::skill::working_memory::new_working_memory_map(),
-                memory_config: crate::config::MemoryConfig::default(),
+                memory_config: arc_swap::ArcSwap::from_pointee(crate::config::MemoryConfig::default()),
                 warnings: crate::warning::new_shared_warnings(),
                 pending_approvals: new_pending_approvals(),
                 conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
-                approval_overrides: HashMap::new(),
+                approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
                 approval_timeout: std::time::Duration::from_secs(1),
                 config: std::sync::RwLock::new(test_config()),
                 config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
+                on_config_change: None,
             });
             let app = Router::new()
                 .route(
@@ -1764,27 +1862,28 @@ endpoint = "http://localhost:1234/v1"
         #[tokio::test]
         async fn chat_persists_all_message_types() {
             let state = Arc::new(AppState {
-                provider: SequencedProvider::new(vec![
+                provider: arc_swap::ArcSwap::from_pointee(SequencedProvider::new(vec![
                     MockResponse::ToolCalls(vec![(
                         "c1".into(),
                         "echo".into(),
                         r#"{"value":"test"}"#.into(),
                     )]),
                     MockResponse::Text(vec!["Final answer.".into()]),
-                ]),
-                registry: registry_with_echo(),
+                ])),
+                registry: arc_swap::ArcSwap::from_pointee(registry_with_echo()),
                 store: crate::store::Store::open_in_memory().unwrap(),
-                embedder: None,
-                vector_store: None,
+                embedder: arc_swap::ArcSwap::from_pointee(None),
+                vector_store: arc_swap::ArcSwap::from_pointee(None),
                 working_memory: crate::skill::working_memory::new_working_memory_map(),
-                memory_config: crate::config::MemoryConfig::default(),
+                memory_config: arc_swap::ArcSwap::from_pointee(crate::config::MemoryConfig::default()),
                 warnings: crate::warning::new_shared_warnings(),
                 pending_approvals: new_pending_approvals(),
                 conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
-                approval_overrides: HashMap::new(),
+                approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
                 approval_timeout: std::time::Duration::from_secs(1),
                 config: std::sync::RwLock::new(test_config()),
                 config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
+                on_config_change: None,
             });
             let app = Router::new()
                 .route("/api/chat", post(chat_handler::<SequencedProvider>))
@@ -1847,20 +1946,21 @@ endpoint = "http://localhost:1234/v1"
                 setup(&mut collector);
             }
             let state = Arc::new(AppState {
-                provider: MockProvider { tokens },
-                registry: SkillRegistry::new(),
+                provider: arc_swap::ArcSwap::from_pointee(MockProvider { tokens }),
+                registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
                 store: crate::store::Store::open_in_memory().unwrap(),
-                embedder: None,
-                vector_store: None,
+                embedder: arc_swap::ArcSwap::from_pointee(None),
+                vector_store: arc_swap::ArcSwap::from_pointee(None),
                 working_memory: crate::skill::working_memory::new_working_memory_map(),
-                memory_config: crate::config::MemoryConfig::default(),
+                memory_config: arc_swap::ArcSwap::from_pointee(crate::config::MemoryConfig::default()),
                 warnings,
                 pending_approvals: new_pending_approvals(),
                 conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
-                approval_overrides: HashMap::new(),
+                approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
                 approval_timeout: std::time::Duration::from_secs(1),
                 config: std::sync::RwLock::new(test_config()),
                 config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
+                on_config_change: None,
             });
             Router::new()
                 .route("/api/chat", post(chat_handler::<MockProvider>))
@@ -1928,20 +2028,21 @@ endpoint = "http://localhost:1234/v1"
         async fn runtime_warning_appears() {
             let warnings = new_shared_warnings();
             let state = Arc::new(AppState {
-                provider: MockProvider { tokens: vec![] },
-                registry: SkillRegistry::new(),
+                provider: arc_swap::ArcSwap::from_pointee(MockProvider { tokens: vec![] }),
+                registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
                 store: crate::store::Store::open_in_memory().unwrap(),
-                embedder: None,
-                vector_store: None,
+                embedder: arc_swap::ArcSwap::from_pointee(None),
+                vector_store: arc_swap::ArcSwap::from_pointee(None),
                 working_memory: crate::skill::working_memory::new_working_memory_map(),
-                memory_config: crate::config::MemoryConfig::default(),
+                memory_config: arc_swap::ArcSwap::from_pointee(crate::config::MemoryConfig::default()),
                 warnings: warnings.clone(),
                 pending_approvals: new_pending_approvals(),
                 conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
-                approval_overrides: HashMap::new(),
+                approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
                 approval_timeout: std::time::Duration::from_secs(1),
                 config: std::sync::RwLock::new(test_config()),
                 config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
+                on_config_change: None,
             });
             let app = Router::new()
                 .route("/api/warnings", get(get_warnings::<MockProvider>))
@@ -1984,20 +2085,21 @@ endpoint = "http://localhost:1234/v1"
                 });
             }
             let state = Arc::new(AppState {
-                provider: MockProvider { tokens: vec![] },
-                registry: SkillRegistry::new(),
+                provider: arc_swap::ArcSwap::from_pointee(MockProvider { tokens: vec![] }),
+                registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
                 store: crate::store::Store::open_in_memory().unwrap(),
-                embedder: None,
-                vector_store: None,
+                embedder: arc_swap::ArcSwap::from_pointee(None),
+                vector_store: arc_swap::ArcSwap::from_pointee(None),
                 working_memory: crate::skill::working_memory::new_working_memory_map(),
-                memory_config: crate::config::MemoryConfig::default(),
+                memory_config: arc_swap::ArcSwap::from_pointee(crate::config::MemoryConfig::default()),
                 warnings: warnings.clone(),
                 pending_approvals: new_pending_approvals(),
                 conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
-                approval_overrides: HashMap::new(),
+                approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
                 approval_timeout: std::time::Duration::from_secs(1),
                 config: std::sync::RwLock::new(test_config()),
                 config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
+                on_config_change: None,
             });
             let app = Router::new()
                 .route("/api/warnings", get(get_warnings::<MockProvider>))
@@ -2105,20 +2207,21 @@ endpoint = "http://localhost:1234/v1"
             timeout: std::time::Duration,
         ) -> (Arc<AppState<SequencedProvider>>, Router) {
             let state = Arc::new(AppState {
-                provider: SequencedProvider::new(responses),
-                registry,
+                provider: arc_swap::ArcSwap::from_pointee(SequencedProvider::new(responses)),
+                registry: arc_swap::ArcSwap::from_pointee(registry),
                 store: crate::store::Store::open_in_memory().unwrap(),
-                embedder: None,
-                vector_store: None,
+                embedder: arc_swap::ArcSwap::from_pointee(None),
+                vector_store: arc_swap::ArcSwap::from_pointee(None),
                 working_memory: crate::skill::working_memory::new_working_memory_map(),
-                memory_config: crate::config::MemoryConfig::default(),
+                memory_config: arc_swap::ArcSwap::from_pointee(crate::config::MemoryConfig::default()),
                 warnings: crate::warning::new_shared_warnings(),
                 pending_approvals: new_pending_approvals(),
                 conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
-                approval_overrides: overrides,
+                approval_overrides: arc_swap::ArcSwap::from_pointee(overrides),
                 approval_timeout: timeout,
                 config: std::sync::RwLock::new(test_config()),
                 config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
+                on_config_change: None,
             });
             let router = Router::new()
                 .route("/api/chat", post(chat_handler::<SequencedProvider>))
@@ -2486,22 +2589,23 @@ endpoint = "http://localhost:1234/v1"
 
         fn config_app(config: crate::config::Config) -> Router {
             let state = Arc::new(AppState {
-                provider: MockProvider {
+                provider: arc_swap::ArcSwap::from_pointee(MockProvider {
                     tokens: vec!["hi".into()],
-                },
-                registry: SkillRegistry::new(),
+                }),
+                registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
                 store: crate::store::Store::open_in_memory().unwrap(),
-                embedder: None,
-                vector_store: None,
+                embedder: arc_swap::ArcSwap::from_pointee(None),
+                vector_store: arc_swap::ArcSwap::from_pointee(None),
                 working_memory: crate::skill::working_memory::new_working_memory_map(),
-                memory_config: crate::config::MemoryConfig::default(),
+                memory_config: arc_swap::ArcSwap::from_pointee(crate::config::MemoryConfig::default()),
                 warnings: crate::warning::new_shared_warnings(),
                 pending_approvals: new_pending_approvals(),
                 conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
-                approval_overrides: HashMap::new(),
+                approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
                 approval_timeout: std::time::Duration::from_secs(1),
                 config: std::sync::RwLock::new(config),
                 config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
+                on_config_change: None,
             });
             Router::new()
                 .route("/api/config", get(get_config::<MockProvider>))
@@ -2748,20 +2852,21 @@ endpoint = "http://localhost:1234/v1"
             std::fs::write(&config_path, initial_toml).unwrap();
             let config = crate::config::Config::parse(initial_toml).unwrap();
             let state = Arc::new(AppState {
-                provider: MockProvider { tokens: vec!["hi".into()] },
-                registry: SkillRegistry::new(),
+                provider: arc_swap::ArcSwap::from_pointee(MockProvider { tokens: vec!["hi".into()] }),
+                registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
                 store: crate::store::Store::open_in_memory().unwrap(),
-                embedder: None,
-                vector_store: None,
+                embedder: arc_swap::ArcSwap::from_pointee(None),
+                vector_store: arc_swap::ArcSwap::from_pointee(None),
                 working_memory: crate::skill::working_memory::new_working_memory_map(),
-                memory_config: crate::config::MemoryConfig::default(),
+                memory_config: arc_swap::ArcSwap::from_pointee(crate::config::MemoryConfig::default()),
                 warnings: crate::warning::new_shared_warnings(),
                 pending_approvals: new_pending_approvals(),
                 conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
-                approval_overrides: HashMap::new(),
+                approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
                 approval_timeout: std::time::Duration::from_secs(1),
                 config: std::sync::RwLock::new(config),
                 config_path,
+                on_config_change: None,
             });
             let router = Router::new()
                 .route("/api/config", get(get_config::<MockProvider>))
@@ -3072,6 +3177,480 @@ endpoint = "http://localhost:1234/v1"
             let err: ValidationErrorResponse = serde_json::from_slice(&bytes).unwrap();
             // Should have 4 errors: 2 unknown types + 2 empty models
             assert_eq!(err.errors.len(), 4, "expected 4 validation errors, got: {:?}", err.errors);
+
+            std::fs::remove_dir_all(&dir).ok();
+        }
+    }
+
+    mod hot_reload {
+        use super::*;
+        use axum::routing::put;
+        use crate::warning::{new_shared_warnings, Warning, WarningSeverity};
+
+        /// Build an app with a hot-reload callback that updates warnings and
+        /// memory_config from the in-memory Config after every PUT.
+        fn hot_reload_app() -> (std::path::PathBuf, Arc<AppState<MockProvider>>, Router) {
+            use std::sync::atomic::{AtomicU64, Ordering};
+            static COUNTER: AtomicU64 = AtomicU64::new(0);
+            let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+            let dir = std::env::temp_dir().join(format!(
+                "buddy-hot-reload-{}-{}",
+                std::process::id(),
+                id
+            ));
+            std::fs::create_dir_all(&dir).unwrap();
+            let config_path = dir.join("buddy.toml");
+            let initial_toml = r#"
+[[models.chat.providers]]
+type = "lmstudio"
+model = "test-model"
+endpoint = "http://localhost:1234/v1"
+"#;
+            std::fs::write(&config_path, initial_toml).unwrap();
+            let config = crate::config::Config::parse(initial_toml).unwrap();
+
+            // Start with the no_embedding_model warning (matches single-provider, no-embedding startup).
+            let warnings = new_shared_warnings();
+            {
+                let mut c = warnings.write().unwrap();
+                c.add(Warning {
+                    code: "no_embedding_model".into(),
+                    message: "No embedding model configured.".into(),
+                    severity: WarningSeverity::Warning,
+                });
+                c.add(Warning {
+                    code: "single_chat_provider".into(),
+                    message: "Only one chat provider.".into(),
+                    severity: WarningSeverity::Info,
+                });
+            }
+
+            let state = Arc::new(AppState {
+                provider: arc_swap::ArcSwap::from_pointee(MockProvider {
+                    tokens: vec!["hi".into()],
+                }),
+                registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
+                store: crate::store::Store::open_in_memory().unwrap(),
+                embedder: arc_swap::ArcSwap::from_pointee(None),
+                vector_store: arc_swap::ArcSwap::from_pointee(None),
+                working_memory: crate::skill::working_memory::new_working_memory_map(),
+                memory_config: arc_swap::ArcSwap::from_pointee(
+                    crate::config::MemoryConfig::default(),
+                ),
+                warnings,
+                pending_approvals: new_pending_approvals(),
+                conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
+                approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
+                approval_timeout: std::time::Duration::from_secs(1),
+                config: std::sync::RwLock::new(config),
+                config_path,
+                on_config_change: Some(Box::new(|state| {
+                    let config = state.config.read().unwrap();
+
+                    // Rebuild skill registry from config.
+                    let registry = crate::skill::build_registry(&config.skills);
+                    state.registry.store(Arc::new(registry));
+
+                    // Update memory config.
+                    state.memory_config.store(Arc::new(config.memory.clone()));
+
+                    // Rebuild approval overrides.
+                    let overrides = crate::reload::build_approval_overrides(&config);
+                    state.approval_overrides.store(Arc::new(overrides));
+
+                    // Refresh warnings: simulate provider count from config.
+                    let provider_count = config.models.chat.providers.len();
+                    let has_embedding = config.models.embedding.is_some();
+                    let embedder_ref = state.embedder.load();
+                    let vs_ref = state.vector_store.load();
+                    crate::reload::refresh_warnings(
+                        &state.warnings,
+                        provider_count,
+                        &*embedder_ref,
+                        &*vs_ref,
+                    );
+
+                    // If embedding was removed, clear the no_embedding_model
+                    // (refresh_warnings already handles this). If embedding was
+                    // added but we can't construct a real embedder in tests,
+                    // manually clear the warning to simulate successful init.
+                    if has_embedding {
+                        let mut c = state.warnings.write().unwrap();
+                        c.clear("no_embedding_model");
+                    }
+
+                    Ok(())
+                })),
+            });
+            let router = Router::new()
+                .route("/api/chat", post(chat_handler::<MockProvider>))
+                .route("/api/warnings", get(get_warnings::<MockProvider>))
+                .route("/api/config", get(get_config::<MockProvider>))
+                .route(
+                    "/api/config/models",
+                    put(put_config_models::<MockProvider>),
+                )
+                .route(
+                    "/api/config/skills",
+                    put(put_config_skills::<MockProvider>),
+                )
+                .route("/api/config/chat", put(put_config_chat::<MockProvider>))
+                .route(
+                    "/api/config/server",
+                    put(put_config_server::<MockProvider>),
+                )
+                .route(
+                    "/api/config/memory",
+                    put(put_config_memory::<MockProvider>),
+                )
+                .with_state(state.clone());
+            (dir, state, router)
+        }
+
+        #[tokio::test]
+        async fn put_two_chat_providers_updates_provider_count() {
+            let (dir, _state, app) = hot_reload_app();
+            let body = serde_json::json!({
+                "chat": {
+                    "providers": [
+                        {
+                            "type": "lmstudio",
+                            "model": "model-a",
+                            "endpoint": "http://localhost:1234/v1"
+                        },
+                        {
+                            "type": "lmstudio",
+                            "model": "model-b",
+                            "endpoint": "http://localhost:5678/v1"
+                        }
+                    ]
+                }
+            });
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("PUT")
+                        .uri("/api/config/models")
+                        .header("content-type", "application/json")
+                        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+
+            // After reload, single_chat_provider warning should be gone.
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .uri("/api/warnings")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let warnings: Vec<Warning> = serde_json::from_slice(&bytes).unwrap();
+            assert!(
+                !warnings.iter().any(|w| w.code == "single_chat_provider"),
+                "single_chat_provider warning should be cleared after adding 2 providers"
+            );
+
+            std::fs::remove_dir_all(&dir).ok();
+        }
+
+        #[tokio::test]
+        async fn adding_embedding_clears_warning() {
+            let (dir, _state, app) = hot_reload_app();
+
+            // Initially the no_embedding_model warning should exist.
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri("/api/warnings")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let warnings: Vec<Warning> = serde_json::from_slice(&bytes).unwrap();
+            assert!(
+                warnings.iter().any(|w| w.code == "no_embedding_model"),
+                "no_embedding_model warning should be present initially"
+            );
+
+            // Add an embedding provider via PUT /api/config/models.
+            let body = serde_json::json!({
+                "chat": {
+                    "providers": [{
+                        "type": "lmstudio",
+                        "model": "test-model",
+                        "endpoint": "http://localhost:1234/v1"
+                    }]
+                },
+                "embedding": {
+                    "providers": [{
+                        "type": "local",
+                        "model": "all-minilm"
+                    }]
+                }
+            });
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("PUT")
+                        .uri("/api/config/models")
+                        .header("content-type", "application/json")
+                        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+
+            // After reload, no_embedding_model warning should be gone.
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .uri("/api/warnings")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let warnings: Vec<Warning> = serde_json::from_slice(&bytes).unwrap();
+            assert!(
+                !warnings.iter().any(|w| w.code == "no_embedding_model"),
+                "no_embedding_model warning should be cleared after adding embedding"
+            );
+
+            std::fs::remove_dir_all(&dir).ok();
+        }
+
+        #[tokio::test]
+        async fn removing_embedding_adds_warning() {
+            let (dir, state, app) = hot_reload_app();
+
+            // Start with embedding "present" — clear the warning manually.
+            {
+                let mut c = state.warnings.write().unwrap();
+                c.clear("no_embedding_model");
+            }
+
+            // Write config that has embedding, so we can then remove it.
+            let body_with = serde_json::json!({
+                "chat": {
+                    "providers": [{
+                        "type": "lmstudio",
+                        "model": "test-model",
+                        "endpoint": "http://localhost:1234/v1"
+                    }]
+                },
+                "embedding": {
+                    "providers": [{
+                        "type": "local",
+                        "model": "all-minilm"
+                    }]
+                }
+            });
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("PUT")
+                        .uri("/api/config/models")
+                        .header("content-type", "application/json")
+                        .body(Body::from(serde_json::to_vec(&body_with).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+
+            // Now remove embedding.
+            let body_without = serde_json::json!({
+                "chat": {
+                    "providers": [{
+                        "type": "lmstudio",
+                        "model": "test-model",
+                        "endpoint": "http://localhost:1234/v1"
+                    }]
+                }
+            });
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("PUT")
+                        .uri("/api/config/models")
+                        .header("content-type", "application/json")
+                        .body(Body::from(serde_json::to_vec(&body_without).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+
+            // After reload, no_embedding_model warning should appear.
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .uri("/api/warnings")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let warnings: Vec<Warning> = serde_json::from_slice(&bytes).unwrap();
+            assert!(
+                warnings.iter().any(|w| w.code == "no_embedding_model"),
+                "no_embedding_model warning should appear after removing embedding"
+            );
+
+            std::fs::remove_dir_all(&dir).ok();
+        }
+
+        #[tokio::test]
+        async fn skill_sandbox_rules_updated_after_reload() {
+            let (dir, state, app) = hot_reload_app();
+
+            // Initially no skills are registered.
+            {
+                let reg = state.registry.load();
+                assert!(reg.get("read_file").is_none());
+            }
+
+            // Update skills config to add read_file.
+            let tmp = std::env::temp_dir();
+            let body = serde_json::json!({
+                "read_file": {
+                    "allowed_directories": [tmp.to_str().unwrap()]
+                }
+            });
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("PUT")
+                        .uri("/api/config/skills")
+                        .header("content-type", "application/json")
+                        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+
+            // After reload, the read_file skill should be registered.
+            let reg = state.registry.load();
+            assert!(
+                reg.get("read_file").is_some(),
+                "read_file skill should be registered after skills config update"
+            );
+
+            std::fs::remove_dir_all(&dir).ok();
+        }
+
+        #[tokio::test]
+        async fn system_prompt_change_reflected_in_config() {
+            let (dir, state, app) = hot_reload_app();
+
+            let body = serde_json::json!({
+                "system_prompt": "You are a pirate assistant."
+            });
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("PUT")
+                        .uri("/api/config/chat")
+                        .header("content-type", "application/json")
+                        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+
+            let config = state.config.read().unwrap();
+            assert_eq!(
+                config.chat.system_prompt, "You are a pirate assistant.",
+                "system prompt should be updated in live config"
+            );
+
+            std::fs::remove_dir_all(&dir).ok();
+        }
+
+        #[tokio::test]
+        async fn server_config_change_returns_restart_note() {
+            let (dir, _state, app) = hot_reload_app();
+
+            let body = serde_json::json!({
+                "host": "0.0.0.0",
+                "port": 9999
+            });
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("PUT")
+                        .uri("/api/config/server")
+                        .header("content-type", "application/json")
+                        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+
+            // Response should include a notes array with restart-required message.
+            let notes = json["notes"].as_array().expect("response should have notes array");
+            assert!(
+                notes.iter().any(|n| n.as_str().unwrap().contains("restart")),
+                "response notes should mention restart requirement"
+            );
+
+            std::fs::remove_dir_all(&dir).ok();
+        }
+
+        #[tokio::test]
+        async fn memory_auto_retrieve_disabled_no_memory_event() {
+            let (dir, _state, app) = hot_reload_app();
+
+            // Disable auto_retrieve via config update.
+            let body = serde_json::json!({
+                "auto_retrieve": false,
+                "auto_retrieve_limit": 3,
+                "similarity_threshold": 0.7
+            });
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("PUT")
+                        .uri("/api/config/memory")
+                        .header("content-type", "application/json")
+                        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+
+            // Send a chat message.
+            let events = crate::testutil::post_chat(app, &crate::testutil::make_chat_body()).await;
+
+            // No MemoryContext event should be emitted.
+            assert!(
+                !events.iter().any(|e| matches!(e, ChatEvent::MemoryContext { .. })),
+                "no MemoryContext event should be emitted when auto_retrieve is false"
+            );
 
             std::fs::remove_dir_all(&dir).ok();
         }

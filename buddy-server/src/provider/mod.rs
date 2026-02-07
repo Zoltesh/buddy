@@ -101,6 +101,11 @@ impl<P: Provider> ProviderChain<P> {
         assert!(!providers.is_empty(), "ProviderChain requires at least one provider");
         Self { providers }
     }
+
+    /// Returns the number of providers in the chain.
+    pub fn len(&self) -> usize {
+        self.providers.len()
+    }
 }
 
 impl<P: Provider> Provider for ProviderChain<P> {

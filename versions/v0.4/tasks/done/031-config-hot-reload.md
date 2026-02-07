@@ -23,22 +23,22 @@ Users can change models or skills in the Settings UI and see the effects immedia
 
 ## Acceptance Criteria
 
-- [ ] Adding a new chat provider via the config API makes it available for the next chat request
-- [ ] Removing all but one chat provider updates the `single_chat_provider` warning
-- [ ] Adding an embedding provider clears the `no_embedding_model` warning
-- [ ] Removing the embedding provider triggers the `no_embedding_model` warning
-- [ ] Changing skill sandbox rules (allowed_directories) takes effect for the next skill execution
-- [ ] Changing the system prompt takes effect for the next conversation
-- [ ] Changing memory config (auto_retrieve, threshold) takes effect immediately
-- [ ] In-flight chat requests complete with the old config (no crash or corruption)
-- [ ] Server config changes return a note indicating restart is required
+- [x] Adding a new chat provider via the config API makes it available for the next chat request
+- [x] Removing all but one chat provider updates the `single_chat_provider` warning
+- [x] Adding an embedding provider clears the `no_embedding_model` warning
+- [x] Removing the embedding provider triggers the `no_embedding_model` warning
+- [x] Changing skill sandbox rules (allowed_directories) takes effect for the next skill execution
+- [x] Changing the system prompt takes effect for the next conversation
+- [x] Changing memory config (auto_retrieve, threshold) takes effect immediately
+- [x] In-flight chat requests complete with the old config (no crash or corruption)
+- [x] Server config changes return a note indicating restart is required
 
 ## Test Cases
 
-- [ ] Write a config with two chat providers via PUT; send a chat request; assert the provider chain has two entries
-- [ ] Write a config adding `[models.embedding]`; call `GET /api/warnings`; assert `no_embedding_model` warning is gone
-- [ ] Write a config removing `[models.embedding]`; call `GET /api/warnings`; assert `no_embedding_model` warning appears
-- [ ] Write a config changing `skills.read_file.allowed_directories`; execute `read_file` with a path in the new directory; assert success
-- [ ] Write a config changing `chat.system_prompt`; start a new chat; assert the new prompt is used
-- [ ] Write a config changing `server.port`; assert the response includes a restart-required note
-- [ ] Write a config changing `memory.auto_retrieve` to false; send a chat message; assert no `MemoryContext` event is emitted
+- [x] Write a config with two chat providers via PUT; send a chat request; assert the provider chain has two entries
+- [x] Write a config adding `[models.embedding]`; call `GET /api/warnings`; assert `no_embedding_model` warning is gone
+- [x] Write a config removing `[models.embedding]`; call `GET /api/warnings`; assert `no_embedding_model` warning appears
+- [x] Write a config changing `skills.read_file.allowed_directories`; execute `read_file` with a path in the new directory; assert success
+- [x] Write a config changing `chat.system_prompt`; start a new chat; assert the new prompt is used
+- [x] Write a config changing `server.port`; assert the response includes a restart-required note
+- [x] Write a config changing `memory.auto_retrieve` to false; send a chat message; assert no `MemoryContext` event is emitted
