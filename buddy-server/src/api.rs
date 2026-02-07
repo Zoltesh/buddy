@@ -38,6 +38,17 @@ pub struct ChatRequest {
     #[serde(default)]
     pub conversation_id: Option<String>,
     pub messages: Vec<Message>,
+    #[serde(default)]
+    pub disable_memory: bool,
+}
+
+/// A recalled memory snippet surfaced to the frontend.
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+pub struct MemorySnippet {
+    pub text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    pub score: f32,
 }
 
 /// A single frame in the streamed response.
@@ -46,6 +57,7 @@ pub struct ChatRequest {
 pub enum ChatEvent {
     ConversationMeta { conversation_id: String },
     Warning { message: String },
+    MemoryContext { memories: Vec<MemorySnippet> },
     TokenDelta { content: String },
     ToolCallStart { id: String, name: String, arguments: String },
     ToolCallResult { id: String, content: String },
@@ -68,6 +80,7 @@ pub struct AppState<P> {
     pub embedder: Option<std::sync::Arc<dyn crate::embedding::Embedder>>,
     pub vector_store: Option<std::sync::Arc<dyn crate::memory::VectorStore>>,
     pub working_memory: crate::skill::working_memory::WorkingMemoryMap,
+    pub memory_config: crate::config::MemoryConfig,
 }
 
 // ── Conversation CRUD handlers ──────────────────────────────────────────
@@ -363,8 +376,9 @@ pub async fn chat_handler<P: Provider + 'static>(
     let (tx, mut rx) = tokio::sync::mpsc::channel::<ChatEvent>(64);
 
     let conv_id = conversation_id.clone();
+    let disable_memory = request.disable_memory;
     tokio::spawn(async move {
-        run_tool_loop(state, conv_id, all_messages, persist_from, tools, tx).await;
+        run_tool_loop(state, conv_id, all_messages, persist_from, tools, tx, disable_memory).await;
     });
 
     let conv_id_for_meta = conversation_id;
@@ -414,16 +428,84 @@ async fn run_tool_loop<P: Provider>(
     persist_from: usize,
     tools: Option<Vec<serde_json::Value>>,
     tx: tokio::sync::mpsc::Sender<ChatEvent>,
+    disable_memory: bool,
 ) {
     // Persist only new incoming messages (existing ones are already in the DB).
     for msg in &messages[persist_from..] {
         persist_message(&state.store, &conversation_id, msg);
     }
 
+    // Automatic context retrieval: search long-term memory for relevant memories.
+    let mut recalled_context: Option<String> = None;
+    if state.memory_config.auto_retrieve
+        && !disable_memory
+        && state.embedder.is_some()
+        && state.vector_store.is_some()
+    {
+        // Find the latest user message text.
+        let latest_user_text = messages
+            .iter()
+            .rev()
+            .find_map(|m| match (&m.role, &m.content) {
+                (Role::User, MessageContent::Text { text }) => Some(text.as_str()),
+                _ => None,
+            });
+
+        if let Some(query_text) = latest_user_text {
+            let embedder = state.embedder.as_ref().unwrap();
+            let vs = state.vector_store.as_ref().unwrap();
+
+            if let Ok(embeddings) = embedder.embed(&[query_text]) {
+                if let Some(embedding) = embeddings.into_iter().next() {
+                    if let Ok(results) = vs.search(&embedding, state.memory_config.auto_retrieve_limit) {
+                        let threshold = state.memory_config.similarity_threshold;
+                        let relevant: Vec<_> = results
+                            .into_iter()
+                            .filter(|r| r.score >= threshold)
+                            .collect();
+
+                        if !relevant.is_empty() {
+                            // Build system prompt section.
+                            let mut context_lines = vec!["## Recalled Memories".to_string()];
+                            let mut snippets = Vec::new();
+                            for r in &relevant {
+                                let category = r.metadata.get("category")
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.to_string());
+                                let cat_label = category.as_deref().unwrap_or("general");
+                                context_lines.push(format!(
+                                    "- \"{}\" ({}, relevance: {:.2})",
+                                    r.source_text, cat_label, r.score
+                                ));
+                                snippets.push(MemorySnippet {
+                                    text: r.source_text.clone(),
+                                    category,
+                                    score: r.score,
+                                });
+                            }
+
+                            recalled_context = Some(context_lines.join("\n"));
+                            let _ = tx.send(ChatEvent::MemoryContext { memories: snippets }).await;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     for _iteration in 0..MAX_TOOL_ITERATIONS {
-        // If the conversation has non-empty working memory, inject it as a system
-        // message so the LLM can see its own notes.
+        // Inject recalled long-term memories and working memory as system context.
         let mut provider_messages = messages.clone();
+        if let Some(ctx) = &recalled_context {
+            provider_messages.insert(
+                0,
+                Message {
+                    role: Role::System,
+                    content: MessageContent::Text { text: ctx.clone() },
+                    timestamp: Utc::now(),
+                },
+            );
+        }
         {
             let wm_map = state.working_memory.lock().unwrap();
             if let Some(wm) = wm_map.get(&conversation_id) {
@@ -634,6 +716,7 @@ mod tests {
             embedder: None,
             vector_store: None,
             working_memory: crate::skill::working_memory::new_working_memory_map(),
+            memory_config: crate::config::MemoryConfig::default(),
         });
         Router::new()
             .route("/api/chat", post(chat_handler::<MockProvider>))
@@ -648,6 +731,7 @@ mod tests {
             embedder: None,
             vector_store: None,
             working_memory: crate::skill::working_memory::new_working_memory_map(),
+            memory_config: crate::config::MemoryConfig::default(),
         });
         Router::new()
             .route("/api/chat", post(chat_handler::<MockProvider>))
@@ -663,6 +747,7 @@ mod tests {
             embedder: None,
             vector_store: None,
             working_memory: crate::skill::working_memory::new_working_memory_map(),
+            memory_config: crate::config::MemoryConfig::default(),
         });
         Router::new()
             .route("/api/chat", post(chat_handler::<SequencedProvider>))
@@ -677,6 +762,7 @@ mod tests {
             embedder: None,
             vector_store: None,
             working_memory: crate::skill::working_memory::new_working_memory_map(),
+            memory_config: crate::config::MemoryConfig::default(),
         });
         let router = Router::new()
             .route("/api/chat", post(chat_handler::<MockProvider>))
@@ -1030,6 +1116,7 @@ mod tests {
                 embedder: None,
                 vector_store: None,
                 working_memory: crate::skill::working_memory::new_working_memory_map(),
+                memory_config: crate::config::MemoryConfig::default(),
             });
             let app = Router::new()
                 .route(
@@ -1241,6 +1328,7 @@ mod tests {
                 embedder: None,
                 vector_store: None,
                 working_memory: crate::skill::working_memory::new_working_memory_map(),
+                memory_config: crate::config::MemoryConfig::default(),
             });
             let app = Router::new()
                 .route("/api/chat", post(chat_handler::<SequencedProvider>))

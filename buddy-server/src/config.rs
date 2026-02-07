@@ -26,6 +26,8 @@ pub struct Config {
     pub skills: SkillsConfig,
     #[serde(default)]
     pub storage: StorageConfig,
+    #[serde(default)]
+    pub memory: MemoryConfig,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -150,6 +152,38 @@ pub struct WriteFileConfig {
 #[derive(Debug, Deserialize, PartialEq, Clone)]
 pub struct FetchUrlConfig {
     pub allowed_domains: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Clone)]
+pub struct MemoryConfig {
+    #[serde(default = "default_auto_retrieve")]
+    pub auto_retrieve: bool,
+    #[serde(default = "default_auto_retrieve_limit")]
+    pub auto_retrieve_limit: usize,
+    #[serde(default = "default_similarity_threshold")]
+    pub similarity_threshold: f32,
+}
+
+impl Default for MemoryConfig {
+    fn default() -> Self {
+        Self {
+            auto_retrieve: default_auto_retrieve(),
+            auto_retrieve_limit: default_auto_retrieve_limit(),
+            similarity_threshold: default_similarity_threshold(),
+        }
+    }
+}
+
+fn default_auto_retrieve() -> bool {
+    true
+}
+
+fn default_auto_retrieve_limit() -> usize {
+    3
+}
+
+fn default_similarity_threshold() -> f32 {
+    0.5
 }
 
 impl Config {
@@ -448,6 +482,33 @@ providers = []
             err.contains("BUDDY_NONEXISTENT_KEY_018"),
             "error should mention the variable name: {err}"
         );
+    }
+
+    #[test]
+    fn memory_defaults_when_section_omitted() {
+        let config = Config::parse(minimal_chat_toml()).unwrap();
+        assert!(config.memory.auto_retrieve);
+        assert_eq!(config.memory.auto_retrieve_limit, 3);
+        assert!((config.memory.similarity_threshold - 0.5).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn memory_config_overrides() {
+        let toml = r#"
+[[models.chat.providers]]
+type = "lmstudio"
+model = "deepseek-coder"
+endpoint = "http://localhost:1234/v1"
+
+[memory]
+auto_retrieve = false
+auto_retrieve_limit = 10
+similarity_threshold = 0.7
+"#;
+        let config = Config::parse(toml).unwrap();
+        assert!(!config.memory.auto_retrieve);
+        assert_eq!(config.memory.auto_retrieve_limit, 10);
+        assert!((config.memory.similarity_threshold - 0.7).abs() < f32::EPSILON);
     }
 
     #[test]

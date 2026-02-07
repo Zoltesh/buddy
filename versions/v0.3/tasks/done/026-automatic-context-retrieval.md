@@ -32,22 +32,22 @@ buddy proactively recalls relevant memories without the LLM needing to explicitl
 
 ## Acceptance Criteria
 
-- [ ] User messages trigger automatic memory search when embedder and vector store are available
-- [ ] Relevant memories are injected into the system prompt before the LLM call
-- [ ] A `ChatEvent::MemoryContext` event is emitted with retrieved memories
-- [ ] Results below the similarity threshold are not injected
-- [ ] `disable_memory: true` in the chat request skips retrieval for that request
-- [ ] Global config option disables automatic retrieval
-- [ ] No errors or delays when embedder/vector store are unavailable
-- [ ] Existing chat behavior is unchanged when no memories are stored
+- [x] User messages trigger automatic memory search when embedder and vector store are available
+- [x] Relevant memories are injected into the system prompt before the LLM call
+- [x] A `ChatEvent::MemoryContext` event is emitted with retrieved memories
+- [x] Results below the similarity threshold are not injected
+- [x] `disable_memory: true` in the chat request skips retrieval for that request
+- [x] Global config option disables automatic retrieval
+- [x] No errors or delays when embedder/vector store are unavailable
+- [x] Existing chat behavior is unchanged when no memories are stored
 
 ## Test Cases
 
-- Store a memory "User likes Python"; send message "What programming language should I learn?"; assert memory is retrieved and injected into context
-- Store a memory with low relevance to the query; assert it is NOT injected (below threshold)
-- Send a chat request with `disable_memory: true`; assert no memory retrieval occurs
-- Set config `[memory] auto_retrieve = false`; send a message; assert no memory retrieval occurs
-- Send a message with no embedder configured; assert chat works normally with no retrieval
-- Send a message with an empty vector store; assert chat works normally with no injected context
-- Assert `ChatEvent::MemoryContext` appears in the SSE stream before `TokenDelta` events
-- Assert the injected system prompt section contains the recalled memory text
+- [x] Store a memory "User likes Python"; send message "What programming language should I learn?"; assert memory is retrieved and injected into context
+- [x] Store a memory with low relevance to the query; assert it is NOT injected (below threshold)
+- [x] Send a chat request with `disable_memory: true`; assert no memory retrieval occurs
+- [x] Set config `[memory] auto_retrieve = false`; send a message; assert no memory retrieval occurs
+- [x] Send a message with no embedder configured; assert chat works normally with no retrieval
+- [x] Send a message with an empty vector store; assert chat works normally with no injected context
+- [x] Assert `ChatEvent::MemoryContext` appears in the SSE stream before `TokenDelta` events
+- [x] Assert the injected system prompt section contains the recalled memory text

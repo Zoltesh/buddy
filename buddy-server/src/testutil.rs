@@ -229,6 +229,7 @@ pub fn make_chat_body() -> String {
             },
             timestamp: Utc::now(),
         }],
+        disable_memory: false,
     })
     .unwrap()
 }
@@ -243,6 +244,7 @@ pub fn make_chat_body_with_conversation(conversation_id: &str) -> String {
             },
             timestamp: Utc::now(),
         }],
+        disable_memory: false,
     })
     .unwrap()
 }

@@ -146,6 +146,7 @@ async fn main() {
         embedder: embedder.clone(),
         vector_store,
         working_memory,
+        memory_config: config.memory.clone(),
     });
 
     let app = Router::new()
