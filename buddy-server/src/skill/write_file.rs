@@ -1,10 +1,10 @@
 use std::future::Future;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 
 use crate::config::WriteFileConfig;
 
-use super::{PermissionLevel, Skill, SkillError};
+use super::{PermissionLevel, Skill, SkillError, normalize_path};
 
 /// Skill that writes file contents to sandboxed directories.
 pub struct WriteFileSkill {
@@ -17,31 +17,6 @@ impl WriteFileSkill {
             allowed_directories: config.allowed_directories.iter().map(PathBuf::from).collect(),
         }
     }
-}
-
-/// Normalize a path by making it absolute and resolving `.` and `..` without
-/// touching the filesystem (no symlink resolution).
-fn normalize_path(path: &Path) -> Result<PathBuf, SkillError> {
-    let abs = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        std::env::current_dir()
-            .map_err(|e| SkillError::ExecutionFailed(format!("cannot get current directory: {e}")))?
-            .join(path)
-    };
-
-    let mut components = Vec::new();
-    for component in abs.components() {
-        match component {
-            Component::ParentDir => {
-                components.pop();
-            }
-            Component::CurDir => {}
-            c => components.push(c),
-        }
-    }
-
-    Ok(components.iter().collect())
 }
 
 /// Validate that a target write path is within an allowed directory.

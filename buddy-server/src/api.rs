@@ -349,6 +349,43 @@ fn atomic_write(path: &std::path::Path, content: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Apply a mutation to the config, persist to disk, and trigger hot-reload.
+///
+/// Handles the common pattern shared by models, skills, chat, and memory
+/// config write endpoints: acquire write lock → apply mutation → serialize
+/// TOML → atomic write to disk → call on_config_change hook.
+///
+/// Returns the updated `Config` on success, or an error `Response` on failure.
+fn apply_config_update<P: Provider + 'static>(
+    state: &Arc<AppState<P>>,
+    mutate: impl FnOnce(&mut crate::config::Config),
+) -> Result<crate::config::Config, axum::response::Response> {
+    {
+        let mut config = state.config.write().unwrap();
+        mutate(&mut config);
+        let toml = config.to_toml_string();
+        if let Err(e) = atomic_write(&state.config_path, &toml) {
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiError { code: "write_error".into(), message: e }),
+            ).into_response());
+        }
+    }
+    if let Some(ref hook) = state.on_config_change {
+        if let Err(e) = hook(state) {
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiError {
+                    code: "reload_failed".into(),
+                    message: format!("config saved but reload failed: {e}"),
+                }),
+            ).into_response());
+        }
+    }
+    let config = state.config.read().unwrap();
+    Ok(config.clone())
+}
+
 // ── Config write handlers ───────────────────────────────────────────────
 
 /// `PUT /api/config/models` — update the models section.
@@ -360,27 +397,10 @@ pub async fn put_config_models<P: Provider + 'static>(
     if !errors.is_empty() {
         return (StatusCode::BAD_REQUEST, Json(ValidationErrorResponse { errors })).into_response();
     }
-    {
-        let mut config = state.config.write().unwrap();
-        config.models = models;
-        let toml = config.to_toml_string();
-        if let Err(e) = atomic_write(&state.config_path, &toml) {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiError { code: "write_error".into(), message: e }),
-            ).into_response();
-        }
+    match apply_config_update(&state, |config| config.models = models) {
+        Ok(config) => Json(config).into_response(),
+        Err(resp) => resp,
     }
-    if let Some(ref hook) = state.on_config_change {
-        if let Err(e) = hook(&state) {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiError { code: "reload_failed".into(), message: format!("config saved but reload failed: {e}") }),
-            ).into_response();
-        }
-    }
-    let config = state.config.read().unwrap();
-    Json(config.clone()).into_response()
 }
 
 /// `PUT /api/config/skills` — update the skills section.
@@ -392,27 +412,10 @@ pub async fn put_config_skills<P: Provider + 'static>(
     if !errors.is_empty() {
         return (StatusCode::BAD_REQUEST, Json(ValidationErrorResponse { errors })).into_response();
     }
-    {
-        let mut config = state.config.write().unwrap();
-        config.skills = skills;
-        let toml = config.to_toml_string();
-        if let Err(e) = atomic_write(&state.config_path, &toml) {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiError { code: "write_error".into(), message: e }),
-            ).into_response();
-        }
+    match apply_config_update(&state, |config| config.skills = skills) {
+        Ok(config) => Json(config).into_response(),
+        Err(resp) => resp,
     }
-    if let Some(ref hook) = state.on_config_change {
-        if let Err(e) = hook(&state) {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiError { code: "reload_failed".into(), message: format!("config saved but reload failed: {e}") }),
-            ).into_response();
-        }
-    }
-    let config = state.config.read().unwrap();
-    Json(config.clone()).into_response()
 }
 
 /// `PUT /api/config/chat` — update the chat section.
@@ -420,27 +423,10 @@ pub async fn put_config_chat<P: Provider + 'static>(
     State(state): State<Arc<AppState<P>>>,
     Json(chat): Json<crate::config::ChatConfig>,
 ) -> axum::response::Response {
-    {
-        let mut config = state.config.write().unwrap();
-        config.chat = chat;
-        let toml = config.to_toml_string();
-        if let Err(e) = atomic_write(&state.config_path, &toml) {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiError { code: "write_error".into(), message: e }),
-            ).into_response();
-        }
+    match apply_config_update(&state, |config| config.chat = chat) {
+        Ok(config) => Json(config).into_response(),
+        Err(resp) => resp,
     }
-    if let Some(ref hook) = state.on_config_change {
-        if let Err(e) = hook(&state) {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiError { code: "reload_failed".into(), message: format!("config saved but reload failed: {e}") }),
-            ).into_response();
-        }
-    }
-    let config = state.config.read().unwrap();
-    Json(config.clone()).into_response()
 }
 
 /// Response wrapper for config changes that may require a server restart.
@@ -497,27 +483,10 @@ pub async fn put_config_memory<P: Provider + 'static>(
     State(state): State<Arc<AppState<P>>>,
     Json(memory): Json<crate::config::MemoryConfig>,
 ) -> axum::response::Response {
-    {
-        let mut config = state.config.write().unwrap();
-        config.memory = memory;
-        let toml = config.to_toml_string();
-        if let Err(e) = atomic_write(&state.config_path, &toml) {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiError { code: "write_error".into(), message: e }),
-            ).into_response();
-        }
+    match apply_config_update(&state, |config| config.memory = memory) {
+        Ok(config) => Json(config).into_response(),
+        Err(resp) => resp,
     }
-    if let Some(ref hook) = state.on_config_change {
-        if let Err(e) = hook(&state) {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiError { code: "reload_failed".into(), message: format!("config saved but reload failed: {e}") }),
-            ).into_response();
-        }
-    }
-    let config = state.config.read().unwrap();
-    Json(config.clone()).into_response()
 }
 
 // ── Provider connection test ────────────────────────────────────────────

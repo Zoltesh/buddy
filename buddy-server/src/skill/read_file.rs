@@ -1,10 +1,10 @@
 use std::future::Future;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 
 use crate::config::ReadFileConfig;
 
-use super::{Skill, SkillError};
+use super::{Skill, SkillError, normalize_path};
 
 /// Skill that reads file contents from sandboxed directories.
 pub struct ReadFileSkill {
@@ -17,31 +17,6 @@ impl ReadFileSkill {
             allowed_directories: config.allowed_directories.iter().map(PathBuf::from).collect(),
         }
     }
-}
-
-/// Normalize a path by making it absolute and resolving `.` and `..` without
-/// touching the filesystem.
-fn normalize_path(path: &Path) -> Result<PathBuf, SkillError> {
-    let abs = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        std::env::current_dir()
-            .map_err(|e| SkillError::ExecutionFailed(format!("cannot get current directory: {e}")))?
-            .join(path)
-    };
-
-    let mut components = Vec::new();
-    for component in abs.components() {
-        match component {
-            Component::ParentDir => {
-                components.pop();
-            }
-            Component::CurDir => {}
-            c => components.push(c),
-        }
-    }
-
-    Ok(components.iter().collect())
 }
 
 /// Validate that a path resolves to a location within one of the allowed directories.

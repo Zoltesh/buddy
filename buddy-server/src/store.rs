@@ -303,19 +303,26 @@ fn serialize_content(content: &MessageContent) -> (String, String) {
 }
 
 /// Generate a conversation title from the first user message.
-/// Truncates to ~80 chars at a word boundary.
+/// Truncates to ~80 chars at a word boundary. Uses `char_indices` to avoid
+/// panicking on multi-byte UTF-8 characters.
 pub fn title_from_message(text: &str) -> String {
     let trimmed = text.trim();
     if trimmed.len() <= 80 {
         return trimmed.to_string();
     }
 
-    // Find the last space at or before position 80.
-    let truncated = &trimmed[..80];
+    // Find the last char boundary at or before byte position 80.
+    let byte_limit = trimmed
+        .char_indices()
+        .take_while(|&(i, _)| i <= 80)
+        .last()
+        .map(|(i, _)| i)
+        .unwrap_or(0);
+
+    let truncated = &trimmed[..byte_limit];
     if let Some(pos) = truncated.rfind(' ') {
         trimmed[..pos].to_string()
     } else {
-        // No space found — just cut at 80.
         truncated.to_string()
     }
 }
@@ -516,6 +523,21 @@ mod tests {
         // Short message stays unchanged.
         let short = "Hello world";
         assert_eq!(title_from_message(short), "Hello world");
+    }
+
+    #[test]
+    fn title_truncation_handles_multibyte_utf8() {
+        // Each CJK character is 3 bytes. 30 characters = 90 bytes > 80 byte limit.
+        let cjk = "日本語のテキストを使って長い文章を作成してテストを行います";
+        // Should not panic, and result should be valid UTF-8.
+        let title = title_from_message(cjk);
+        assert!(title.len() <= 83, "title bytes should be near 80, got {}", title.len());
+        assert!(cjk.starts_with(&title));
+
+        // Mixed ASCII + emoji.
+        let mixed = "Hello 🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍";
+        let title = title_from_message(mixed);
+        assert!(title.len() <= 84, "title bytes should be near 80, got {}", title.len());
     }
 
     // ── Test: Idempotent migrations (open DB twice) ─────────────────────

@@ -7,11 +7,37 @@ pub mod write_file;
 
 use std::collections::HashMap;
 use std::future::Future;
+use std::path::{Component, Path, PathBuf};
 use std::pin::Pin;
 
 use serde::{Deserialize, Serialize};
 
 use crate::config::SkillsConfig;
+
+/// Normalize a path by making it absolute and resolving `.` and `..` without
+/// touching the filesystem (no symlink resolution).
+pub(crate) fn normalize_path(path: &Path) -> Result<PathBuf, SkillError> {
+    let abs = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map_err(|e| SkillError::ExecutionFailed(format!("cannot get current directory: {e}")))?
+            .join(path)
+    };
+
+    let mut components = Vec::new();
+    for component in abs.components() {
+        match component {
+            Component::ParentDir => {
+                components.pop();
+            }
+            Component::CurDir => {}
+            c => components.push(c),
+        }
+    }
+
+    Ok(components.iter().collect())
+}
 
 /// Declares how a skill interacts with the outside world.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
