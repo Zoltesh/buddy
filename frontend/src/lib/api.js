@@ -58,6 +58,27 @@ export function putConfigMemory(memory) {
   return putConfigSection('memory', memory);
 }
 
+/** Update the models config (chat and embedding provider lists). */
+export function putConfigModels(models) {
+  return putConfigSection('models', models);
+}
+
+/** Test a provider's connectivity without saving. */
+export async function testProvider(entry) {
+  const res = await fetch('/api/config/test-provider', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(entry),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    const err = new Error('Validation failed');
+    err.details = data;
+    throw err;
+  }
+  return data;
+}
+
 /**
  * Convert backend messages to display items.
  * Groups tool_call + tool_result pairs into single blocks.

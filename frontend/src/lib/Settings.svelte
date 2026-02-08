@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { fetchConfig, putConfigChat, putConfigMemory } from './api.js';
+  import { fetchConfig, putConfigChat, putConfigMemory, putConfigModels, testProvider } from './api.js';
 
   let config = $state(null);
   let loading = $state(true);
@@ -65,6 +65,180 @@
     }
   }
 
+  // Models tab state
+  // editingProvider: { slot: 'chat'|'embedding', index: number|null, form: {...} }
+  // index === null means adding new; number means editing existing
+  let editingProvider = $state(null);
+  let modelErrors = $state({});
+  let testing = $state(false);
+  let testResult = $state(null);
+  let savingModels = $state(false);
+  let modelsSaveMessage = $state(null);
+  let confirmingDelete = $state(null); // { slot, index }
+
+  const providerTypes = [
+    { value: 'openai', label: 'OpenAI' },
+    { value: 'lmstudio', label: 'LM Studio' },
+    { value: 'local', label: 'Local' },
+  ];
+
+  const endpointPlaceholders = {
+    openai: 'https://api.openai.com/v1',
+    lmstudio: 'http://localhost:1234/v1',
+  };
+
+  function showsApiKey(type) {
+    return type === 'openai' || type === 'lmstudio';
+  }
+
+  function showsEndpoint(type) {
+    return type !== 'local';
+  }
+
+  function providerLabel(type) {
+    return providerTypes.find((p) => p.value === type)?.label ?? type;
+  }
+
+  function positionLabel(index) {
+    return index === 0 ? 'Primary' : `Fallback #${index + 1}`;
+  }
+
+  function startAdd(slot) {
+    editingProvider = { slot, index: null, form: { type: 'openai', model: '', endpoint: '', api_key_env: '' } };
+    modelErrors = {};
+    testResult = null;
+    modelsSaveMessage = null;
+  }
+
+  function startEdit(slot, index) {
+    const p = slot === 'chat'
+      ? config.models.chat.providers[index]
+      : config.models.embedding.providers[index];
+    editingProvider = { slot, index, form: { type: p.type, model: p.model, endpoint: p.endpoint ?? '', api_key_env: p.api_key_env ?? '' } };
+    modelErrors = {};
+    testResult = null;
+    modelsSaveMessage = null;
+  }
+
+  function cancelEdit() {
+    editingProvider = null;
+    modelErrors = {};
+    testResult = null;
+  }
+
+  function validateForm(form) {
+    const errors = {};
+    if (!form.model.trim()) errors.model = 'Model name is required';
+    return errors;
+  }
+
+  function buildModelsPayload(slot, providers) {
+    const chat = slot === 'chat' ? { providers } : { providers: config.models.chat.providers };
+    const embedding = slot === 'embedding'
+      ? (providers.length > 0 ? { providers } : null)
+      : (config.models.embedding ?? null);
+    const payload = { chat };
+    if (embedding) payload.embedding = embedding;
+    return payload;
+  }
+
+  function toEntry(form) {
+    const entry = { type: form.type, model: form.model.trim() };
+    if (showsEndpoint(form.type) && form.endpoint.trim()) entry.endpoint = form.endpoint.trim();
+    if (showsApiKey(form.type) && form.api_key_env.trim()) entry.api_key_env = form.api_key_env.trim();
+    return entry;
+  }
+
+  async function saveProvider() {
+    const { slot, index, form } = editingProvider;
+    const errors = validateForm(form);
+    if (Object.keys(errors).length > 0) { modelErrors = errors; return; }
+
+    savingModels = true;
+    modelsSaveMessage = null;
+    try {
+      const currentProviders = slot === 'chat'
+        ? [...config.models.chat.providers]
+        : [...(config.models.embedding?.providers ?? [])];
+
+      const entry = toEntry(form);
+      if (index === null) {
+        currentProviders.push(entry);
+      } else {
+        currentProviders[index] = entry;
+      }
+
+      const updated = await putConfigModels(buildModelsPayload(slot, currentProviders));
+      config = updated;
+      editingProvider = null;
+      modelErrors = {};
+      testResult = null;
+      modelsSaveMessage = { type: 'success', text: 'Provider saved.' };
+    } catch (e) {
+      if (e.details?.errors) {
+        modelsSaveMessage = { type: 'error', text: e.details.errors.map((err) => `${err.field}: ${err.message}`).join('; ') };
+      } else {
+        modelsSaveMessage = { type: 'error', text: e.details?.message || e.message };
+      }
+    } finally {
+      savingModels = false;
+    }
+  }
+
+  async function deleteProvider(slot, index) {
+    const currentProviders = slot === 'chat'
+      ? [...config.models.chat.providers]
+      : [...(config.models.embedding?.providers ?? [])];
+
+    if (slot === 'chat' && currentProviders.length <= 1) {
+      modelsSaveMessage = { type: 'error', text: 'Chat must have at least one provider.' };
+      confirmingDelete = null;
+      return;
+    }
+
+    savingModels = true;
+    modelsSaveMessage = null;
+    try {
+      currentProviders.splice(index, 1);
+      const updated = await putConfigModels(buildModelsPayload(slot, currentProviders));
+      config = updated;
+      confirmingDelete = null;
+      if (editingProvider?.slot === slot && editingProvider?.index === index) {
+        editingProvider = null;
+      }
+      modelsSaveMessage = { type: 'success', text: 'Provider removed.' };
+    } catch (e) {
+      if (e.details?.errors) {
+        modelsSaveMessage = { type: 'error', text: e.details.errors.map((err) => `${err.field}: ${err.message}`).join('; ') };
+      } else {
+        modelsSaveMessage = { type: 'error', text: e.details?.message || e.message };
+      }
+    } finally {
+      savingModels = false;
+    }
+  }
+
+  async function runTestConnection() {
+    const { form } = editingProvider;
+    const errors = validateForm(form);
+    if (Object.keys(errors).length > 0) { modelErrors = errors; return; }
+
+    testing = true;
+    testResult = null;
+    try {
+      const result = await testProvider(toEntry(form));
+      testResult = result;
+    } catch (e) {
+      if (e.details?.errors) {
+        testResult = { status: 'error', message: e.details.errors.map((err) => err.message).join('; ') };
+      } else {
+        testResult = { status: 'error', message: e.message };
+      }
+    } finally {
+      testing = false;
+    }
+  }
+
   const tabs = [
     { id: 'general', label: 'General' },
     { id: 'models', label: 'Models' },
@@ -110,6 +284,119 @@
   <!-- Content -->
   <div class="flex-1 overflow-y-auto px-6 py-6">
     <div class="max-w-2xl mx-auto">
+      {#snippet providerForm()}
+        <div class="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-900/10 px-4 py-4 space-y-3">
+          <div>
+            <label class="block text-sm text-gray-700 dark:text-gray-300 mb-1" for="pf-type">Provider Type</label>
+            <select
+              id="pf-type"
+              bind:value={editingProvider.form.type}
+              onchange={() => { testResult = null; }}
+              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg
+                     bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100
+                     focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm cursor-pointer"
+            >
+              {#each providerTypes as pt}
+                <option value={pt.value}>{pt.label}</option>
+              {/each}
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-sm text-gray-700 dark:text-gray-300 mb-1" for="pf-model">
+              Model <span class="text-red-500">*</span>
+            </label>
+            <input
+              id="pf-model"
+              type="text"
+              bind:value={editingProvider.form.model}
+              placeholder="e.g. gpt-4o, deepseek-coder"
+              class="w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100
+                     focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm
+                     {modelErrors.model ? 'border-red-400 dark:border-red-600' : 'border-gray-300 dark:border-gray-700'}"
+            />
+            {#if modelErrors.model}
+              <p class="text-xs text-red-600 dark:text-red-400 mt-1">{modelErrors.model}</p>
+            {/if}
+          </div>
+
+          {#if showsEndpoint(editingProvider.form.type)}
+            <div>
+              <label class="block text-sm text-gray-700 dark:text-gray-300 mb-1" for="pf-endpoint">Endpoint</label>
+              <input
+                id="pf-endpoint"
+                type="text"
+                bind:value={editingProvider.form.endpoint}
+                placeholder={endpointPlaceholders[editingProvider.form.type] ?? ''}
+                class="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg
+                       bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100
+                       focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              />
+            </div>
+          {/if}
+
+          {#if showsApiKey(editingProvider.form.type)}
+            <div>
+              <label class="block text-sm text-gray-700 dark:text-gray-300 mb-1" for="pf-apikey">API Key Env Var</label>
+              <input
+                id="pf-apikey"
+                type="text"
+                bind:value={editingProvider.form.api_key_env}
+                placeholder="e.g. OPENAI_API_KEY"
+                class="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg
+                       bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100
+                       focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              />
+              <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">Name of the environment variable (not the key itself)</p>
+            </div>
+          {/if}
+
+          <!-- Test Connection -->
+          <div class="flex items-center gap-3 pt-1">
+            <button
+              onclick={runTestConnection}
+              disabled={testing || savingModels}
+              class="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg
+                     text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800
+                     disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+            >
+              {testing ? 'Testing...' : 'Test Connection'}
+            </button>
+            {#if testResult}
+              <span class="text-sm {testResult.status === 'ok' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'} flex items-center gap-1">
+                {#if testResult.status === 'ok'}
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+                {:else}
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                {/if}
+                {testResult.message}
+              </span>
+            {/if}
+          </div>
+
+          <!-- Save / Cancel -->
+          <div class="flex items-center gap-2 pt-1 border-t border-gray-200 dark:border-gray-700">
+            <button
+              onclick={saveProvider}
+              disabled={savingModels}
+              class="mt-2 px-4 py-1.5 bg-blue-600 text-white text-sm rounded-lg font-medium hover:bg-blue-700
+                     focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2
+                     disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+            >
+              {savingModels ? 'Saving...' : 'Save'}
+            </button>
+            <button
+              onclick={cancelEdit}
+              disabled={savingModels}
+              class="mt-2 px-4 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200
+                     disabled:opacity-50 transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      {/snippet}
+
       {#if loading}
         <div class="flex items-center gap-2 text-gray-500 dark:text-gray-400 py-8">
           <svg class="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
@@ -260,54 +547,108 @@
         <!-- Models Tab -->
         {:else if activeTab === 'models'}
           <div class="space-y-6">
-            <!-- Chat Providers -->
-            <section>
-              <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-100 uppercase tracking-wide mb-3">Chat Providers</h2>
-              <div class="space-y-2">
-                {#each config.models.chat.providers as provider, i}
-                  <div class="rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 px-4 py-3">
-                    <div class="flex items-center gap-2 mb-1">
-                      <span class="text-xs font-medium uppercase text-gray-400 dark:text-gray-500">#{i + 1}</span>
-                      <span class="text-sm font-medium text-gray-900 dark:text-gray-100">{provider.type}</span>
-                    </div>
-                    <div class="text-sm text-gray-600 dark:text-gray-400 space-y-0.5">
-                      <div>Model: <span class="text-gray-900 dark:text-gray-200">{provider.model}</span></div>
-                      {#if provider.endpoint}
-                        <div>Endpoint: <span class="text-gray-900 dark:text-gray-200">{provider.endpoint}</span></div>
-                      {/if}
-                      {#if provider.api_key_env}
-                        <div>API Key: <span class="text-gray-900 dark:text-gray-200">${provider.api_key_env}</span></div>
-                      {/if}
-                    </div>
-                  </div>
-                {/each}
+            {#if modelsSaveMessage}
+              <div class="text-sm {modelsSaveMessage.type === 'success' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}">
+                {modelsSaveMessage.text}
               </div>
-            </section>
+            {/if}
 
-            <!-- Embedding Providers -->
-            <section>
-              <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-100 uppercase tracking-wide mb-3">Embedding Providers</h2>
-              {#if config.models.embedding && config.models.embedding.providers.length > 0}
-                <div class="space-y-2">
-                  {#each config.models.embedding.providers as provider, i}
-                    <div class="rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 px-4 py-3">
-                      <div class="flex items-center gap-2 mb-1">
-                        <span class="text-xs font-medium uppercase text-gray-400 dark:text-gray-500">#{i + 1}</span>
-                        <span class="text-sm font-medium text-gray-900 dark:text-gray-100">{provider.type}</span>
-                      </div>
-                      <div class="text-sm text-gray-600 dark:text-gray-400 space-y-0.5">
-                        <div>Model: <span class="text-gray-900 dark:text-gray-200">{provider.model}</span></div>
-                        {#if provider.endpoint}
-                          <div>Endpoint: <span class="text-gray-900 dark:text-gray-200">{provider.endpoint}</span></div>
-                        {/if}
-                      </div>
-                    </div>
-                  {/each}
-                </div>
-              {:else}
-                <p class="text-sm text-gray-500 dark:text-gray-400 italic">Not configured</p>
-              {/if}
-            </section>
+            {#each [
+              { key: 'chat', label: 'Chat Providers', providers: config.models.chat.providers, required: true },
+              { key: 'embedding', label: 'Embedding Providers', providers: config.models.embedding?.providers ?? [], required: false },
+            ] as slot}
+              <section>
+                <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-100 uppercase tracking-wide mb-3">{slot.label}</h2>
+
+                {#if slot.providers.length > 0}
+                  <div class="space-y-2">
+                    {#each slot.providers as provider, i}
+                      {#if editingProvider?.slot === slot.key && editingProvider?.index === i}
+                        <!-- Inline edit form -->
+                        {@render providerForm()}
+                      {:else}
+                        <div class="group rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 px-4 py-3">
+                          <div class="flex items-center justify-between mb-1">
+                            <div class="flex items-center gap-2">
+                              <span class="text-xs font-medium text-gray-400 dark:text-gray-500">{positionLabel(i)}</span>
+                              <span class="text-sm font-medium text-gray-900 dark:text-gray-100">{providerLabel(provider.type)}</span>
+                            </div>
+                            <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onclick={() => startEdit(slot.key, i)}
+                                disabled={savingModels}
+                                class="p-1.5 rounded text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+                                aria-label="Edit provider"
+                              >
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                              </button>
+                              {#if confirmingDelete?.slot === slot.key && confirmingDelete?.index === i}
+                                <button
+                                  onclick={() => deleteProvider(slot.key, i)}
+                                  disabled={savingModels}
+                                  class="px-2 py-1 text-xs font-medium rounded bg-red-600 text-white hover:bg-red-700 transition-colors cursor-pointer disabled:opacity-50"
+                                >
+                                  Confirm
+                                </button>
+                                <button
+                                  onclick={() => (confirmingDelete = null)}
+                                  class="px-2 py-1 text-xs font-medium rounded text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors cursor-pointer"
+                                >
+                                  Cancel
+                                </button>
+                              {:else}
+                                <button
+                                  onclick={() => (confirmingDelete = { slot: slot.key, index: i })}
+                                  disabled={savingModels || (slot.required && slot.providers.length <= 1)}
+                                  class="p-1.5 rounded text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                                  aria-label="Delete provider"
+                                  title={slot.required && slot.providers.length <= 1 ? 'Chat requires at least one provider' : ''}
+                                >
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                  </svg>
+                                </button>
+                              {/if}
+                            </div>
+                          </div>
+                          <div class="text-sm text-gray-600 dark:text-gray-400 space-y-0.5">
+                            <div>Model: <span class="text-gray-900 dark:text-gray-200">{provider.model}</span></div>
+                            {#if provider.endpoint}
+                              <div>Endpoint: <span class="text-gray-900 dark:text-gray-200">{provider.endpoint}</span></div>
+                            {/if}
+                            {#if provider.api_key_env}
+                              <div>API Key: <span class="text-gray-900 dark:text-gray-200">${provider.api_key_env}</span></div>
+                            {/if}
+                          </div>
+                        </div>
+                      {/if}
+                    {/each}
+                  </div>
+                {:else}
+                  <p class="text-sm text-gray-500 dark:text-gray-400 italic mb-2">Not configured</p>
+                {/if}
+
+                <!-- Add form or button -->
+                {#if editingProvider?.slot === slot.key && editingProvider?.index === null}
+                  <div class="mt-2">
+                    {@render providerForm()}
+                  </div>
+                {:else}
+                  <button
+                    onclick={() => startAdd(slot.key)}
+                    disabled={savingModels || editingProvider !== null}
+                    class="mt-2 flex items-center gap-1.5 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                  >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                    </svg>
+                    Add Provider
+                  </button>
+                {/if}
+              </section>
+            {/each}
           </div>
 
         <!-- Skills Tab -->
