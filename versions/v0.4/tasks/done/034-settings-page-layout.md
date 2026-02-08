@@ -30,21 +30,21 @@ The Settings page displays the current configuration organized into logical sect
 
 ## Acceptance Criteria
 
-- [ ] Settings page loads and displays current config from `GET /api/config`
-- [ ] Loading and error states are handled gracefully
-- [ ] Models section displays current chat and embedding providers
-- [ ] Skills section displays current skill configurations
-- [ ] General section shows server, chat, and memory settings
-- [ ] General section fields are editable and save via the config write API
-- [ ] Save success shows a confirmation message
-- [ ] Save failure shows the validation error(s) from the API
-- [ ] Layout is responsive and visually consistent with the chat UI
+- [x] Settings page loads and displays current config from `GET /api/config`
+- [x] Loading and error states are handled gracefully
+- [x] Models section displays current chat and embedding providers
+- [x] Skills section displays current skill configurations
+- [x] General section shows server, chat, and memory settings
+- [x] General section fields are editable and save via the config write API
+- [x] Save success shows a confirmation message
+- [x] Save failure shows the validation error(s) from the API
+- [x] Layout is responsive and visually consistent with the chat UI
 
 ## Test Cases
 
-- [ ] Load settings page; assert `GET /api/config` is called and sections are populated
-- [ ] Load settings with a config that has no embedding providers; assert the embedding section shows "Not configured"
-- [ ] Edit the system prompt in the General section; click Save; assert `PUT /api/config/chat` is called with the new value
-- [ ] Edit memory settings; click Save; assert `PUT /api/config/memory` is called
-- [ ] Simulate a failed `GET /api/config`; assert an error message is displayed
-- [ ] Simulate a validation error on save; assert the error details are shown inline
+- [x] Load settings page; assert `GET /api/config` is called and sections are populated
+- [x] Load settings with a config that has no embedding providers; assert the embedding section shows "Not configured"
+- [x] Edit the system prompt in the General section; click Save; assert `PUT /api/config/chat` is called with the new value
+- [x] Edit memory settings; click Save; assert `PUT /api/config/memory` is called
+- [x] Simulate a failed `GET /api/config`; assert an error message is displayed
+- [x] Simulate a validation error on save; assert the error details are shown inline

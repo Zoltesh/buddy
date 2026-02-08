@@ -22,6 +22,42 @@ export async function deleteConversation(id) {
   if (!res.ok) throw new Error('Failed to delete conversation');
 }
 
+/** Fetch the current server configuration. */
+export async function fetchConfig() {
+  const res = await fetch('/api/config');
+  if (!res.ok) throw new Error('Failed to load config');
+  return res.json();
+}
+
+/**
+ * Update a config section via PUT.
+ * Returns the updated config on success; throws with error details on failure.
+ */
+async function putConfigSection(section, body) {
+  const res = await fetch(`/api/config/${section}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    const err = new Error('Config update failed');
+    err.details = data;
+    throw err;
+  }
+  return data;
+}
+
+/** Update the chat config (system_prompt). */
+export function putConfigChat(chat) {
+  return putConfigSection('chat', chat);
+}
+
+/** Update the memory config (auto_retrieve, similarity_threshold, auto_retrieve_limit). */
+export function putConfigMemory(memory) {
+  return putConfigSection('memory', memory);
+}
+
 /**
  * Convert backend messages to display items.
  * Groups tool_call + tool_result pairs into single blocks.

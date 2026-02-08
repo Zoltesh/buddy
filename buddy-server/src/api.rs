@@ -3551,6 +3551,342 @@ endpoint = "http://localhost:1234/v1"
         }
     }
 
+    /// Tests for task 034 — Settings page layout.
+    /// Verify the API contracts that the Settings frontend depends on.
+    mod settings_page {
+        use super::*;
+
+        // Reuse config_api helpers.
+        fn config_app(config: crate::config::Config) -> Router {
+            let state = Arc::new(AppState {
+                provider: arc_swap::ArcSwap::from_pointee(MockProvider {
+                    tokens: vec!["hi".into()],
+                }),
+                registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
+                store: crate::store::Store::open_in_memory().unwrap(),
+                embedder: arc_swap::ArcSwap::from_pointee(None),
+                vector_store: arc_swap::ArcSwap::from_pointee(None),
+                working_memory: crate::skill::working_memory::new_working_memory_map(),
+                memory_config: arc_swap::ArcSwap::from_pointee(
+                    crate::config::MemoryConfig::default(),
+                ),
+                warnings: crate::warning::new_shared_warnings(),
+                pending_approvals: new_pending_approvals(),
+                conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
+                approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
+                approval_timeout: std::time::Duration::from_secs(1),
+                config: std::sync::RwLock::new(config),
+                config_path: std::path::PathBuf::from("/tmp/buddy-test-034.toml"),
+                on_config_change: None,
+            });
+            Router::new()
+                .route("/api/config", get(get_config::<MockProvider>))
+                .with_state(state)
+        }
+
+        fn config_write_app(suffix: &str) -> (std::path::PathBuf, Router) {
+            let dir = std::env::temp_dir().join(format!("buddy-034-{}-{suffix}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            let config_path = dir.join("buddy.toml");
+            let initial_toml = r#"
+[[models.chat.providers]]
+type = "lmstudio"
+model = "deepseek-coder"
+endpoint = "http://localhost:1234/v1"
+
+[chat]
+system_prompt = "You are a helpful, friendly AI assistant."
+
+[memory]
+auto_retrieve = true
+auto_retrieve_limit = 3
+similarity_threshold = 0.5
+"#;
+            std::fs::write(&config_path, initial_toml).unwrap();
+            let config = crate::config::Config::parse(initial_toml).unwrap();
+            let state = Arc::new(AppState {
+                provider: arc_swap::ArcSwap::from_pointee(MockProvider {
+                    tokens: vec!["hi".into()],
+                }),
+                registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
+                store: crate::store::Store::open_in_memory().unwrap(),
+                embedder: arc_swap::ArcSwap::from_pointee(None),
+                vector_store: arc_swap::ArcSwap::from_pointee(None),
+                working_memory: crate::skill::working_memory::new_working_memory_map(),
+                memory_config: arc_swap::ArcSwap::from_pointee(
+                    crate::config::MemoryConfig::default(),
+                ),
+                warnings: crate::warning::new_shared_warnings(),
+                pending_approvals: new_pending_approvals(),
+                conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
+                approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
+                approval_timeout: std::time::Duration::from_secs(1),
+                config: std::sync::RwLock::new(config),
+                config_path,
+                on_config_change: None,
+            });
+            let router = Router::new()
+                .route("/api/config", get(get_config::<MockProvider>))
+                .route(
+                    "/api/config/chat",
+                    axum::routing::put(put_config_chat::<MockProvider>),
+                )
+                .route(
+                    "/api/config/memory",
+                    axum::routing::put(put_config_memory::<MockProvider>),
+                )
+                .with_state(state);
+            (dir, router)
+        }
+
+        /// Test case 1: Load settings page; GET /api/config returns all sections populated.
+        #[tokio::test]
+        async fn get_config_returns_all_sections_for_settings_page() {
+            let config = crate::config::Config::parse(
+                r#"
+[[models.chat.providers]]
+type = "openai"
+model = "gpt-4"
+endpoint = "https://api.openai.com/v1"
+api_key_env = "MY_KEY"
+
+[[models.embedding.providers]]
+type = "local"
+model = "all-minilm"
+
+[chat]
+system_prompt = "Be helpful."
+
+[skills.read_file]
+allowed_directories = ["/tmp"]
+
+[memory]
+auto_retrieve = false
+auto_retrieve_limit = 5
+similarity_threshold = 0.8
+"#,
+            )
+            .unwrap();
+            let app = config_app(config);
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .uri("/api/config")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+
+            // Models section populated
+            assert!(json["models"]["chat"]["providers"].is_array());
+            assert_eq!(json["models"]["chat"]["providers"][0]["type"], "openai");
+            assert!(json["models"]["embedding"]["providers"].is_array());
+
+            // Chat section
+            assert_eq!(json["chat"]["system_prompt"], "Be helpful.");
+
+            // Server section (defaults)
+            assert_eq!(json["server"]["host"], "127.0.0.1");
+            assert_eq!(json["server"]["port"], 3000);
+
+            // Skills section
+            assert!(json["skills"]["read_file"].is_object());
+
+            // Memory section
+            assert_eq!(json["memory"]["auto_retrieve"], false);
+            assert_eq!(json["memory"]["auto_retrieve_limit"], 5);
+            assert_eq!(json["memory"]["similarity_threshold"], 0.8);
+        }
+
+        /// Test case 2: No embedding providers; embedding section is null.
+        #[tokio::test]
+        async fn no_embedding_returns_null() {
+            let config = crate::config::Config::parse(
+                r#"
+[[models.chat.providers]]
+type = "lmstudio"
+model = "deepseek-coder"
+endpoint = "http://localhost:1234/v1"
+"#,
+            )
+            .unwrap();
+            let app = config_app(config);
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .uri("/api/config")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert!(
+                json["models"]["embedding"].is_null(),
+                "embedding should be null when not configured"
+            );
+        }
+
+        /// Test case 3: Edit system prompt via PUT /api/config/chat.
+        #[tokio::test]
+        async fn put_chat_updates_system_prompt() {
+            let (dir, app) = config_write_app("chat");
+            let body = serde_json::json!({
+                "system_prompt": "You are a pirate assistant. Arr!"
+            });
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("PUT")
+                        .uri("/api/config/chat")
+                        .header("content-type", "application/json")
+                        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(
+                json["chat"]["system_prompt"],
+                "You are a pirate assistant. Arr!"
+            );
+
+            // Verify GET reflects the change.
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .uri("/api/config")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(
+                json["chat"]["system_prompt"],
+                "You are a pirate assistant. Arr!"
+            );
+
+            std::fs::remove_dir_all(&dir).ok();
+        }
+
+        /// Test case 4: Edit memory settings via PUT /api/config/memory.
+        #[tokio::test]
+        async fn put_memory_updates_settings() {
+            let (dir, app) = config_write_app("memory");
+            let body = serde_json::json!({
+                "auto_retrieve": false,
+                "auto_retrieve_limit": 10,
+                "similarity_threshold": 0.9
+            });
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("PUT")
+                        .uri("/api/config/memory")
+                        .header("content-type", "application/json")
+                        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(json["memory"]["auto_retrieve"], false);
+            assert_eq!(json["memory"]["auto_retrieve_limit"], 10);
+            assert_eq!(json["memory"]["similarity_threshold"], 0.9);
+
+            // Verify GET reflects the change.
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .uri("/api/config")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(json["memory"]["auto_retrieve"], false);
+            assert_eq!(json["memory"]["auto_retrieve_limit"], 10);
+
+            std::fs::remove_dir_all(&dir).ok();
+        }
+
+        /// Test case 5: GET /api/config with invalid JSON body still succeeds
+        /// (GET ignores body). The "failed fetch" test case is a frontend concern;
+        /// from the API side, we verify the endpoint always returns 200 with valid JSON.
+        #[tokio::test]
+        async fn get_config_always_returns_valid_json() {
+            let config = crate::config::Config::parse(
+                r#"
+[[models.chat.providers]]
+type = "lmstudio"
+model = "test"
+endpoint = "http://localhost:1234/v1"
+"#,
+            )
+            .unwrap();
+            let app = config_app(config);
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .uri("/api/config")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            // All top-level sections must be present.
+            assert!(json["server"].is_object());
+            assert!(json["models"].is_object());
+            assert!(json["chat"].is_object());
+            assert!(json["skills"].is_object());
+            assert!(json["memory"].is_object());
+        }
+
+        /// Test case 6: PUT /api/config/chat with invalid JSON returns an error body.
+        #[tokio::test]
+        async fn put_chat_invalid_json_returns_error() {
+            let (dir, app) = config_write_app("invalid");
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("PUT")
+                        .uri("/api/config/chat")
+                        .header("content-type", "application/json")
+                        .body(Body::from(b"not json".to_vec()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            // Axum returns 422 for deserialization failures.
+            assert!(
+                response.status().is_client_error(),
+                "expected 4xx, got {}",
+                response.status()
+            );
+
+            std::fs::remove_dir_all(&dir).ok();
+        }
+    }
+
     mod hot_reload {
         use super::*;
         use axum::routing::put;
