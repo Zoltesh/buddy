@@ -4,7 +4,7 @@ use std::sync::Arc;
 use axum::routing::{get, post, put};
 use axum::Router;
 use tokio::signal;
-use tower_http::services::ServeDir;
+use tower_http::services::{ServeDir, ServeFile};
 
 mod api;
 mod config;
@@ -116,7 +116,10 @@ async fn main() {
         .route("/api/config/memory", put(put_config_memory::<AppProvider>))
         .route("/api/config/test-provider", post(test_provider::<AppProvider>))
         .with_state(state)
-        .fallback_service(ServeDir::new("frontend/dist"));
+        .fallback_service(
+            ServeDir::new("frontend/dist")
+                .fallback(ServeFile::new("frontend/dist/index.html")),
+        );
 
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
@@ -183,4 +186,41 @@ async fn shutdown_signal() {
         .await
         .expect("failed to install Ctrl+C handler");
     println!("\nShutting down...");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use http_body_util::BodyExt;
+    use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn spa_fallback_serves_index_html_for_unknown_routes() {
+        let tmp = std::env::temp_dir().join("buddy_test_033_spa");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(
+            tmp.join("index.html"),
+            "<!doctype html><html><body>buddy spa</body></html>",
+        )
+        .unwrap();
+
+        let app: Router = Router::new().fallback_service(
+            ServeDir::new(&tmp).fallback(ServeFile::new(tmp.join("index.html"))),
+        );
+
+        let req = axum::http::Request::builder()
+            .uri("/settings")
+            .body(axum::body::Body::empty())
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), axum::http::StatusCode::OK);
+
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let body_str = String::from_utf8(body.to_vec()).unwrap();
+        assert!(body_str.contains("buddy spa"));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
 }

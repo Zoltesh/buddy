@@ -23,19 +23,19 @@ The frontend supports multiple routes with client-side navigation. Users can nav
 
 ## Acceptance Criteria
 
-- [ ] Navigating to `/` shows the chat interface
-- [ ] Navigating to `/settings` shows a settings placeholder page
-- [ ] The sidebar is visible on both pages
-- [ ] A "Settings" link in the sidebar navigates to `/settings`
-- [ ] Navigation between routes does not trigger a full page reload
-- [ ] Browser back/forward buttons work correctly
-- [ ] The Axum backend correctly serves the SPA for non-API routes
-- [ ] Existing chat functionality is unaffected
+- [x] Navigating to `/` shows the chat interface
+- [x] Navigating to `/settings` shows a settings placeholder page
+- [x] The sidebar is visible on both pages
+- [x] A "Settings" link in the sidebar navigates to `/settings`
+- [x] Navigation between routes does not trigger a full page reload
+- [x] Browser back/forward buttons work correctly
+- [x] The Axum backend correctly serves the SPA for non-API routes
+- [x] Existing chat functionality is unaffected
 
 ## Test Cases
 
-- [ ] Load the app at `/`; assert the chat interface renders (conversation list, message input)
-- [ ] Click the Settings link in the sidebar; assert the URL changes and the settings placeholder appears
-- [ ] Navigate to `/settings` directly via URL; assert the settings page renders
-- [ ] From settings, navigate back to chat; assert the chat interface renders with state preserved
-- [ ] Send a `GET` request to `/settings` on the backend; assert it returns `index.html` (SPA fallback)
+- [x] Load the app at `/`; assert the chat interface renders (conversation list, message input)
+- [x] Click the Settings link in the sidebar; assert the URL changes and the settings placeholder appears
+- [x] Navigate to `/settings` directly via URL; assert the settings page renders
+- [x] From settings, navigate back to chat; assert the chat interface renders with state preserved
+- [x] Send a `GET` request to `/settings` on the backend; assert it returns `index.html` (SPA fallback)
