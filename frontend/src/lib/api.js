@@ -63,6 +63,11 @@ export function putConfigModels(models) {
   return putConfigSection('models', models);
 }
 
+/** Update the skills config (read_file, write_file, fetch_url). */
+export function putConfigSkills(skills) {
+  return putConfigSection('skills', skills);
+}
+
 /** Test a provider's connectivity without saving. */
 export async function testProvider(entry) {
   const res = await fetch('/api/config/test-provider', {

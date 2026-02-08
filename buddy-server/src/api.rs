@@ -3136,6 +3136,317 @@ endpoint = "http://localhost:1234/v1"
             std::fs::remove_dir_all(&dir).ok();
         }
 
+        // ── skills settings tests ─────────────────────────────────────
+
+        fn skills_config_write_app() -> (std::path::PathBuf, Router) {
+            use std::sync::atomic::{AtomicU64, Ordering};
+            static COUNTER: AtomicU64 = AtomicU64::new(0);
+            let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+            let dir = std::env::temp_dir().join(format!(
+                "buddy-skills-config-{}-{}",
+                std::process::id(),
+                id
+            ));
+            std::fs::create_dir_all(&dir).unwrap();
+            let config_path = dir.join("buddy.toml");
+            let initial_toml = format!(
+                r#"
+[[models.chat.providers]]
+type = "lmstudio"
+model = "test-model"
+endpoint = "http://localhost:1234/v1"
+
+[skills.read_file]
+allowed_directories = ["{tmp}"]
+
+[skills.write_file]
+allowed_directories = ["{tmp}"]
+approval = "always"
+
+[skills.fetch_url]
+allowed_domains = ["example.com"]
+approval = "once"
+"#,
+                tmp = std::env::temp_dir().to_str().unwrap()
+            );
+            std::fs::write(&config_path, &initial_toml).unwrap();
+            let config = crate::config::Config::parse(&initial_toml).unwrap();
+            let state = Arc::new(AppState {
+                provider: arc_swap::ArcSwap::from_pointee(MockProvider {
+                    tokens: vec!["hi".into()],
+                }),
+                registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
+                store: crate::store::Store::open_in_memory().unwrap(),
+                embedder: arc_swap::ArcSwap::from_pointee(None),
+                vector_store: arc_swap::ArcSwap::from_pointee(None),
+                working_memory: crate::skill::working_memory::new_working_memory_map(),
+                memory_config: arc_swap::ArcSwap::from_pointee(
+                    crate::config::MemoryConfig::default(),
+                ),
+                warnings: crate::warning::new_shared_warnings(),
+                pending_approvals: new_pending_approvals(),
+                conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
+                approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
+                approval_timeout: std::time::Duration::from_secs(1),
+                config: std::sync::RwLock::new(config),
+                config_path,
+                on_config_change: None,
+            });
+            let router = Router::new()
+                .route("/api/config", get(get_config::<MockProvider>))
+                .route(
+                    "/api/config/skills",
+                    axum::routing::put(put_config_skills::<MockProvider>),
+                )
+                .with_state(state);
+            (dir, router)
+        }
+
+        #[tokio::test]
+        async fn skills_load_all_three_configured() {
+            let (dir, app) = skills_config_write_app();
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("GET")
+                        .uri("/api/config")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+
+            let tmp = std::env::temp_dir();
+            let tmp_str = tmp.to_str().unwrap();
+
+            // read_file
+            assert!(json["skills"]["read_file"].is_object());
+            assert_eq!(json["skills"]["read_file"]["allowed_directories"][0], tmp_str);
+            // write_file
+            assert!(json["skills"]["write_file"].is_object());
+            assert_eq!(json["skills"]["write_file"]["allowed_directories"][0], tmp_str);
+            assert_eq!(json["skills"]["write_file"]["approval"], "always");
+            // fetch_url
+            assert!(json["skills"]["fetch_url"].is_object());
+            assert_eq!(json["skills"]["fetch_url"]["allowed_domains"][0], "example.com");
+            assert_eq!(json["skills"]["fetch_url"]["approval"], "once");
+
+            std::fs::remove_dir_all(&dir).ok();
+        }
+
+        #[tokio::test]
+        async fn skills_toggle_off_write_file() {
+            let (dir, app) = skills_config_write_app();
+            let tmp = std::env::temp_dir();
+            let body = serde_json::json!({
+                "read_file": { "allowed_directories": [tmp.to_str().unwrap()] },
+                "fetch_url": { "allowed_domains": ["example.com"], "approval": "once" }
+            });
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("PUT")
+                        .uri("/api/config/skills")
+                        .header("content-type", "application/json")
+                        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert!(json["skills"]["write_file"].is_null());
+            assert!(json["skills"]["read_file"].is_object());
+
+            std::fs::remove_dir_all(&dir).ok();
+        }
+
+        #[tokio::test]
+        async fn skills_toggle_on_with_empty_defaults() {
+            let (dir, app) = skills_config_write_app();
+            let tmp = std::env::temp_dir();
+            // Toggle write_file on with empty list
+            let body = serde_json::json!({
+                "read_file": { "allowed_directories": [tmp.to_str().unwrap()] },
+                "write_file": { "allowed_directories": [] },
+                "fetch_url": { "allowed_domains": ["example.com"], "approval": "once" }
+            });
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("PUT")
+                        .uri("/api/config/skills")
+                        .header("content-type", "application/json")
+                        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert!(json["skills"]["write_file"].is_object());
+            assert_eq!(json["skills"]["write_file"]["allowed_directories"], serde_json::json!([]));
+
+            std::fs::remove_dir_all(&dir).ok();
+        }
+
+        #[tokio::test]
+        async fn skills_add_directory_to_read_file() {
+            let (dir, app) = skills_config_write_app();
+            let tmp = std::env::temp_dir();
+            // Create a second valid directory
+            let extra_dir = dir.join("extra");
+            std::fs::create_dir_all(&extra_dir).unwrap();
+            let body = serde_json::json!({
+                "read_file": {
+                    "allowed_directories": [tmp.to_str().unwrap(), extra_dir.to_str().unwrap()]
+                },
+                "write_file": { "allowed_directories": [tmp.to_str().unwrap()], "approval": "always" },
+                "fetch_url": { "allowed_domains": ["example.com"], "approval": "once" }
+            });
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("PUT")
+                        .uri("/api/config/skills")
+                        .header("content-type", "application/json")
+                        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            let dirs = json["skills"]["read_file"]["allowed_directories"]
+                .as_array()
+                .unwrap();
+            assert_eq!(dirs.len(), 2);
+            assert_eq!(dirs[1], extra_dir.to_str().unwrap());
+
+            std::fs::remove_dir_all(&dir).ok();
+        }
+
+        #[tokio::test]
+        async fn skills_remove_directory_from_write_file() {
+            let (dir, app) = skills_config_write_app();
+            // Save write_file with empty directory list (remove all)
+            let tmp = std::env::temp_dir();
+            let body = serde_json::json!({
+                "read_file": { "allowed_directories": [tmp.to_str().unwrap()] },
+                "write_file": { "allowed_directories": [], "approval": "always" },
+                "fetch_url": { "allowed_domains": ["example.com"], "approval": "once" }
+            });
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("PUT")
+                        .uri("/api/config/skills")
+                        .header("content-type", "application/json")
+                        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            let dirs = json["skills"]["write_file"]["allowed_directories"]
+                .as_array()
+                .unwrap();
+            assert_eq!(dirs.len(), 0);
+
+            std::fs::remove_dir_all(&dir).ok();
+        }
+
+        #[tokio::test]
+        async fn skills_change_fetch_url_approval_to_trust() {
+            let (dir, app) = skills_config_write_app();
+            let tmp = std::env::temp_dir();
+            let body = serde_json::json!({
+                "read_file": { "allowed_directories": [tmp.to_str().unwrap()] },
+                "write_file": { "allowed_directories": [tmp.to_str().unwrap()], "approval": "always" },
+                "fetch_url": { "allowed_domains": ["example.com"], "approval": "trust" }
+            });
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("PUT")
+                        .uri("/api/config/skills")
+                        .header("content-type", "application/json")
+                        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(json["skills"]["fetch_url"]["approval"], "trust");
+
+            std::fs::remove_dir_all(&dir).ok();
+        }
+
+        #[tokio::test]
+        async fn skills_empty_domain_returns_400() {
+            let (dir, app) = skills_config_write_app();
+            let tmp = std::env::temp_dir();
+            let body = serde_json::json!({
+                "read_file": { "allowed_directories": [tmp.to_str().unwrap()] },
+                "fetch_url": { "allowed_domains": [""], "approval": "once" }
+            });
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("PUT")
+                        .uri("/api/config/skills")
+                        .header("content-type", "application/json")
+                        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let err: ValidationErrorResponse = serde_json::from_slice(&bytes).unwrap();
+            assert!(err
+                .errors
+                .iter()
+                .any(|e| e.field.contains("fetch_url.allowed_domains")));
+
+            std::fs::remove_dir_all(&dir).ok();
+        }
+
+        #[tokio::test]
+        async fn skills_readonly_has_no_approval_in_response() {
+            let (dir, app) = skills_config_write_app();
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("GET")
+                        .uri("/api/config")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            // read_file is ReadOnly — approval should be null (not set in config)
+            assert!(json["skills"]["read_file"]["approval"].is_null());
+            // Mutating/Network skills should have approval set
+            assert!(!json["skills"]["write_file"]["approval"].is_null());
+            assert!(!json["skills"]["fetch_url"]["approval"].is_null());
+
+            std::fs::remove_dir_all(&dir).ok();
+        }
+
         #[tokio::test]
         async fn put_chat_persists_system_prompt() {
             let (dir, app) = config_write_app();
