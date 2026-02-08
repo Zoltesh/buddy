@@ -1,5 +1,5 @@
 <script>
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { fetchConfig, putConfigChat, putConfigMemory, putConfigModels, testProvider } from './api.js';
 
   let config = $state(null);
@@ -75,6 +75,76 @@
   let savingModels = $state(false);
   let modelsSaveMessage = $state(null);
   let confirmingDelete = $state(null); // { slot, index }
+
+  // Drag-and-drop reorder state
+  let drag = $state(null); // { slot, fromIndex, currentIndex, snapshot }
+
+  function handleDragStart(slot, index, e) {
+    if (e.button !== 0 || editingProvider || savingModels) return;
+    const providers = slot === 'chat' ? config.models.chat.providers : (config.models.embedding?.providers ?? []);
+    if (providers.length <= 1) return;
+    e.preventDefault();
+    drag = {
+      slot,
+      fromIndex: index,
+      currentIndex: index,
+      snapshot: providers.map(p => ({ ...p })),
+    };
+    document.addEventListener('pointermove', onDragPointerMove);
+    document.addEventListener('pointerup', onDragPointerUp);
+  }
+
+  function onDragPointerMove(e) {
+    if (!drag) return;
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    if (!el) return;
+    const card = el.closest('[data-drag-index]');
+    if (!card || card.dataset.dragSlot !== drag.slot) return;
+    const overIndex = parseInt(card.dataset.dragIndex, 10);
+    if (isNaN(overIndex) || overIndex === drag.currentIndex) return;
+    const providers = drag.slot === 'chat' ? config.models.chat.providers : config.models.embedding.providers;
+    const [item] = providers.splice(drag.currentIndex, 1);
+    providers.splice(overIndex, 0, item);
+    drag = { ...drag, currentIndex: overIndex };
+  }
+
+  function onDragPointerUp() {
+    document.removeEventListener('pointermove', onDragPointerMove);
+    document.removeEventListener('pointerup', onDragPointerUp);
+    if (!drag) return;
+    const { slot, fromIndex, currentIndex, snapshot } = drag;
+    drag = null;
+    if (fromIndex === currentIndex) return;
+    persistReorder(slot, snapshot);
+  }
+
+  async function persistReorder(slot, snapshot) {
+    const providers = slot === 'chat' ? config.models.chat.providers : config.models.embedding.providers;
+    savingModels = true;
+    modelsSaveMessage = null;
+    try {
+      const updated = await putConfigModels(buildModelsPayload(slot, providers));
+      config = updated;
+    } catch (e) {
+      if (slot === 'chat') {
+        config.models.chat.providers = snapshot;
+      } else if (config.models.embedding) {
+        config.models.embedding.providers = snapshot;
+      }
+      if (e.details?.errors) {
+        modelsSaveMessage = { type: 'error', text: e.details.errors.map(err => `${err.field}: ${err.message}`).join('; ') };
+      } else {
+        modelsSaveMessage = { type: 'error', text: e.details?.message || e.message };
+      }
+    } finally {
+      savingModels = false;
+    }
+  }
+
+  onDestroy(() => {
+    document.removeEventListener('pointermove', onDragPointerMove);
+    document.removeEventListener('pointerup', onDragPointerUp);
+  });
 
   const providerTypes = [
     { value: 'openai', label: 'OpenAI' },
@@ -567,9 +637,30 @@
                         <!-- Inline edit form -->
                         {@render providerForm()}
                       {:else}
-                        <div class="group rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 px-4 py-3">
+                        <div
+                          class="group rounded-lg border bg-gray-50 dark:bg-gray-800/50 px-4 py-3 transition-all duration-150
+                            {drag?.slot === slot.key && drag.currentIndex === i
+                              ? 'border-blue-400 dark:border-blue-500 shadow-lg scale-[1.02] z-10 relative'
+                              : 'border-gray-200 dark:border-gray-800'}"
+                          data-drag-slot={slot.key}
+                          data-drag-index={i}
+                        >
                           <div class="flex items-center justify-between mb-1">
                             <div class="flex items-center gap-2">
+                              <button
+                                class="p-0.5 -ml-1 touch-none select-none
+                                  {slot.providers.length > 1
+                                    ? 'cursor-grab active:cursor-grabbing text-gray-300 dark:text-gray-600 hover:text-gray-500 dark:hover:text-gray-400'
+                                    : 'text-gray-200 dark:text-gray-700 cursor-default'}"
+                                onpointerdown={(e) => handleDragStart(slot.key, i, e)}
+                                aria-label="Drag to reorder"
+                              >
+                                <svg class="w-4 h-4" viewBox="0 0 16 16" fill="currentColor">
+                                  <circle cx="5" cy="3" r="1.5"/><circle cx="11" cy="3" r="1.5"/>
+                                  <circle cx="5" cy="8" r="1.5"/><circle cx="11" cy="8" r="1.5"/>
+                                  <circle cx="5" cy="13" r="1.5"/><circle cx="11" cy="13" r="1.5"/>
+                                </svg>
+                              </button>
                               <span class="text-xs font-medium text-gray-400 dark:text-gray-500">{positionLabel(i)}</span>
                               <span class="text-sm font-medium text-gray-900 dark:text-gray-100">{providerLabel(provider.type)}</span>
                             </div>

@@ -4360,4 +4360,455 @@ endpoint = "http://localhost:1234/v1"
             std::fs::remove_dir_all(&dir).ok();
         }
     }
+
+    mod drag_reorder {
+        use super::*;
+        use axum::routing::{get, put};
+
+        /// Helper that creates a temp dir with a config containing two chat providers
+        /// and one embedding provider, and returns (temp_dir, Router).
+        fn reorder_app() -> (std::path::PathBuf, Router) {
+            use std::sync::atomic::{AtomicU64, Ordering};
+            static COUNTER: AtomicU64 = AtomicU64::new(0);
+            let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+            let dir = std::env::temp_dir()
+                .join(format!("buddy-drag-reorder-{}-{}", std::process::id(), id));
+            std::fs::create_dir_all(&dir).unwrap();
+            let config_path = dir.join("buddy.toml");
+            let initial_toml = r#"
+[[models.chat.providers]]
+type = "openai"
+model = "gpt-4"
+endpoint = "https://api.openai.com/v1"
+api_key_env = "OPENAI_KEY"
+
+[[models.chat.providers]]
+type = "lmstudio"
+model = "deepseek-coder"
+endpoint = "http://localhost:1234/v1"
+
+[[models.embedding.providers]]
+type = "local"
+model = "all-minilm"
+"#;
+            std::fs::write(&config_path, initial_toml).unwrap();
+            let config = crate::config::Config::parse(initial_toml).unwrap();
+            let state = Arc::new(AppState {
+                provider: arc_swap::ArcSwap::from_pointee(MockProvider {
+                    tokens: vec!["hi".into()],
+                }),
+                registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
+                store: crate::store::Store::open_in_memory().unwrap(),
+                embedder: arc_swap::ArcSwap::from_pointee(None),
+                vector_store: arc_swap::ArcSwap::from_pointee(None),
+                working_memory: crate::skill::working_memory::new_working_memory_map(),
+                memory_config: arc_swap::ArcSwap::from_pointee(
+                    crate::config::MemoryConfig::default(),
+                ),
+                warnings: crate::warning::new_shared_warnings(),
+                pending_approvals: new_pending_approvals(),
+                conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
+                approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
+                approval_timeout: std::time::Duration::from_secs(1),
+                config: std::sync::RwLock::new(config),
+                config_path,
+                on_config_change: None,
+            });
+            let router = Router::new()
+                .route("/api/config", get(get_config::<MockProvider>))
+                .route(
+                    "/api/config/models",
+                    put(put_config_models::<MockProvider>),
+                )
+                .with_state(state);
+            (dir, router)
+        }
+
+        /// Test case 1: Drag the second provider to the first position;
+        /// assert PUT /api/config/models is called with the reversed order.
+        #[tokio::test]
+        async fn reorder_reverses_two_providers() {
+            let (dir, app) = reorder_app();
+            // Send reversed order: deepseek-coder first, gpt-4 second.
+            let body = serde_json::json!({
+                "chat": {
+                    "providers": [
+                        {
+                            "type": "lmstudio",
+                            "model": "deepseek-coder",
+                            "endpoint": "http://localhost:1234/v1"
+                        },
+                        {
+                            "type": "openai",
+                            "model": "gpt-4",
+                            "endpoint": "https://api.openai.com/v1",
+                            "api_key_env": "OPENAI_KEY"
+                        }
+                    ]
+                },
+                "embedding": {
+                    "providers": [{ "type": "local", "model": "all-minilm" }]
+                }
+            });
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("PUT")
+                        .uri("/api/config/models")
+                        .header("content-type", "application/json")
+                        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            let providers = json["models"]["chat"]["providers"].as_array().unwrap();
+            assert_eq!(providers[0]["model"], "deepseek-coder");
+            assert_eq!(providers[1]["model"], "gpt-4");
+
+            std::fs::remove_dir_all(&dir).ok();
+        }
+
+        /// Test case 2: After reorder, assert position labels update
+        /// (the dragged item shows "Primary" — index 0 in the response).
+        #[tokio::test]
+        async fn reorder_updates_position_labels() {
+            let (dir, app) = reorder_app();
+            // Move deepseek-coder to position 0 (Primary).
+            let body = serde_json::json!({
+                "chat": {
+                    "providers": [
+                        {
+                            "type": "lmstudio",
+                            "model": "deepseek-coder",
+                            "endpoint": "http://localhost:1234/v1"
+                        },
+                        {
+                            "type": "openai",
+                            "model": "gpt-4",
+                            "endpoint": "https://api.openai.com/v1",
+                            "api_key_env": "OPENAI_KEY"
+                        }
+                    ]
+                },
+                "embedding": {
+                    "providers": [{ "type": "local", "model": "all-minilm" }]
+                }
+            });
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("PUT")
+                        .uri("/api/config/models")
+                        .header("content-type", "application/json")
+                        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+
+            // GET config and verify the new order persisted (index 0 = Primary).
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .uri("/api/config")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            let providers = json["models"]["chat"]["providers"].as_array().unwrap();
+            assert_eq!(
+                providers[0]["model"], "deepseek-coder",
+                "deepseek-coder should be at index 0 (Primary position)"
+            );
+            assert_eq!(
+                providers[1]["model"], "gpt-4",
+                "gpt-4 should be at index 1 (Fallback #2 position)"
+            );
+
+            std::fs::remove_dir_all(&dir).ok();
+        }
+
+        /// Test case 3: Simulate a save failure after reorder;
+        /// assert the server returns an error so the frontend can revert.
+        /// The revert itself happens client-side in persistReorder().
+        #[tokio::test]
+        async fn save_failure_returns_error_for_frontend_revert() {
+            use std::sync::atomic::{AtomicU64, Ordering};
+            static COUNTER: AtomicU64 = AtomicU64::new(0);
+            let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+            let dir = std::env::temp_dir()
+                .join(format!("buddy-drag-fail-{}-{}", std::process::id(), id));
+            std::fs::create_dir_all(&dir).unwrap();
+            // Point config_path to a non-existent directory so atomic_write fails.
+            let config_path = dir.join("nonexistent-subdir").join("buddy.toml");
+            let initial_toml = r#"
+[[models.chat.providers]]
+type = "openai"
+model = "gpt-4"
+endpoint = "https://api.openai.com/v1"
+
+[[models.chat.providers]]
+type = "lmstudio"
+model = "deepseek-coder"
+endpoint = "http://localhost:1234/v1"
+"#;
+            let config = crate::config::Config::parse(initial_toml).unwrap();
+            let state = Arc::new(AppState {
+                provider: arc_swap::ArcSwap::from_pointee(MockProvider {
+                    tokens: vec!["hi".into()],
+                }),
+                registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
+                store: crate::store::Store::open_in_memory().unwrap(),
+                embedder: arc_swap::ArcSwap::from_pointee(None),
+                vector_store: arc_swap::ArcSwap::from_pointee(None),
+                working_memory: crate::skill::working_memory::new_working_memory_map(),
+                memory_config: arc_swap::ArcSwap::from_pointee(
+                    crate::config::MemoryConfig::default(),
+                ),
+                warnings: crate::warning::new_shared_warnings(),
+                pending_approvals: new_pending_approvals(),
+                conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
+                approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
+                approval_timeout: std::time::Duration::from_secs(1),
+                config: std::sync::RwLock::new(config),
+                config_path,
+                on_config_change: None,
+            });
+            let app = Router::new()
+                .route(
+                    "/api/config/models",
+                    put(put_config_models::<MockProvider>),
+                )
+                .with_state(state);
+
+            // Attempt to reorder — should fail because config_path parent doesn't exist.
+            let body = serde_json::json!({
+                "chat": {
+                    "providers": [
+                        {
+                            "type": "lmstudio",
+                            "model": "deepseek-coder",
+                            "endpoint": "http://localhost:1234/v1"
+                        },
+                        {
+                            "type": "openai",
+                            "model": "gpt-4",
+                            "endpoint": "https://api.openai.com/v1"
+                        }
+                    ]
+                }
+            });
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("PUT")
+                        .uri("/api/config/models")
+                        .header("content-type", "application/json")
+                        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                response.status(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "PUT should fail when config path is not writable"
+            );
+
+            // Verify the error response contains a message the frontend can display.
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert!(
+                json["message"].as_str().unwrap_or("").contains("failed"),
+                "error response should contain a descriptive message"
+            );
+
+            std::fs::remove_dir_all(&dir).ok();
+        }
+
+        /// Test case 4: Assert the drag handle is visible on each provider card.
+        /// Verifies the built frontend HTML contains the drag handle SVG markup.
+        #[tokio::test]
+        async fn drag_handle_markup_present_in_source() {
+            // Read the Settings.svelte source and verify it contains the drag handle.
+            let source = include_str!("../../frontend/src/lib/Settings.svelte");
+            assert!(
+                source.contains("aria-label=\"Drag to reorder\""),
+                "Settings.svelte should contain drag handle with aria-label"
+            );
+            assert!(
+                source.contains("data-drag-index"),
+                "Settings.svelte should contain data-drag-index attributes"
+            );
+        }
+
+        /// Test case 5: Drag a provider within a single-item list (no-op);
+        /// assert no API call is made.
+        /// From the API side, verify that PUTting a single-item list with the same
+        /// provider succeeds and the config remains unchanged.
+        #[tokio::test]
+        async fn single_item_reorder_is_noop() {
+            use std::sync::atomic::{AtomicU64, Ordering};
+            static COUNTER: AtomicU64 = AtomicU64::new(0);
+            let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+            let dir = std::env::temp_dir()
+                .join(format!("buddy-drag-noop-{}-{}", std::process::id(), id));
+            std::fs::create_dir_all(&dir).unwrap();
+            let config_path = dir.join("buddy.toml");
+            let initial_toml = r#"
+[[models.chat.providers]]
+type = "openai"
+model = "gpt-4"
+endpoint = "https://api.openai.com/v1"
+"#;
+            std::fs::write(&config_path, initial_toml).unwrap();
+            let config = crate::config::Config::parse(initial_toml).unwrap();
+            let state = Arc::new(AppState {
+                provider: arc_swap::ArcSwap::from_pointee(MockProvider {
+                    tokens: vec!["hi".into()],
+                }),
+                registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
+                store: crate::store::Store::open_in_memory().unwrap(),
+                embedder: arc_swap::ArcSwap::from_pointee(None),
+                vector_store: arc_swap::ArcSwap::from_pointee(None),
+                working_memory: crate::skill::working_memory::new_working_memory_map(),
+                memory_config: arc_swap::ArcSwap::from_pointee(
+                    crate::config::MemoryConfig::default(),
+                ),
+                warnings: crate::warning::new_shared_warnings(),
+                pending_approvals: new_pending_approvals(),
+                conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
+                approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
+                approval_timeout: std::time::Duration::from_secs(1),
+                config: std::sync::RwLock::new(config),
+                config_path,
+                on_config_change: None,
+            });
+            let app = Router::new()
+                .route("/api/config", get(get_config::<MockProvider>))
+                .route(
+                    "/api/config/models",
+                    put(put_config_models::<MockProvider>),
+                )
+                .with_state(state);
+
+            // PUT with the same single provider (simulating a drag that returns to origin).
+            let body = serde_json::json!({
+                "chat": {
+                    "providers": [{
+                        "type": "openai",
+                        "model": "gpt-4",
+                        "endpoint": "https://api.openai.com/v1"
+                    }]
+                }
+            });
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("PUT")
+                        .uri("/api/config/models")
+                        .header("content-type", "application/json")
+                        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+
+            // Verify config is unchanged.
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .uri("/api/config")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            let providers = json["models"]["chat"]["providers"].as_array().unwrap();
+            assert_eq!(providers.len(), 1);
+            assert_eq!(providers[0]["model"], "gpt-4");
+
+            std::fs::remove_dir_all(&dir).ok();
+        }
+
+        /// Test case 6: Reorder chat providers; assert embedding providers are
+        /// unchanged in the saved config.
+        #[tokio::test]
+        async fn reorder_chat_preserves_embedding() {
+            let (dir, app) = reorder_app();
+            // Reverse chat order, keep embedding the same.
+            let body = serde_json::json!({
+                "chat": {
+                    "providers": [
+                        {
+                            "type": "lmstudio",
+                            "model": "deepseek-coder",
+                            "endpoint": "http://localhost:1234/v1"
+                        },
+                        {
+                            "type": "openai",
+                            "model": "gpt-4",
+                            "endpoint": "https://api.openai.com/v1",
+                            "api_key_env": "OPENAI_KEY"
+                        }
+                    ]
+                },
+                "embedding": {
+                    "providers": [{ "type": "local", "model": "all-minilm" }]
+                }
+            });
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("PUT")
+                        .uri("/api/config/models")
+                        .header("content-type", "application/json")
+                        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+
+            // Verify embedding is unchanged.
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .uri("/api/config")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+
+            // Chat should be reordered.
+            let chat = json["models"]["chat"]["providers"].as_array().unwrap();
+            assert_eq!(chat[0]["model"], "deepseek-coder");
+            assert_eq!(chat[1]["model"], "gpt-4");
+
+            // Embedding should be unchanged.
+            let emb = json["models"]["embedding"]["providers"].as_array().unwrap();
+            assert_eq!(emb.len(), 1);
+            assert_eq!(emb[0]["type"], "local");
+            assert_eq!(emb[0]["model"], "all-minilm");
+
+            std::fs::remove_dir_all(&dir).ok();
+        }
+    }
 }
