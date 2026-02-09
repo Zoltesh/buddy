@@ -1,5 +1,5 @@
 <script>
-  import { onMount, onDestroy } from 'svelte';
+  import { onDestroy } from 'svelte';
   import { formatApiError, putConfigModels, testProvider } from '../api.js';
 
   let { config = $bindable() } = $props();
@@ -21,8 +21,6 @@
 
   // Drag-and-drop reorder state
   let drag = $state(null); // { slot, fromIndex, currentIndex, snapshot }
-
-  onMount(() => testAllProviders());
 
   // ── Provider testing ────────────────────────────────────────────────
 
@@ -537,6 +535,17 @@
                     </span>
                   </div>
                   <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onclick={() => testProviderEntry(slot.key, i, provider)}
+                      disabled={recheckRunning || savingModels}
+                      class="p-1.5 rounded text-gray-400 hover:text-green-600 dark:hover:text-green-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                      aria-label="Test provider"
+                      title="Test connection"
+                    >
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.858 15.355-5.858 21.213 0" />
+                      </svg>
+                    </button>
                     <button
                       onclick={() => startEdit(slot.key, i)}
                       disabled={savingModels}

@@ -18,7 +18,10 @@ pub struct OpenAiProvider {
 impl OpenAiProvider {
     pub fn new(api_key: &str, model: &str, endpoint: &str, system_prompt: &str) -> Self {
         Self {
-            client: Client::new(),
+            client: Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(5))
+                .build()
+                .expect("failed to build HTTP client"),
             api_key: api_key.to_string(),
             model: model.to_string(),
             endpoint: endpoint.to_string(),

@@ -16,7 +16,10 @@ pub struct LmStudioProvider {
 impl LmStudioProvider {
     pub fn new(model: &str, endpoint: &str, system_prompt: &str) -> Self {
         Self {
-            client: Client::new(),
+            client: Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(5))
+                .build()
+                .expect("failed to build HTTP client"),
             model: model.to_string(),
             endpoint: endpoint.to_string(),
             system_prompt: system_prompt.to_string(),

@@ -3,6 +3,7 @@ pub mod openai;
 
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use futures_core::Stream;
 use futures_util::StreamExt;
@@ -94,12 +95,19 @@ impl Provider for AnyProvider {
 /// fail, returns the last error.
 pub struct ProviderChain<P> {
     providers: Vec<(P, String)>,
+    /// Index of the last provider that completed successfully. Subsequent
+    /// requests start here to avoid repeatedly timing out on a known-bad
+    /// provider.
+    last_ok: AtomicUsize,
 }
 
 impl<P: Provider> ProviderChain<P> {
     pub fn new(providers: Vec<(P, String)>) -> Self {
         assert!(!providers.is_empty(), "ProviderChain requires at least one provider");
-        Self { providers }
+        Self {
+            providers,
+            last_ok: AtomicUsize::new(0),
+        }
     }
 
     /// Returns the number of providers in the chain.
@@ -114,11 +122,30 @@ impl<P: Provider> Provider for ProviderChain<P> {
         messages: Vec<Message>,
         tools: Option<Vec<serde_json::Value>>,
     ) -> Result<TokenStream, ProviderError> {
-        let mut last_error: Option<ProviderError> = None;
+        let start = self.last_ok.load(Ordering::Relaxed);
 
+        // Try the last-known-good provider first.
+        let (ref provider, ref name) = self.providers[start];
+        let mut last_error = match provider.complete(messages.clone(), tools.clone()).await {
+            Ok(stream) => return Ok(stream),
+            Err(e) => match &e {
+                ProviderError::Network(_) | ProviderError::RateLimit(_) => {
+                    eprintln!("Provider {start} ({name}) failed: {e}, trying next");
+                    e
+                }
+                _ => return Err(e),
+            },
+        };
+
+        // Last-known-good failed — try remaining providers in order, skipping
+        // the one we already tried.
         for (i, (provider, name)) in self.providers.iter().enumerate() {
+            if i == start {
+                continue;
+            }
             match provider.complete(messages.clone(), tools.clone()).await {
                 Ok(stream) => {
+                    self.last_ok.store(i, Ordering::Relaxed);
                     if i > 0 {
                         let warning_msg =
                             format!("Primary model unavailable, using fallback: {name}");
@@ -133,14 +160,14 @@ impl<P: Provider> Provider for ProviderChain<P> {
                 Err(e) => match &e {
                     ProviderError::Network(_) | ProviderError::RateLimit(_) => {
                         eprintln!("Provider {i} ({name}) failed: {e}, trying next");
-                        last_error = Some(e);
+                        last_error = e;
                     }
                     _ => return Err(e),
                 },
             }
         }
 
-        Err(last_error.unwrap())
+        Err(last_error)
     }
 }
 
@@ -333,5 +360,42 @@ mod tests {
         // No warning token — just the text.
         assert_eq!(tokens.len(), 1);
         assert_eq!(tokens[0], Token::Text { text: "solo".into() });
+    }
+
+    #[tokio::test]
+    async fn sticky_fallback_skips_failed_provider() {
+        let chain = ProviderChain::new(vec![
+            flex_network_fail(),
+            flex_success(vec!["hello"]),
+        ]);
+
+        // First call: falls back to provider 1, emitting a warning.
+        let stream = chain.complete(vec![], None).await.unwrap();
+        let tokens = collect_tokens(stream).await;
+        assert!(matches!(&tokens[0], Token::Warning { .. }));
+        assert_eq!(tokens[1], Token::Text { text: "hello".into() });
+
+        // Second call: starts at provider 1 directly — no warning.
+        let stream = chain.complete(vec![], None).await.unwrap();
+        let tokens = collect_tokens(stream).await;
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0], Token::Text { text: "hello".into() });
+    }
+
+    #[tokio::test]
+    async fn sticky_recovers_to_primary() {
+        // Both succeed, but start sticky on index 1 to simulate recovery.
+        let chain = ProviderChain::new(vec![
+            flex_success(vec!["primary"]),
+            flex_success(vec!["fallback"]),
+        ]);
+
+        // Force sticky to index 1 (simulating a previous fallback).
+        chain.last_ok.store(1, std::sync::atomic::Ordering::Relaxed);
+
+        // Provider 1 works — no warning, stays sticky.
+        let stream = chain.complete(vec![], None).await.unwrap();
+        let tokens = collect_tokens(stream).await;
+        assert_eq!(tokens, vec![Token::Text { text: "fallback".into() }]);
     }
 }
