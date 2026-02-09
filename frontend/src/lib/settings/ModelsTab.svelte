@@ -106,7 +106,7 @@
     try {
       const updated = await putConfigModels(buildModelsPayload(slot, providers));
       config = updated;
-      testAllProviders();
+      providerStatus = {};
     } catch (e) {
       if (slot === 'chat') {
         config.models.chat.providers = snapshot;
@@ -248,7 +248,7 @@
       modelErrors = {};
       testResult = null;
       modelsSaveMessage = { type: 'success', text: 'Provider saved.' };
-      testAllProviders();
+      providerStatus = {};
     } catch (e) {
       modelsSaveMessage = { type: 'error', text: formatApiError(e) };
     } finally {
@@ -277,7 +277,7 @@
         editingProvider = null;
       }
       modelsSaveMessage = { type: 'success', text: 'Provider removed.' };
-      testAllProviders();
+      providerStatus = {};
     } catch (e) {
       modelsSaveMessage = { type: 'error', text: formatApiError(e) };
     } finally {
