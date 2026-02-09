@@ -1952,7 +1952,7 @@ endpoint = "http://localhost:1234/v1"
             .unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let bytes = response.into_body().collect().await.unwrap().to_bytes();
-        let err: ValidationErrorResponse = serde_json::from_slice(&bytes).unwrap();
+        let err: config::ValidationErrorResponse = serde_json::from_slice(&bytes).unwrap();
         assert!(err.errors.iter().any(|e| e.field.contains("models.chat.providers")));
 
         std::fs::remove_dir_all(&dir).ok();
@@ -1982,7 +1982,7 @@ endpoint = "http://localhost:1234/v1"
             .unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let bytes = response.into_body().collect().await.unwrap().to_bytes();
-        let err: ValidationErrorResponse = serde_json::from_slice(&bytes).unwrap();
+        let err: config::ValidationErrorResponse = serde_json::from_slice(&bytes).unwrap();
         assert!(err.errors.iter().any(|e| e.field.contains("type")));
 
         std::fs::remove_dir_all(&dir).ok();
@@ -2012,7 +2012,7 @@ endpoint = "http://localhost:1234/v1"
             .unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let bytes = response.into_body().collect().await.unwrap().to_bytes();
-        let err: ValidationErrorResponse = serde_json::from_slice(&bytes).unwrap();
+        let err: config::ValidationErrorResponse = serde_json::from_slice(&bytes).unwrap();
         assert!(err.errors.iter().any(|e| e.field.contains("model")));
 
         std::fs::remove_dir_all(&dir).ok();
@@ -2359,7 +2359,7 @@ approval = "once"
             .unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let bytes = response.into_body().collect().await.unwrap().to_bytes();
-        let err: ValidationErrorResponse = serde_json::from_slice(&bytes).unwrap();
+        let err: config::ValidationErrorResponse = serde_json::from_slice(&bytes).unwrap();
         assert!(err
             .errors
             .iter()
@@ -2538,7 +2538,7 @@ approval = "once"
             .unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let bytes = response.into_body().collect().await.unwrap().to_bytes();
-        let err: ValidationErrorResponse = serde_json::from_slice(&bytes).unwrap();
+        let err: config::ValidationErrorResponse = serde_json::from_slice(&bytes).unwrap();
         // Should have 4 errors: 2 unknown types + 2 empty models
         assert_eq!(err.errors.len(), 4, "expected 4 validation errors, got: {:?}", err.errors);
 

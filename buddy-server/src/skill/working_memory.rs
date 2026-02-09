@@ -30,10 +30,6 @@ impl WorkingMemory {
         self.entries.remove(key).is_some()
     }
 
-    pub fn list_keys(&self) -> Vec<&str> {
-        self.entries.keys().map(|k| k.as_str()).collect()
-    }
-
     pub fn add_note(&mut self, text: String) {
         self.notes.push(text);
     }

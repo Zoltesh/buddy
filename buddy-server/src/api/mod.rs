@@ -41,9 +41,6 @@ pub use conversation::{
 };
 pub use memory::{clear_memory, migrate_memory};
 
-// Re-export config types used by tests.
-pub use config::ValidationErrorResponse;
-
 // ── Shared types ────────────────────────────────────────────────────────
 
 /// Incoming chat request.
