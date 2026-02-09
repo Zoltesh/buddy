@@ -6,7 +6,13 @@ Self-hosted AI chat application. Rust (Axum) backend + Svelte/Tailwind frontend.
 
 ```
 buddy-server/       Rust binary crate (Axum web server)
+  src/
+    api/            HTTP API module (mod.rs + chat, config, conversation, memory, tests)
+    skill/          Skill implementations (remember, recall, read_file, etc.)
+    provider/       LLM provider adapters (openai, lmstudio)
 frontend/           Svelte + Tailwind SPA (built with Vite)
+  src/lib/
+    settings/       Settings tab components (GeneralTab, ModelsTab, SkillsTab)
 versions/           Version specs and task boards
   v0.X/
     v0.X.md         Version spec (goals, scope, architectural decisions)
@@ -77,6 +83,7 @@ Run `cargo test` from the project root. All tests must pass before completing an
 ### Test organization
 
 - Tests live **inline** in each source file inside `#[cfg(test)] mod tests { }` blocks.
+- Exception: large directory modules (e.g. `api/`) keep tests in a dedicated `tests.rs` submodule declared with `#[cfg(test)] mod tests;` in `mod.rs`.
 - Shared mock types and helpers live in `buddy-server/src/testutil.rs` (gated behind `#[cfg(test)]`).
 - Use `#[tokio::test]` for async tests, `#[test]` for sync tests.
 - Tests requiring network access are marked `#[ignore]` and run separately with `cargo test -- --ignored`.
@@ -90,6 +97,7 @@ Run `cargo test` from the project root. All tests must pass before completing an
 | `MockEchoSkill` | Echoes input back; used for tool-loop tests |
 | `FailingSkill` | Always returns `SkillError::ExecutionFailed` |
 | `MockNoOpSkill` | Returns `{ "ok": true }` |
+| `MockEmbedder` | Deterministic embedder returning rotating unit vectors |
 | `parse_sse_events()` | Parses an SSE response body into `Vec<ChatEvent>` |
 | `make_chat_body()` | Builds a minimal valid chat request JSON string |
 | `make_chat_body_with_conversation()` | Same as above, with a conversation ID |
