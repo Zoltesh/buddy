@@ -11,6 +11,7 @@
   let conversations = $state([]);
   let activeConversationId = $state(null);
   let sidebarOpen = $state(false);
+  let sidebarCollapsed = $state(localStorage.getItem('buddy-sidebar-collapsed') === 'true');
   let currentRoute = $state(getRoute());
   let hashParams = $state(getHashParams());
 
@@ -82,6 +83,11 @@
     activeConversationId = id;
     loadConversations();
   }
+
+  function handleToggleCollapse() {
+    sidebarCollapsed = !sidebarCollapsed;
+    localStorage.setItem('buddy-sidebar-collapsed', String(sidebarCollapsed));
+  }
 </script>
 
 <div class="flex h-screen bg-white dark:bg-gray-900">
@@ -98,7 +104,8 @@
 
   <!-- Sidebar -->
   <aside
-    class="fixed md:static inset-y-0 left-0 z-30 w-64 transform transition-transform duration-200
+    class="fixed md:static inset-y-0 left-0 z-30 w-64 {sidebarCollapsed ? 'md:w-14' : ''} overflow-hidden
+           transform transition-all duration-200
            {sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0
            border-r border-gray-200 dark:border-gray-800"
   >
@@ -106,9 +113,11 @@
       {conversations}
       activeId={activeConversationId}
       {currentRoute}
+      collapsed={sidebarCollapsed}
       onSelect={handleSelectConversation}
       onNewChat={handleNewChat}
       onDelete={handleDeleteConversation}
+      onToggleCollapse={handleToggleCollapse}
     />
   </aside>
 

@@ -5342,4 +5342,157 @@ endpoint = "https://api.openai.com/v1"
             std::fs::remove_dir_all(&dir).ok();
         }
     }
+
+    mod app_shell_navigation {
+        /// Test case 1: Sidebar source contains "buddy" brand mark, Chat and Settings
+        /// nav items, and conversation list below navigation.
+        #[test]
+        fn sidebar_has_brand_and_nav_items() {
+            let source = include_str!("../../frontend/src/lib/Sidebar.svelte");
+            assert!(
+                source.contains(">buddy</span>"),
+                "Sidebar should contain 'buddy' brand text"
+            );
+            assert!(
+                source.contains(">b</span>"),
+                "Sidebar should contain 'b' collapsed brand text"
+            );
+            assert!(
+                source.contains("href=\"#/\""),
+                "Sidebar should have a Chat nav link to #/"
+            );
+            assert!(
+                source.contains("href=\"#/settings\""),
+                "Sidebar should have a Settings nav link to #/settings"
+            );
+            assert!(
+                source.contains(">Chat</span>"),
+                "Sidebar should have a Chat label"
+            );
+            assert!(
+                source.contains(">Settings</span>"),
+                "Sidebar should have a Settings label"
+            );
+        }
+
+        /// Test case 2–3: Active route indication uses highlighted background and
+        /// left accent border. Settings and Chat nav items toggle based on
+        /// currentRoute.
+        #[test]
+        fn nav_items_have_active_route_styling() {
+            let source = include_str!("../../frontend/src/lib/Sidebar.svelte");
+            assert!(
+                source.contains("border-l-blue-500"),
+                "Active nav item should have blue left border"
+            );
+            assert!(
+                source.contains("bg-blue-50"),
+                "Active nav item should have highlighted background"
+            );
+            assert!(
+                source.contains("border-l-transparent"),
+                "Inactive nav item should have transparent left border"
+            );
+        }
+
+        /// Test case 3: Conversation list is conditional on Chat route being active.
+        #[test]
+        fn conversation_list_conditional_on_chat_route() {
+            let source = include_str!("../../frontend/src/lib/Sidebar.svelte");
+            assert!(
+                source.contains("currentRoute === '/'"),
+                "Conversation list should be conditional on Chat route"
+            );
+        }
+
+        /// Test case 4–7: Collapse toggle exists, labels hidden when collapsed,
+        /// nav icons remain visible, tooltips on collapsed icons.
+        #[test]
+        fn collapse_toggle_and_collapsed_behavior() {
+            let source = include_str!("../../frontend/src/lib/Sidebar.svelte");
+            assert!(
+                source.contains("onToggleCollapse"),
+                "Sidebar should accept onToggleCollapse callback"
+            );
+            assert!(
+                source.contains("'Expand sidebar'"),
+                "Collapse toggle should have expand aria-label"
+            );
+            assert!(
+                source.contains("'Collapse sidebar'"),
+                "Collapse toggle should have collapse aria-label"
+            );
+            assert!(
+                source.contains("collapsed ? 'md:hidden'"),
+                "Labels should be hidden on desktop when collapsed"
+            );
+            assert!(
+                source.contains("title={collapsed ? 'Chat'"),
+                "Chat nav should show tooltip when collapsed"
+            );
+            assert!(
+                source.contains("title={collapsed ? 'Settings'"),
+                "Settings nav should show tooltip when collapsed"
+            );
+        }
+
+        /// Test case 8–9: Collapse preference persists via localStorage.
+        #[test]
+        fn collapse_persists_in_local_storage() {
+            let source = include_str!("../../frontend/src/App.svelte");
+            assert!(
+                source.contains("buddy-sidebar-collapsed"),
+                "App should use localStorage key 'buddy-sidebar-collapsed'"
+            );
+            assert!(
+                source.contains("localStorage.getItem('buddy-sidebar-collapsed')"),
+                "App should read collapse state from localStorage on init"
+            );
+            assert!(
+                source.contains("localStorage.setItem('buddy-sidebar-collapsed'"),
+                "App should persist collapse state to localStorage"
+            );
+        }
+
+        /// Test case 10: Transitions use duration-200 for smooth animation.
+        #[test]
+        fn sidebar_has_smooth_transitions() {
+            let source = include_str!("../../frontend/src/App.svelte");
+            assert!(
+                source.contains("transition-all duration-200"),
+                "Sidebar aside should have transition-all duration-200"
+            );
+            let sidebar = include_str!("../../frontend/src/lib/Sidebar.svelte");
+            assert!(
+                sidebar.contains("transition-transform duration-200"),
+                "Collapse icon should have transition-transform duration-200"
+            );
+        }
+
+        /// Test case 10: Mobile sidebar uses existing overlay behavior.
+        /// The collapse toggle is hidden on mobile (hidden md:block).
+        #[test]
+        fn collapse_toggle_hidden_on_mobile() {
+            let source = include_str!("../../frontend/src/lib/Sidebar.svelte");
+            assert!(
+                source.contains("hidden md:block"),
+                "Collapse toggle wrapper should be hidden on mobile"
+            );
+        }
+
+        /// Test case 11: App.svelte passes collapsed prop and width class to
+        /// aside for desktop collapse.
+        #[test]
+        fn aside_width_responds_to_collapsed_state() {
+            let source = include_str!("../../frontend/src/App.svelte");
+            assert!(
+                source.contains("md:w-14"),
+                "Aside should use md:w-14 when collapsed"
+            );
+            assert!(
+                source.contains("collapsed={sidebarCollapsed}"),
+                "App should pass collapsed prop to Sidebar"
+            );
+        }
+    }
 }

@@ -27,28 +27,28 @@ The application has a professional, collapsible sidebar that cleanly separates p
 
 ## Acceptance Criteria
 
-- [ ] The sidebar has a navigation section with Chat and Settings as distinct icon+label items
-- [ ] Clicking a nav item navigates to the corresponding route and highlights it as active
-- [ ] The conversation list renders below navigation only when the Chat route is active
-- [ ] A "buddy" brand mark is visible at the top of the sidebar in both expanded and collapsed states
-- [ ] On desktop, a toggle collapses the sidebar to an icon-only rail (~56px)
-- [ ] In collapsed state, nav icons are visible and functional with hover tooltips
-- [ ] In collapsed state, labels and the context panel (conversation list) are hidden
-- [ ] Collapse/expand preference persists across page reloads via localStorage
-- [ ] On mobile, the sidebar opens as a full-width overlay (existing behavior preserved)
-- [ ] Transitions between expanded and collapsed states are smooth (~200ms)
-- [ ] All existing functionality works: new chat, conversation switching, conversation deletion, settings navigation, mobile hamburger toggle
+- [x] The sidebar has a navigation section with Chat and Settings as distinct icon+label items
+- [x] Clicking a nav item navigates to the corresponding route and highlights it as active
+- [x] The conversation list renders below navigation only when the Chat route is active
+- [x] A "buddy" brand mark is visible at the top of the sidebar in both expanded and collapsed states
+- [x] On desktop, a toggle collapses the sidebar to an icon-only rail (~56px)
+- [x] In collapsed state, nav icons are visible and functional with hover tooltips
+- [x] In collapsed state, labels and the context panel (conversation list) are hidden
+- [x] Collapse/expand preference persists across page reloads via localStorage
+- [x] On mobile, the sidebar opens as a full-width overlay (existing behavior preserved)
+- [x] Transitions between expanded and collapsed states are smooth (~200ms)
+- [x] All existing functionality works: new chat, conversation switching, conversation deletion, settings navigation, mobile hamburger toggle
 
 ## Test Cases
 
-- [ ] Load the app on desktop; sidebar is expanded with a "buddy" brand mark at top, Chat and Settings nav items visible, conversation list below navigation
-- [ ] Click the Settings nav item; URL changes to `#/settings`, Settings item is highlighted, Chat item is not, conversation list is no longer visible in sidebar
-- [ ] Click the Chat nav item from the Settings page; URL changes to `#/`, Chat item is highlighted, conversation list reappears
-- [ ] Click the collapse toggle; sidebar shrinks to icon rail, labels and conversation list are hidden, nav icons remain visible and clickable
-- [ ] In collapsed state, hover a nav icon; a tooltip showing the label appears
-- [ ] In collapsed state, click the Settings icon; route changes to `#/settings`
-- [ ] Click the expand toggle; sidebar returns to full width with labels and context panel
-- [ ] Collapse sidebar, reload the page; sidebar loads collapsed (localStorage)
-- [ ] Expand sidebar, reload the page; sidebar loads expanded (localStorage)
-- [ ] Resize browser below md breakpoint; hamburger button appears, collapse toggle is hidden, opening sidebar shows full expanded layout with navigation and conversation list
-- [ ] On mobile, tap hamburger to open sidebar, then tap Settings nav item; sidebar closes, settings page renders
+- [x] Load the app on desktop; sidebar is expanded with a "buddy" brand mark at top, Chat and Settings nav items visible, conversation list below navigation
+- [x] Click the Settings nav item; URL changes to `#/settings`, Settings item is highlighted, Chat item is not, conversation list is no longer visible in sidebar
+- [x] Click the Chat nav item from the Settings page; URL changes to `#/`, Chat item is highlighted, conversation list reappears
+- [x] Click the collapse toggle; sidebar shrinks to icon rail, labels and conversation list are hidden, nav icons remain visible and clickable
+- [x] In collapsed state, hover a nav icon; a tooltip showing the label appears
+- [x] In collapsed state, click the Settings icon; route changes to `#/settings`
+- [x] Click the expand toggle; sidebar returns to full width with labels and context panel
+- [x] Collapse sidebar, reload the page; sidebar loads collapsed (localStorage)
+- [x] Expand sidebar, reload the page; sidebar loads expanded (localStorage)
+- [x] Resize browser below md breakpoint; hamburger button appears, collapse toggle is hidden, opening sidebar shows full expanded layout with navigation and conversation list
+- [x] On mobile, tap hamburger to open sidebar, then tap Settings nav item; sidebar closes, settings page renders
