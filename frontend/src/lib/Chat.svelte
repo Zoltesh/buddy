@@ -226,7 +226,7 @@
   }
 </script>
 
-<div class="flex-1 flex flex-col min-w-0">
+<div class="flex-1 flex flex-col min-w-0 min-h-0">
   <!-- Header -->
   <header
     class="flex-shrink-0 flex items-center gap-3 border-b border-gray-200 dark:border-gray-800 px-4 py-3"

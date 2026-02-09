@@ -90,7 +90,7 @@
   }
 </script>
 
-<div class="flex h-screen bg-white dark:bg-gray-900">
+<div class="flex h-screen overflow-hidden bg-white dark:bg-gray-900">
   <!-- Mobile sidebar overlay -->
   {#if sidebarOpen}
     <button
@@ -143,7 +143,7 @@
   </button>
 
   <!-- Routed content -->
-  <div class="flex-1 flex flex-col min-w-0" class:hidden={currentRoute === '/settings'}>
+  <div class="flex-1 flex flex-col min-w-0 min-h-0" class:hidden={currentRoute === '/settings'}>
     <Chat
       {activeConversationId}
       onConversationCreated={handleConversationCreated}
