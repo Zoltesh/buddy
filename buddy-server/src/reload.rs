@@ -84,26 +84,46 @@ pub fn build_provider_chain(config: &Config) -> Result<ProviderChain<AnyProvider
     Ok(ProviderChain::new(chain_entries))
 }
 
-/// Build the optional embedder from config.
+/// Build the embedder from config.
+///
+/// The local embedder (fastembed, all-MiniLM-L6-v2) is always available as a
+/// built-in default. If the config specifies an embedding provider with
+/// `type = "local"`, the same local embedder is used. Non-local provider
+/// types are not yet supported and are ignored.
+///
+/// Returns `Some` in all current configurations. The `Option` is retained for
+/// forward-compatibility with cases where an external provider is configured
+/// but unavailable.
 pub fn build_embedder(
     config: &Config,
 ) -> Result<Option<Arc<dyn embedding::Embedder>>, ReloadError> {
-    let result = config
+    // If an embedding section exists, look for a configured provider.
+    // Currently only "local" is supported; external types will be added
+    // in a future version.
+    let has_local = config
         .models
         .embedding
         .as_ref()
-        .and_then(|slot| {
-            slot.providers
-                .iter()
-                .find(|e| e.provider_type == "local")
-        })
-        .map(|_| {
-            embedding::local::LocalEmbedder::new()
-                .map(|e| Arc::new(e) as Arc<dyn embedding::Embedder>)
-        })
-        .transpose()
-        .map_err(|e| ReloadError::EmbedderInit(e.to_string()))?;
-    Ok(result)
+        .map(|slot| slot.providers.iter().any(|e| e.provider_type == "local"))
+        .unwrap_or(false);
+
+    // Use the local embedder as default when no embedding section exists
+    // or when "local" is explicitly configured.
+    let needs_local = has_local
+        || config.models.embedding.is_none()
+        || config
+            .models
+            .embedding
+            .as_ref()
+            .is_some_and(|slot| slot.providers.is_empty());
+
+    if needs_local {
+        let embedder = embedding::local::LocalEmbedder::new()
+            .map_err(|e| ReloadError::EmbedderInit(e.to_string()))?;
+        return Ok(Some(Arc::new(embedder) as Arc<dyn embedding::Embedder>));
+    }
+
+    Ok(None)
 }
 
 /// Build the optional vector store when an embedder is available.
@@ -188,20 +208,11 @@ pub fn refresh_warnings(
     let mut collector = warnings.write().unwrap();
 
     // Clear stale config-related warnings.
-    collector.clear("no_embedding_model");
     collector.clear("no_vector_store");
     collector.clear("single_chat_provider");
     collector.clear("embedding_dimension_mismatch");
 
-    if embedder.is_none() {
-        collector.add(warning::Warning {
-            code: "no_embedding_model".into(),
-            message: "No embedding model configured — memory features are disabled. Add a [models.embedding] section to buddy.toml.".into(),
-            severity: warning::WarningSeverity::Warning,
-        });
-    }
-
-    if embedder.is_some() && vector_store.is_none() {
+    if vector_store.is_none() {
         collector.add(warning::Warning {
             code: "no_vector_store".into(),
             message: "Vector store failed to initialize — long-term memory is unavailable.".into(),
@@ -311,10 +322,11 @@ endpoint = "http://localhost:5678/v1"
     }
 
     #[test]
-    fn build_embedder_none_when_not_configured() {
+    fn build_embedder_defaults_to_local_when_not_configured() {
         let config = lmstudio_config();
         let embedder = build_embedder(&config).unwrap();
-        assert!(embedder.is_none());
+        assert!(embedder.is_some(), "local embedder should be active by default");
+        assert_eq!(embedder.unwrap().model_name(), "all-MiniLM-L6-v2");
     }
 
     #[test]
@@ -344,12 +356,12 @@ approval = "trust"
     }
 
     #[test]
-    fn refresh_warnings_no_embedding() {
+    fn refresh_warnings_no_embedder_adds_vector_store_warning() {
         let warnings = warning::new_shared_warnings();
         refresh_warnings(&warnings, 2, &None, &None);
         let collector = warnings.read().unwrap();
         let list = collector.list();
-        assert!(list.iter().any(|w| w.code == "no_embedding_model"));
+        assert!(list.iter().any(|w| w.code == "no_vector_store"));
         assert!(!list.iter().any(|w| w.code == "single_chat_provider"));
     }
 
@@ -368,19 +380,17 @@ approval = "trust"
         {
             let mut c = warnings.write().unwrap();
             c.add(warning::Warning {
-                code: "no_embedding_model".into(),
+                code: "no_vector_store".into(),
                 message: "stale".into(),
                 severity: warning::WarningSeverity::Warning,
             });
         }
-        // Refresh with embedding present (simulated by providing non-None embedder)
-        // Since we can't easily construct a real embedder in tests, we test the
-        // clearing behavior: with 2 providers and no embedder, the old warning
-        // should be replaced (not duplicated).
+        // Refresh with no embedder/store: the stale warning should be replaced,
+        // not duplicated.
         refresh_warnings(&warnings, 2, &None, &None);
         let collector = warnings.read().unwrap();
         let list = collector.list();
-        let count = list.iter().filter(|w| w.code == "no_embedding_model").count();
+        let count = list.iter().filter(|w| w.code == "no_vector_store").count();
         assert_eq!(count, 1, "should not duplicate warnings after refresh");
     }
 }

@@ -577,6 +577,27 @@
         {@render sectionIndicator(slot.key === 'chat' ? chatSectionStatus() : embeddingSectionStatus())}
       </div>
 
+      {#if slot.key === 'embedding'}
+        <div class="rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-100/60 dark:bg-gray-800/30 px-4 py-3 mb-2">
+          <div class="flex items-center justify-between mb-1">
+            <div class="flex items-center gap-2">
+              <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400">Built-in</span>
+              <span class="text-sm font-medium text-gray-500 dark:text-gray-400">Local</span>
+              <svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-label="Active"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+            </div>
+          </div>
+          <div class="text-sm text-gray-400 dark:text-gray-500 space-y-0.5">
+            <div>Model: <span class="text-gray-600 dark:text-gray-400">all-MiniLM-L6-v2</span></div>
+            <div>Dimensions: <span class="text-gray-600 dark:text-gray-400">384</span></div>
+          </div>
+          {#if slot.providers.length === 0}
+            <p class="text-xs text-gray-400 dark:text-gray-500 mt-2">Active by default. Add an external provider to override.</p>
+          {:else}
+            <p class="text-xs text-gray-400 dark:text-gray-500 mt-2">Standby — overridden by the configured provider below.</p>
+          {/if}
+        </div>
+      {/if}
+
       {#if slot.providers.length > 0}
         <div class="space-y-2">
           {#each slot.providers as provider, i}
@@ -680,7 +701,7 @@
             {/if}
           {/each}
         </div>
-      {:else}
+      {:else if slot.key !== 'embedding'}
         <p class="text-sm text-gray-500 dark:text-gray-400 italic mb-2">Not configured</p>
       {/if}
 

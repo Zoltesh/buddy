@@ -797,27 +797,6 @@ mod warnings {
     }
 
     #[tokio::test]
-    async fn no_embedding_warning_present() {
-        let app = warnings_app(vec![], |c| {
-            c.add(Warning {
-                code: "no_embedding_model".into(),
-                message: "No embedding model configured — memory features are disabled. Add a [models.embedding] section to buddy.toml.".into(),
-                severity: WarningSeverity::Warning,
-            });
-        });
-
-        let response = app
-            .oneshot(Request::builder().uri("/api/warnings").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = response.into_body().collect().await.unwrap().to_bytes();
-        let list: Vec<Warning> = serde_json::from_slice(&body).unwrap();
-        assert_eq!(list.len(), 1);
-        assert_eq!(list[0].code, "no_embedding_model");
-    }
-
-    #[tokio::test]
     async fn full_config_no_warnings() {
         let app = warnings_app(vec![], |_| {});
 
@@ -989,9 +968,9 @@ mod warnings {
     async fn warning_messages_include_guidance() {
         let app = warnings_app(vec![], |c| {
             c.add(Warning {
-                code: "no_embedding_model".into(),
-                message: "No embedding model configured — memory features are disabled. Add a [models.embedding] section to buddy.toml.".into(),
-                severity: WarningSeverity::Warning,
+                code: "single_chat_provider".into(),
+                message: "Only one chat provider configured — no fallback available. Add additional [[models.chat.providers]] entries to buddy.toml for redundancy.".into(),
+                severity: WarningSeverity::Info,
             });
         });
 
@@ -1009,29 +988,6 @@ mod warnings {
     }
 
     // ── Task 039: Chat UI warning banner tests ──────────────────────────
-
-    #[tokio::test]
-    async fn no_embedding_warning_has_warning_severity() {
-        let app = warnings_app(vec![], |c| {
-            c.add(Warning {
-                code: "no_embedding_model".into(),
-                message: "No embedding model configured.".into(),
-                severity: WarningSeverity::Warning,
-            });
-        });
-
-        let response = app
-            .oneshot(Request::builder().uri("/api/warnings").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-        let body: serde_json::Value =
-            serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes()).unwrap();
-        let arr = body.as_array().unwrap();
-        assert_eq!(arr.len(), 1);
-        assert_eq!(arr[0]["severity"], "warning");
-        assert_eq!(arr[0]["code"], "no_embedding_model");
-        assert!(arr[0]["message"].as_str().unwrap().contains("embedding"));
-    }
 
     #[tokio::test]
     async fn single_chat_provider_has_info_severity() {
@@ -1061,8 +1017,8 @@ mod warnings {
         {
             let mut collector = warnings.write().unwrap();
             collector.add(Warning {
-                code: "no_embedding_model".into(),
-                message: "Missing embedding.".into(),
+                code: "no_vector_store".into(),
+                message: "Vector store unavailable.".into(),
                 severity: WarningSeverity::Warning,
             });
         }
@@ -1115,11 +1071,6 @@ mod warnings {
     async fn multiple_warnings_all_returned() {
         let app = warnings_app(vec![], |c| {
             c.add(Warning {
-                code: "no_embedding_model".into(),
-                message: "No embedding model.".into(),
-                severity: WarningSeverity::Warning,
-            });
-            c.add(Warning {
                 code: "single_chat_provider".into(),
                 message: "Single chat provider.".into(),
                 severity: WarningSeverity::Info,
@@ -1137,9 +1088,8 @@ mod warnings {
             .unwrap();
         let body = response.into_body().collect().await.unwrap().to_bytes();
         let list: Vec<Warning> = serde_json::from_slice(&body).unwrap();
-        assert_eq!(list.len(), 3);
+        assert_eq!(list.len(), 2);
         let codes: Vec<&str> = list.iter().map(|w| w.code.as_str()).collect();
-        assert!(codes.contains(&"no_embedding_model"));
         assert!(codes.contains(&"single_chat_provider"));
         assert!(codes.contains(&"no_vector_store"));
     }
@@ -1148,14 +1098,14 @@ mod warnings {
     async fn sse_warnings_event_updates_during_stream() {
         let app = warnings_app(vec!["Reply".into()], |c| {
             c.add(Warning {
-                code: "no_embedding_model".into(),
-                message: "No embedding model configured.".into(),
-                severity: WarningSeverity::Warning,
-            });
-            c.add(Warning {
                 code: "single_chat_provider".into(),
                 message: "Only one provider.".into(),
                 severity: WarningSeverity::Info,
+            });
+            c.add(Warning {
+                code: "no_vector_store".into(),
+                message: "Vector store unavailable.".into(),
+                severity: WarningSeverity::Warning,
             });
         });
 
@@ -1176,8 +1126,8 @@ mod warnings {
     async fn warning_json_includes_code_for_settings_link() {
         let app = warnings_app(vec![], |c| {
             c.add(Warning {
-                code: "no_embedding_model".into(),
-                message: "Embedding not configured.".into(),
+                code: "no_vector_store".into(),
+                message: "Vector store failed to initialize.".into(),
                 severity: WarningSeverity::Warning,
             });
         });
@@ -1196,7 +1146,7 @@ mod warnings {
         assert!(w.get("severity").is_some(), "JSON must include 'severity' field");
         // code must be a known value the frontend maps to a Settings link
         let code = w["code"].as_str().unwrap();
-        let known_codes = ["no_embedding_model", "no_vector_store", "single_chat_provider", "embedding_dimension_mismatch"];
+        let known_codes = ["no_vector_store", "single_chat_provider", "embedding_dimension_mismatch"];
         assert!(known_codes.contains(&code), "code {code} should be a known warning code");
     }
 }
@@ -3405,15 +3355,10 @@ endpoint = "http://localhost:1234/v1"
         std::fs::write(&config_path, initial_toml).unwrap();
         let config = crate::config::Config::parse(initial_toml).unwrap();
 
-        // Start with the no_embedding_model warning (matches single-provider, no-embedding startup).
+        // Start with single-provider warning (matches single-provider startup).
         let warnings = new_shared_warnings();
         {
             let mut c = warnings.write().unwrap();
-            c.add(Warning {
-                code: "no_embedding_model".into(),
-                message: "No embedding model configured.".into(),
-                severity: WarningSeverity::Warning,
-            });
             c.add(Warning {
                 code: "single_chat_provider".into(),
                 message: "Only one chat provider.".into(),
@@ -3456,7 +3401,6 @@ endpoint = "http://localhost:1234/v1"
 
                 // Refresh warnings: simulate provider count from config.
                 let provider_count = config.models.chat.providers.len();
-                let has_embedding = config.models.embedding.is_some();
                 let embedder_ref = state.embedder.load();
                 let vs_ref = state.vector_store.load();
                 crate::reload::refresh_warnings(
@@ -3465,15 +3409,6 @@ endpoint = "http://localhost:1234/v1"
                     &*embedder_ref,
                     &*vs_ref,
                 );
-
-                // If embedding was removed, clear the no_embedding_model
-                // (refresh_warnings already handles this). If embedding was
-                // added but we can't construct a real embedder in tests,
-                // manually clear the warning to simulate successful init.
-                if has_embedding {
-                    let mut c = state.warnings.write().unwrap();
-                    c.clear("no_embedding_model");
-                }
 
                 Ok(())
             })),
@@ -3556,161 +3491,6 @@ endpoint = "http://localhost:1234/v1"
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    #[tokio::test]
-    async fn adding_embedding_clears_warning() {
-        let (dir, _state, app) = hot_reload_app();
-
-        // Initially the no_embedding_model warning should exist.
-        let response = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .uri("/api/warnings")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        let bytes = response.into_body().collect().await.unwrap().to_bytes();
-        let warnings: Vec<Warning> = serde_json::from_slice(&bytes).unwrap();
-        assert!(
-            warnings.iter().any(|w| w.code == "no_embedding_model"),
-            "no_embedding_model warning should be present initially"
-        );
-
-        // Add an embedding provider via PUT /api/config/models.
-        let body = serde_json::json!({
-            "chat": {
-                "providers": [{
-                    "type": "lmstudio",
-                    "model": "test-model",
-                    "endpoint": "http://localhost:1234/v1"
-                }]
-            },
-            "embedding": {
-                "providers": [{
-                    "type": "local",
-                    "model": "all-minilm"
-                }]
-            }
-        });
-        let response = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .method("PUT")
-                    .uri("/api/config/models")
-                    .header("content-type", "application/json")
-                    .body(Body::from(serde_json::to_vec(&body).unwrap()))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-
-        // After reload, no_embedding_model warning should be gone.
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .uri("/api/warnings")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        let bytes = response.into_body().collect().await.unwrap().to_bytes();
-        let warnings: Vec<Warning> = serde_json::from_slice(&bytes).unwrap();
-        assert!(
-            !warnings.iter().any(|w| w.code == "no_embedding_model"),
-            "no_embedding_model warning should be cleared after adding embedding"
-        );
-
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[tokio::test]
-    async fn removing_embedding_adds_warning() {
-        let (dir, state, app) = hot_reload_app();
-
-        // Start with embedding "present" — clear the warning manually.
-        {
-            let mut c = state.warnings.write().unwrap();
-            c.clear("no_embedding_model");
-        }
-
-        // Write config that has embedding, so we can then remove it.
-        let body_with = serde_json::json!({
-            "chat": {
-                "providers": [{
-                    "type": "lmstudio",
-                    "model": "test-model",
-                    "endpoint": "http://localhost:1234/v1"
-                }]
-            },
-            "embedding": {
-                "providers": [{
-                    "type": "local",
-                    "model": "all-minilm"
-                }]
-            }
-        });
-        let response = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .method("PUT")
-                    .uri("/api/config/models")
-                    .header("content-type", "application/json")
-                    .body(Body::from(serde_json::to_vec(&body_with).unwrap()))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-
-        // Now remove embedding.
-        let body_without = serde_json::json!({
-            "chat": {
-                "providers": [{
-                    "type": "lmstudio",
-                    "model": "test-model",
-                    "endpoint": "http://localhost:1234/v1"
-                }]
-            }
-        });
-        let response = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .method("PUT")
-                    .uri("/api/config/models")
-                    .header("content-type", "application/json")
-                    .body(Body::from(serde_json::to_vec(&body_without).unwrap()))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-
-        // After reload, no_embedding_model warning should appear.
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .uri("/api/warnings")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        let bytes = response.into_body().collect().await.unwrap().to_bytes();
-        let warnings: Vec<Warning> = serde_json::from_slice(&bytes).unwrap();
-        assert!(
-            warnings.iter().any(|w| w.code == "no_embedding_model"),
-            "no_embedding_model warning should appear after removing embedding"
-        );
-
-        std::fs::remove_dir_all(&dir).ok();
-    }
 
     #[tokio::test]
     async fn skill_sandbox_rules_updated_after_reload() {
