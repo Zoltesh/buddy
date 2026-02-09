@@ -35,24 +35,24 @@ Users can see at a glance whether their configuration is healthy, degraded, or b
 
 ## Acceptance Criteria
 
-- [ ] Provider connectivity is tested on Settings page load
-- [ ] Each provider shows a green/red status icon based on reachability
-- [ ] Chat section shows a red indicator when no providers are configured
-- [ ] Chat section shows a red indicator when all providers are unreachable
-- [ ] Chat section shows a yellow indicator for single-provider-no-fallback
-- [ ] Embedding section shows a yellow indicator when not configured
-- [ ] Skills section shows a yellow indicator for empty sandbox rules
-- [ ] Inline field validation highlights required fields and shows error messages
-- [ ] Status indicators use icon + color (accessible)
-- [ ] "Recheck" button re-runs connectivity tests
+- [x] Provider connectivity is tested on Settings page load
+- [x] Each provider shows a green/red status icon based on reachability
+- [x] Chat section shows a red indicator when no providers are configured
+- [x] Chat section shows a red indicator when all providers are unreachable
+- [x] Chat section shows a yellow indicator for single-provider-no-fallback
+- [x] Embedding section shows a yellow indicator when not configured
+- [x] Skills section shows a yellow indicator for empty sandbox rules
+- [x] Inline field validation highlights required fields and shows error messages
+- [x] Status indicators use icon + color (accessible)
+- [x] "Recheck" button re-runs connectivity tests
 
 ## Test Cases
 
-- [ ] Load settings with a reachable provider; assert green checkmark appears next to it
-- [ ] Load settings with an unreachable provider; assert red X appears next to it
-- [ ] Load settings with no chat providers; assert a red section-level indicator on the Chat Models section
-- [ ] Load settings with one chat provider; assert a yellow section-level indicator (no fallback)
-- [ ] Load settings with no embedding config; assert a yellow indicator on the Embedding section
-- [ ] Load settings with a skill that has empty allowed_directories; assert a yellow indicator on the Skills section
-- [ ] Submit a form with an empty required field; assert a red border and error message appear
-- [ ] Click "Recheck"; assert connectivity tests run again and indicators update
+- [x] Load settings with a reachable provider; assert green checkmark appears next to it
+- [x] Load settings with an unreachable provider; assert red X appears next to it
+- [x] Load settings with no chat providers; assert a red section-level indicator on the Chat Models section
+- [x] Load settings with one chat provider; assert a yellow section-level indicator (no fallback)
+- [x] Load settings with no embedding config; assert a yellow indicator on the Embedding section
+- [x] Load settings with a skill that has empty allowed_directories; assert a yellow indicator on the Skills section
+- [x] Submit a form with an empty required field; assert a red border and error message appear
+- [x] Click "Recheck"; assert connectivity tests run again and indicators update

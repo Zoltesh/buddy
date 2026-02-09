@@ -57,7 +57,7 @@ pub fn build_provider_chain(config: &Config) -> Result<ProviderChain<AnyProvider
             "openai" => {
                 if api_key.is_empty() {
                     return Err(ReloadError::InvalidConfig(
-                        "api_key_env is required when type = \"openai\"".into(),
+                        "an API key is required when type = \"openai\"".into(),
                     ));
                 }
                 AnyProvider::OpenAi(OpenAiProvider::new(

@@ -244,6 +244,29 @@ pub struct ValidationErrorResponse {
     pub errors: Vec<FieldError>,
 }
 
+fn validate_provider(
+    p: &crate::config::ProviderEntry,
+    prefix: &str,
+    i: usize,
+    errors: &mut Vec<FieldError>,
+) {
+    if !["openai", "lmstudio", "local"].contains(&p.provider_type.as_str()) {
+        errors.push(FieldError {
+            field: format!("{prefix}[{i}].type"),
+            message: format!(
+                "unknown provider type '{}'; expected openai, lmstudio, or local",
+                p.provider_type
+            ),
+        });
+    }
+    if p.model.is_empty() {
+        errors.push(FieldError {
+            field: format!("{prefix}[{i}].model"),
+            message: "must not be empty".into(),
+        });
+    }
+}
+
 fn validate_models(models: &crate::config::ModelsConfig) -> Vec<FieldError> {
     let mut errors = Vec::new();
     if models.chat.providers.is_empty() {
@@ -253,39 +276,11 @@ fn validate_models(models: &crate::config::ModelsConfig) -> Vec<FieldError> {
         });
     }
     for (i, p) in models.chat.providers.iter().enumerate() {
-        if !["openai", "lmstudio", "local"].contains(&p.provider_type.as_str()) {
-            errors.push(FieldError {
-                field: format!("models.chat.providers[{i}].type"),
-                message: format!(
-                    "unknown provider type '{}'; expected openai, lmstudio, or local",
-                    p.provider_type
-                ),
-            });
-        }
-        if p.model.is_empty() {
-            errors.push(FieldError {
-                field: format!("models.chat.providers[{i}].model"),
-                message: "must not be empty".into(),
-            });
-        }
+        validate_provider(p, "models.chat.providers", i, &mut errors);
     }
     if let Some(ref emb) = models.embedding {
         for (i, p) in emb.providers.iter().enumerate() {
-            if !["openai", "lmstudio", "local"].contains(&p.provider_type.as_str()) {
-                errors.push(FieldError {
-                    field: format!("models.embedding.providers[{i}].type"),
-                    message: format!(
-                        "unknown provider type '{}'; expected openai, lmstudio, or local",
-                        p.provider_type
-                    ),
-                });
-            }
-            if p.model.is_empty() {
-                errors.push(FieldError {
-                    field: format!("models.embedding.providers[{i}].model"),
-                    message: "must not be empty".into(),
-                });
-            }
+            validate_provider(p, "models.embedding.providers", i, &mut errors);
         }
     }
     errors
@@ -541,7 +536,7 @@ pub async fn test_provider<P: Provider + 'static>(
     if entry.provider_type == "openai" && api_key.is_empty() {
         return Json(TestProviderResponse {
             status: "error".into(),
-            message: "api_key_env is required when type = \"openai\"".into(),
+            message: "an API key is required when type = \"openai\"".into(),
         })
         .into_response();
     }
@@ -3101,6 +3096,39 @@ endpoint = "http://localhost:1234/v1"
             let bytes = response.into_body().collect().await.unwrap().to_bytes();
             let err: ValidationErrorResponse = serde_json::from_slice(&bytes).unwrap();
             assert!(err.errors.iter().any(|e| e.field.contains("model")));
+
+            std::fs::remove_dir_all(&dir).ok();
+        }
+
+        #[tokio::test]
+        async fn put_models_direct_api_key_succeeds() {
+            let (dir, app) = config_write_app();
+            let body = serde_json::json!({
+                "chat": {
+                    "providers": [{
+                        "type": "openai",
+                        "model": "gpt-4",
+                        "api_key": "sk-test-direct-key",
+                        "endpoint": "https://api.openai.com/v1"
+                    }]
+                }
+            });
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("PUT")
+                        .uri("/api/config/models")
+                        .header("content-type", "application/json")
+                        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let updated: crate::config::Config = serde_json::from_slice(&bytes).unwrap();
+            let provider = &updated.models.chat.providers[0];
+            assert_eq!(provider.api_key.as_deref(), Some("sk-test-direct-key"));
 
             std::fs::remove_dir_all(&dir).ok();
         }

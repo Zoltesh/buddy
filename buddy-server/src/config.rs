@@ -76,11 +76,18 @@ pub struct ProviderEntry {
     #[serde(default)]
     pub endpoint: Option<String>,
     #[serde(default)]
+    pub api_key: Option<String>,
+    #[serde(default)]
     pub api_key_env: Option<String>,
 }
 
 impl ProviderEntry {
     pub fn resolve_api_key(&self) -> Result<String, String> {
+        if let Some(ref key) = self.api_key {
+            if !key.is_empty() {
+                return Ok(key.clone());
+            }
+        }
         match &self.api_key_env {
             Some(var_name) => std::env::var(var_name).map_err(|_| {
                 format!(
@@ -482,6 +489,7 @@ providers = []
             provider_type: "openai".into(),
             model: "gpt-4".into(),
             endpoint: Some("https://api.openai.com/v1".into()),
+            api_key: None,
             api_key_env: Some("BUDDY_TEST_API_KEY_018".into()),
         };
         // SAFETY: test-only; unique env var name avoids conflicts with other tests.
@@ -497,6 +505,7 @@ providers = []
             provider_type: "openai".into(),
             model: "gpt-4".into(),
             endpoint: Some("https://api.openai.com/v1".into()),
+            api_key: None,
             api_key_env: Some("BUDDY_NONEXISTENT_KEY_018".into()),
         };
         unsafe { std::env::remove_var("BUDDY_NONEXISTENT_KEY_018") };
@@ -505,6 +514,48 @@ providers = []
             err.contains("BUDDY_NONEXISTENT_KEY_018"),
             "error should mention the variable name: {err}"
         );
+    }
+
+    #[test]
+    fn direct_api_key_resolves() {
+        let entry = ProviderEntry {
+            provider_type: "openai".into(),
+            model: "gpt-4".into(),
+            endpoint: Some("https://api.openai.com/v1".into()),
+            api_key: Some("sk-direct-key".into()),
+            api_key_env: None,
+        };
+        assert_eq!(entry.resolve_api_key().unwrap(), "sk-direct-key");
+    }
+
+    #[test]
+    fn direct_api_key_takes_priority_over_env_var() {
+        let entry = ProviderEntry {
+            provider_type: "openai".into(),
+            model: "gpt-4".into(),
+            endpoint: Some("https://api.openai.com/v1".into()),
+            api_key: Some("sk-direct".into()),
+            api_key_env: Some("BUDDY_TEST_PRIORITY_KEY".into()),
+        };
+        unsafe { std::env::set_var("BUDDY_TEST_PRIORITY_KEY", "from-env") };
+        let key = entry.resolve_api_key().unwrap();
+        unsafe { std::env::remove_var("BUDDY_TEST_PRIORITY_KEY") };
+        assert_eq!(key, "sk-direct");
+    }
+
+    #[test]
+    fn empty_direct_api_key_falls_through_to_env_var() {
+        let entry = ProviderEntry {
+            provider_type: "openai".into(),
+            model: "gpt-4".into(),
+            endpoint: Some("https://api.openai.com/v1".into()),
+            api_key: Some("".into()),
+            api_key_env: Some("BUDDY_TEST_FALLTHROUGH_KEY".into()),
+        };
+        unsafe { std::env::set_var("BUDDY_TEST_FALLTHROUGH_KEY", "env-value") };
+        let key = entry.resolve_api_key().unwrap();
+        unsafe { std::env::remove_var("BUDDY_TEST_FALLTHROUGH_KEY") };
+        assert_eq!(key, "env-value");
     }
 
     #[test]

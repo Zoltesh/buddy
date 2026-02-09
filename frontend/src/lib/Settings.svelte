@@ -23,6 +23,7 @@
     try {
       config = await fetchConfig();
       syncFormState();
+      testAllProviders();
     } catch (e) {
       error = e.message;
     } finally {
@@ -35,6 +36,38 @@
     autoRetrieve = config.memory?.auto_retrieve ?? true;
     similarityThreshold = config.memory?.similarity_threshold ?? 0.5;
     autoRetrieveLimit = config.memory?.auto_retrieve_limit ?? 3;
+  }
+
+  async function testProviderEntry(slotKey, index, entry) {
+    const key = `${slotKey}_${index}`;
+    providerStatus = { ...providerStatus, [key]: { state: 'testing', message: '' } };
+    try {
+      const result = await testProvider(entry);
+      providerStatus = { ...providerStatus, [key]: { state: result.status === 'ok' ? 'ok' : 'error', message: result.message ?? '' } };
+    } catch (e) {
+      const msg = e.details?.errors ? e.details.errors.map(err => err.message).join('; ') : e.message;
+      providerStatus = { ...providerStatus, [key]: { state: 'error', message: msg } };
+    }
+  }
+
+  async function testAllProviders() {
+    if (!config) return;
+    recheckRunning = true;
+    const fresh = {};
+    const tasks = [];
+    const chatProviders = config.models.chat.providers ?? [];
+    for (let i = 0; i < chatProviders.length; i++) {
+      fresh[`chat_${i}`] = { state: 'testing', message: '' };
+      tasks.push(testProviderEntry('chat', i, chatProviders[i]));
+    }
+    const embeddingProviders = config.models.embedding?.providers ?? [];
+    for (let i = 0; i < embeddingProviders.length; i++) {
+      fresh[`embedding_${i}`] = { state: 'testing', message: '' };
+      tasks.push(testProviderEntry('embedding', i, embeddingProviders[i]));
+    }
+    providerStatus = fresh;
+    await Promise.allSettled(tasks);
+    recheckRunning = false;
   }
 
   async function saveGeneral() {
@@ -75,6 +108,11 @@
   let savingModels = $state(false);
   let modelsSaveMessage = $state(null);
   let confirmingDelete = $state(null); // { slot, index }
+
+  // Provider health-check state
+  let providerStatus = $state({}); // keyed by "chat_0", "embedding_1", etc.
+  let recheckRunning = $state(false);
+  let touchedFields = $state({}); // tracks which form fields have been blurred
 
   // Drag-and-drop reorder state
   let drag = $state(null); // { slot, fromIndex, currentIndex, snapshot }
@@ -125,6 +163,7 @@
     try {
       const updated = await putConfigModels(buildModelsPayload(slot, providers));
       config = updated;
+      testAllProviders();
     } catch (e) {
       if (slot === 'chat') {
         config.models.chat.providers = snapshot;
@@ -174,8 +213,9 @@
   }
 
   function startAdd(slot) {
-    editingProvider = { slot, index: null, form: { type: 'openai', model: '', endpoint: '', api_key_env: '' } };
+    editingProvider = { slot, index: null, form: { type: 'openai', model: '', endpoint: '', api_key: '' } };
     modelErrors = {};
+    touchedFields = {};
     testResult = null;
     modelsSaveMessage = null;
   }
@@ -184,8 +224,9 @@
     const p = slot === 'chat'
       ? config.models.chat.providers[index]
       : config.models.embedding.providers[index];
-    editingProvider = { slot, index, form: { type: p.type, model: p.model, endpoint: p.endpoint ?? '', api_key_env: p.api_key_env ?? '' } };
+    editingProvider = { slot, index, form: { type: p.type, model: p.model, endpoint: p.endpoint ?? '', api_key: p.api_key ?? '' } };
     modelErrors = {};
+    touchedFields = {};
     testResult = null;
     modelsSaveMessage = null;
   }
@@ -194,6 +235,17 @@
     editingProvider = null;
     modelErrors = {};
     testResult = null;
+  }
+
+  function markTouched(field) {
+    touchedFields = { ...touchedFields, [field]: true };
+  }
+
+  function getFieldError(field) {
+    if (!touchedFields[field] || !editingProvider) return null;
+    const form = editingProvider.form;
+    if (field === 'model' && !form.model.trim()) return 'Model name is required';
+    return null;
   }
 
   function validateForm(form) {
@@ -215,12 +267,13 @@
   function toEntry(form) {
     const entry = { type: form.type, model: form.model.trim() };
     if (showsEndpoint(form.type) && form.endpoint.trim()) entry.endpoint = form.endpoint.trim();
-    if (showsApiKey(form.type) && form.api_key_env.trim()) entry.api_key_env = form.api_key_env.trim();
+    if (showsApiKey(form.type) && form.api_key.trim()) entry.api_key = form.api_key.trim();
     return entry;
   }
 
   async function saveProvider() {
     const { slot, index, form } = editingProvider;
+    touchedFields = { model: true };
     const errors = validateForm(form);
     if (Object.keys(errors).length > 0) { modelErrors = errors; return; }
 
@@ -244,6 +297,7 @@
       modelErrors = {};
       testResult = null;
       modelsSaveMessage = { type: 'success', text: 'Provider saved.' };
+      testAllProviders();
     } catch (e) {
       if (e.details?.errors) {
         modelsSaveMessage = { type: 'error', text: e.details.errors.map((err) => `${err.field}: ${err.message}`).join('; ') };
@@ -277,6 +331,7 @@
         editingProvider = null;
       }
       modelsSaveMessage = { type: 'success', text: 'Provider removed.' };
+      testAllProviders();
     } catch (e) {
       if (e.details?.errors) {
         modelsSaveMessage = { type: 'error', text: e.details.errors.map((err) => `${err.field}: ${err.message}`).join('; ') };
@@ -307,6 +362,36 @@
     } finally {
       testing = false;
     }
+  }
+
+  function chatSectionStatus() {
+    const providers = config?.models.chat.providers ?? [];
+    if (providers.length === 0) return { level: 'error', label: 'No providers configured' };
+    const statuses = providers.map((_, i) => providerStatus[`chat_${i}`]);
+    if (statuses.some(s => s?.state === 'testing')) return { level: 'testing', label: 'Checking...' };
+    const reachable = statuses.filter(s => s?.state === 'ok').length;
+    if (reachable === 0) return { level: 'error', label: 'All providers unreachable' };
+    if (providers.length === 1) return { level: 'warning', label: 'No fallback provider' };
+    return { level: 'ok', label: `${reachable}/${providers.length} reachable` };
+  }
+
+  function embeddingSectionStatus() {
+    const providers = config?.models.embedding?.providers ?? [];
+    if (providers.length === 0) return { level: 'warning', label: 'Not configured — memory features disabled' };
+    const statuses = providers.map((_, i) => providerStatus[`embedding_${i}`]);
+    if (statuses.some(s => s?.state === 'testing')) return { level: 'testing', label: 'Checking...' };
+    const reachable = statuses.filter(s => s?.state === 'ok').length;
+    if (reachable === 0) return { level: 'error', label: 'All providers unreachable' };
+    return { level: 'ok', label: `${reachable}/${providers.length} reachable` };
+  }
+
+  function skillWarning(key) {
+    const skillConfig = config?.skills[key];
+    if (!skillConfig) return null;
+    const def = skillDefs.find(s => s.key === key);
+    const entries = skillConfig[def.field] ?? [];
+    if (entries.length === 0) return { level: 'warning', label: 'No sandbox rules' };
+    return null;
   }
 
   const tabs = [
@@ -467,13 +552,14 @@
               id="pf-model"
               type="text"
               bind:value={editingProvider.form.model}
+              onblur={() => markTouched('model')}
               placeholder="e.g. gpt-4o, deepseek-coder"
               class="w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100
                      focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm
-                     {modelErrors.model ? 'border-red-400 dark:border-red-600' : 'border-gray-300 dark:border-gray-700'}"
+                     {modelErrors.model || getFieldError('model') ? 'border-red-400 dark:border-red-600' : 'border-gray-300 dark:border-gray-700'}"
             />
-            {#if modelErrors.model}
-              <p class="text-xs text-red-600 dark:text-red-400 mt-1">{modelErrors.model}</p>
+            {#if modelErrors.model || getFieldError('model')}
+              <p class="text-xs text-red-600 dark:text-red-400 mt-1">{modelErrors.model || getFieldError('model')}</p>
             {/if}
           </div>
 
@@ -494,17 +580,17 @@
 
           {#if showsApiKey(editingProvider.form.type)}
             <div>
-              <label class="block text-sm text-gray-700 dark:text-gray-300 mb-1" for="pf-apikey">API Key Env Var</label>
+              <label class="block text-sm text-gray-700 dark:text-gray-300 mb-1" for="pf-apikey">API Key</label>
               <input
                 id="pf-apikey"
-                type="text"
-                bind:value={editingProvider.form.api_key_env}
-                placeholder="e.g. OPENAI_API_KEY"
+                type="password"
+                bind:value={editingProvider.form.api_key}
+                placeholder="sk-..."
+                autocomplete="off"
                 class="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg
                        bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100
                        focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
               />
-              <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">Name of the environment variable (not the key itself)</p>
             </div>
           {/if}
 
@@ -552,6 +638,43 @@
             </button>
           </div>
         </div>
+      {/snippet}
+
+      {#snippet statusIcon(status)}
+        {#if status?.state === 'testing'}
+          <svg class="w-4 h-4 animate-spin text-gray-400" viewBox="0 0 24 24" fill="none">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+          </svg>
+        {:else if status?.state === 'ok'}
+          <svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-label="Reachable"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+        {:else if status?.state === 'error'}
+          <svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-label="Unreachable"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+        {/if}
+      {/snippet}
+
+      {#snippet sectionIndicator(info)}
+        {#if info}
+          <span class="inline-flex items-center gap-1 text-xs font-medium
+            {info.level === 'error' ? 'text-red-600 dark:text-red-400' : ''}
+            {info.level === 'warning' ? 'text-yellow-600 dark:text-yellow-400' : ''}
+            {info.level === 'ok' ? 'text-green-600 dark:text-green-400' : ''}
+            {info.level === 'testing' ? 'text-gray-400' : ''}">
+            {#if info.level === 'testing'}
+              <svg class="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+              </svg>
+            {:else if info.level === 'error'}
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M12 2a10 10 0 100 20 10 10 0 000-20z" /></svg>
+            {:else if info.level === 'warning'}
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /></svg>
+            {:else if info.level === 'ok'}
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+            {/if}
+            {info.label}
+          </span>
+        {/if}
       {/snippet}
 
       {#if loading}
@@ -704,18 +827,37 @@
         <!-- Models Tab -->
         {:else if activeTab === 'models'}
           <div class="space-y-6">
-            {#if modelsSaveMessage}
-              <div class="text-sm {modelsSaveMessage.type === 'success' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}">
-                {modelsSaveMessage.text}
-              </div>
-            {/if}
+            <div class="flex items-center justify-between">
+              {#if modelsSaveMessage}
+                <div class="text-sm {modelsSaveMessage.type === 'success' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}">
+                  {modelsSaveMessage.text}
+                </div>
+              {:else}
+                <div></div>
+              {/if}
+              <button
+                onclick={testAllProviders}
+                disabled={recheckRunning || savingModels}
+                class="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg
+                       text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800
+                       disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+              >
+                <svg class="w-4 h-4 {recheckRunning ? 'animate-spin' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                {recheckRunning ? 'Checking...' : 'Recheck All'}
+              </button>
+            </div>
 
             {#each [
               { key: 'chat', label: 'Chat Providers', providers: config.models.chat.providers, required: true },
               { key: 'embedding', label: 'Embedding Providers', providers: config.models.embedding?.providers ?? [], required: false },
             ] as slot}
               <section>
-                <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-100 uppercase tracking-wide mb-3">{slot.label}</h2>
+                <div class="flex items-center gap-2 mb-3">
+                  <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-100 uppercase tracking-wide">{slot.label}</h2>
+                  {@render sectionIndicator(slot.key === 'chat' ? chatSectionStatus() : embeddingSectionStatus())}
+                </div>
 
                 {#if slot.providers.length > 0}
                   <div class="space-y-2">
@@ -750,6 +892,9 @@
                               </button>
                               <span class="text-xs font-medium text-gray-400 dark:text-gray-500">{positionLabel(i)}</span>
                               <span class="text-sm font-medium text-gray-900 dark:text-gray-100">{providerLabel(provider.type)}</span>
+                              <span title={providerStatus[slot.key + '_' + i]?.message || ''}>
+                                {@render statusIcon(providerStatus[slot.key + '_' + i])}
+                              </span>
                             </div>
                             <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                               <button
@@ -796,7 +941,9 @@
                             {#if provider.endpoint}
                               <div>Endpoint: <span class="text-gray-900 dark:text-gray-200">{provider.endpoint}</span></div>
                             {/if}
-                            {#if provider.api_key_env}
+                            {#if provider.api_key}
+                              <div>API Key: <span class="text-gray-900 dark:text-gray-200">configured</span></div>
+                            {:else if provider.api_key_env}
                               <div>API Key: <span class="text-gray-900 dark:text-gray-200">${provider.api_key_env}</span></div>
                             {/if}
                           </div>
@@ -840,6 +987,7 @@
                     <div class="flex items-center gap-2">
                       <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-100">{skill.label}</h2>
                       <span class="text-xs font-medium px-2 py-0.5 rounded-full {permissionBadgeClass[skill.permission]}">{skill.permission}</span>
+                      {@render sectionIndicator(skillWarning(skill.key))}
                     </div>
                     <label class="relative inline-flex items-center cursor-pointer">
                       <input
