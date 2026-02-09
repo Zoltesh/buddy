@@ -92,6 +92,20 @@ export async function testProvider(entry) {
 }
 
 /**
+ * Format an API error into a user-facing message string.
+ * Supports validation error responses (with field/message pairs) and plain errors.
+ */
+export function formatApiError(e, { includeField = true } = {}) {
+  const errors = e.details?.errors || e.errors;
+  if (errors?.length) {
+    return errors
+      .map(err => includeField && err.field ? `${err.field}: ${err.message}` : err.message)
+      .join('; ');
+  }
+  return e.details?.message || e.message || 'Unknown error';
+}
+
+/**
  * Convert backend messages to display items.
  * Groups tool_call + tool_result pairs into single blocks.
  *

@@ -274,6 +274,46 @@ impl Provider for ConfigurableMockProvider {
     }
 }
 
+// ── Mock embedder ────────────────────────────────────────────────────────
+
+/// A deterministic mock embedder for tests. Each `embed()` call produces a
+/// one-hot vector at the next counter position, cycling through `dims`.
+pub struct MockEmbedder {
+    dims: usize,
+    counter: Mutex<usize>,
+}
+
+impl MockEmbedder {
+    pub fn new(dims: usize) -> Self {
+        Self {
+            dims,
+            counter: Mutex::new(0),
+        }
+    }
+}
+
+impl crate::embedding::Embedder for MockEmbedder {
+    fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, crate::embedding::EmbedError> {
+        let mut counter = self.counter.lock().unwrap();
+        let mut results = Vec::new();
+        for _ in texts {
+            let mut vec = vec![0.0f32; self.dims];
+            vec[*counter % self.dims] = 1.0;
+            *counter += 1;
+            results.push(vec);
+        }
+        Ok(results)
+    }
+
+    fn dimensions(&self) -> usize {
+        self.dims
+    }
+
+    fn model_name(&self) -> &str {
+        "test-embedder"
+    }
+}
+
 // ── HTTP test helpers ───────────────────────────────────────────────────
 
 pub fn parse_sse_events(body: &str) -> Vec<ChatEvent> {

@@ -121,48 +121,10 @@ mod tests {
     use super::*;
     use crate::memory::sqlite::SqliteVectorStore;
     use crate::memory::VectorStore;
-    use std::sync::Mutex;
-
-    /// Simple test embedder that returns a fixed-dimension vector.
-    struct TestEmbedder {
-        dims: usize,
-        counter: Mutex<usize>,
-    }
-
-    impl TestEmbedder {
-        fn new(dims: usize) -> Self {
-            Self {
-                dims,
-                counter: Mutex::new(0),
-            }
-        }
-    }
-
-    impl Embedder for TestEmbedder {
-        fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, crate::embedding::EmbedError> {
-            let mut counter = self.counter.lock().unwrap();
-            let mut results = Vec::new();
-            for _ in texts {
-                let mut vec = vec![0.0f32; self.dims];
-                // Create slightly different vectors for each call.
-                vec[*counter % self.dims] = 1.0;
-                *counter += 1;
-                results.push(vec);
-            }
-            Ok(results)
-        }
-
-        fn dimensions(&self) -> usize {
-            self.dims
-        }
-
-        fn model_name(&self) -> &str {
-            "test-embedder"
-        }
-    }
+    use crate::testutil::MockEmbedder;
 
     fn setup() -> (Arc<dyn Embedder>, Arc<dyn VectorStore>, RememberSkill) {
-        let embedder: Arc<dyn Embedder> = Arc::new(TestEmbedder::new(3));
+        let embedder: Arc<dyn Embedder> = Arc::new(MockEmbedder::new(3));
         let store: Arc<dyn VectorStore> =
             Arc::new(SqliteVectorStore::open_in_memory("test-embedder", 3).unwrap());
         let skill = RememberSkill::new(embedder.clone(), store.clone());

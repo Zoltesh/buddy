@@ -120,48 +120,10 @@ mod tests {
     use crate::memory::sqlite::SqliteVectorStore;
     use crate::memory::{VectorEntry, VectorStore};
     use crate::skill::Skill;
-    use std::sync::Mutex;
-
-    /// Test embedder that returns deterministic vectors based on content.
-    struct TestEmbedder {
-        dims: usize,
-        /// Maps text patterns to specific vector indices for predictable similarity.
-        counter: Mutex<usize>,
-    }
-
-    impl TestEmbedder {
-        fn new(dims: usize) -> Self {
-            Self {
-                dims,
-                counter: Mutex::new(0),
-            }
-        }
-    }
-
-    impl crate::embedding::Embedder for TestEmbedder {
-        fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, crate::embedding::EmbedError> {
-            let mut counter = self.counter.lock().unwrap();
-            let mut results = Vec::new();
-            for _ in texts {
-                let mut vec = vec![0.0f32; self.dims];
-                vec[*counter % self.dims] = 1.0;
-                *counter += 1;
-                results.push(vec);
-            }
-            Ok(results)
-        }
-
-        fn dimensions(&self) -> usize {
-            self.dims
-        }
-
-        fn model_name(&self) -> &str {
-            "test-embedder"
-        }
-    }
+    use crate::testutil::MockEmbedder;
 
     fn setup() -> (Arc<dyn Embedder>, Arc<dyn VectorStore>, RecallSkill) {
-        let embedder: Arc<dyn Embedder> = Arc::new(TestEmbedder::new(3));
+        let embedder: Arc<dyn Embedder> = Arc::new(MockEmbedder::new(3));
         let store: Arc<dyn VectorStore> =
             Arc::new(SqliteVectorStore::open_in_memory("test-embedder", 3).unwrap());
         let skill = RecallSkill::new(embedder.clone(), store.clone());
