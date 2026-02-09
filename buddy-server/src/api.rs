@@ -2281,6 +2281,198 @@ endpoint = "http://localhost:1234/v1"
                 list[0].message
             );
         }
+
+        // ── Task 039: Chat UI warning banner tests ──────────────────────────
+
+        #[tokio::test]
+        async fn no_embedding_warning_has_warning_severity() {
+            let app = warnings_app(vec![], |c| {
+                c.add(Warning {
+                    code: "no_embedding_model".into(),
+                    message: "No embedding model configured.".into(),
+                    severity: WarningSeverity::Warning,
+                });
+            });
+
+            let response = app
+                .oneshot(Request::builder().uri("/api/warnings").body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            let body: serde_json::Value =
+                serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes()).unwrap();
+            let arr = body.as_array().unwrap();
+            assert_eq!(arr.len(), 1);
+            assert_eq!(arr[0]["severity"], "warning");
+            assert_eq!(arr[0]["code"], "no_embedding_model");
+            assert!(arr[0]["message"].as_str().unwrap().contains("embedding"));
+        }
+
+        #[tokio::test]
+        async fn single_chat_provider_has_info_severity() {
+            let app = warnings_app(vec![], |c| {
+                c.add(Warning {
+                    code: "single_chat_provider".into(),
+                    message: "Only one chat provider configured.".into(),
+                    severity: WarningSeverity::Info,
+                });
+            });
+
+            let response = app
+                .oneshot(Request::builder().uri("/api/warnings").body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            let body: serde_json::Value =
+                serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes()).unwrap();
+            let arr = body.as_array().unwrap();
+            assert_eq!(arr.len(), 1);
+            assert_eq!(arr[0]["severity"], "info");
+            assert_eq!(arr[0]["code"], "single_chat_provider");
+        }
+
+        #[tokio::test]
+        async fn warnings_persist_across_fetches() {
+            let warnings = new_shared_warnings();
+            {
+                let mut collector = warnings.write().unwrap();
+                collector.add(Warning {
+                    code: "no_embedding_model".into(),
+                    message: "Missing embedding.".into(),
+                    severity: WarningSeverity::Warning,
+                });
+            }
+            let state = Arc::new(AppState {
+                provider: arc_swap::ArcSwap::from_pointee(MockProvider { tokens: vec![] }),
+                registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
+                store: crate::store::Store::open_in_memory().unwrap(),
+                embedder: arc_swap::ArcSwap::from_pointee(None),
+                vector_store: arc_swap::ArcSwap::from_pointee(None),
+                working_memory: crate::skill::working_memory::new_working_memory_map(),
+                memory_config: arc_swap::ArcSwap::from_pointee(crate::config::MemoryConfig::default()),
+                warnings,
+                pending_approvals: new_pending_approvals(),
+                conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
+                approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
+                approval_timeout: std::time::Duration::from_secs(1),
+                config: std::sync::RwLock::new(test_config()),
+                config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
+                on_config_change: None,
+            });
+
+            // First fetch
+            let app1 = Router::new()
+                .route("/api/warnings", get(get_warnings::<MockProvider>))
+                .with_state(state.clone());
+            let resp1 = app1
+                .oneshot(Request::builder().uri("/api/warnings").body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            let list1: Vec<Warning> =
+                serde_json::from_slice(&resp1.into_body().collect().await.unwrap().to_bytes()).unwrap();
+
+            // Second fetch (simulates page reload)
+            let app2 = Router::new()
+                .route("/api/warnings", get(get_warnings::<MockProvider>))
+                .with_state(state);
+            let resp2 = app2
+                .oneshot(Request::builder().uri("/api/warnings").body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            let list2: Vec<Warning> =
+                serde_json::from_slice(&resp2.into_body().collect().await.unwrap().to_bytes()).unwrap();
+
+            assert_eq!(list1.len(), 1);
+            assert_eq!(list2.len(), 1);
+            assert_eq!(list1[0].code, list2[0].code);
+        }
+
+        #[tokio::test]
+        async fn multiple_warnings_all_returned() {
+            let app = warnings_app(vec![], |c| {
+                c.add(Warning {
+                    code: "no_embedding_model".into(),
+                    message: "No embedding model.".into(),
+                    severity: WarningSeverity::Warning,
+                });
+                c.add(Warning {
+                    code: "single_chat_provider".into(),
+                    message: "Single chat provider.".into(),
+                    severity: WarningSeverity::Info,
+                });
+                c.add(Warning {
+                    code: "no_vector_store".into(),
+                    message: "No vector store.".into(),
+                    severity: WarningSeverity::Warning,
+                });
+            });
+
+            let response = app
+                .oneshot(Request::builder().uri("/api/warnings").body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            let body = response.into_body().collect().await.unwrap().to_bytes();
+            let list: Vec<Warning> = serde_json::from_slice(&body).unwrap();
+            assert_eq!(list.len(), 3);
+            let codes: Vec<&str> = list.iter().map(|w| w.code.as_str()).collect();
+            assert!(codes.contains(&"no_embedding_model"));
+            assert!(codes.contains(&"single_chat_provider"));
+            assert!(codes.contains(&"no_vector_store"));
+        }
+
+        #[tokio::test]
+        async fn sse_warnings_event_updates_during_stream() {
+            let app = warnings_app(vec!["Reply".into()], |c| {
+                c.add(Warning {
+                    code: "no_embedding_model".into(),
+                    message: "No embedding model configured.".into(),
+                    severity: WarningSeverity::Warning,
+                });
+                c.add(Warning {
+                    code: "single_chat_provider".into(),
+                    message: "Only one provider.".into(),
+                    severity: WarningSeverity::Info,
+                });
+            });
+
+            let events = post_chat_raw(app, &make_chat_body()).await;
+            let warnings_event = events
+                .iter()
+                .find(|e| matches!(e, ChatEvent::Warnings { .. }))
+                .expect("expected Warnings in SSE stream");
+
+            if let ChatEvent::Warnings { warnings } = warnings_event {
+                assert_eq!(warnings.len(), 2);
+            } else {
+                panic!("expected Warnings event");
+            }
+        }
+
+        #[tokio::test]
+        async fn warning_json_includes_code_for_settings_link() {
+            let app = warnings_app(vec![], |c| {
+                c.add(Warning {
+                    code: "no_embedding_model".into(),
+                    message: "Embedding not configured.".into(),
+                    severity: WarningSeverity::Warning,
+                });
+            });
+
+            let response = app
+                .oneshot(Request::builder().uri("/api/warnings").body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            let body: serde_json::Value =
+                serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes()).unwrap();
+            let arr = body.as_array().unwrap();
+            // Verify JSON has the three fields the frontend needs: code, message, severity
+            let w = &arr[0];
+            assert!(w.get("code").is_some(), "JSON must include 'code' field");
+            assert!(w.get("message").is_some(), "JSON must include 'message' field");
+            assert!(w.get("severity").is_some(), "JSON must include 'severity' field");
+            // code must be a known value the frontend maps to a Settings link
+            let code = w["code"].as_str().unwrap();
+            let known_codes = ["no_embedding_model", "no_vector_store", "single_chat_provider", "embedding_dimension_mismatch"];
+            assert!(known_codes.contains(&code), "code {code} should be a known warning code");
+        }
     }
 
     // ── Approval tests ─────────────────────────────────────────────────

@@ -22,6 +22,13 @@ export async function deleteConversation(id) {
   if (!res.ok) throw new Error('Failed to delete conversation');
 }
 
+/** Fetch current system warnings. */
+export async function fetchWarnings() {
+  const res = await fetch('/api/warnings');
+  if (!res.ok) throw new Error('Failed to load warnings');
+  return res.json();
+}
+
 /** Fetch the current server configuration. */
 export async function fetchConfig() {
   const res = await fetch('/api/config');

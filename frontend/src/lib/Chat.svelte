@@ -1,7 +1,9 @@
 <script>
+  import { onMount } from 'svelte';
   import { marked } from 'marked';
   import {
     fetchConversation,
+    fetchWarnings,
     toDisplayItems,
   } from './api.js';
   import ToolCallBlock from './ToolCallBlock.svelte';
@@ -19,6 +21,27 @@
   let inputText = $state('');
   let isStreaming = $state(false);
   let messagesContainer;
+
+  // Warning banner state
+  let warnings = $state([]);
+  let dismissedCodes = $state(new Set());
+  let activeWarnings = $derived(warnings.filter(w => !dismissedCodes.has(w.code)));
+
+  function settingsLink(code) {
+    return '#/settings?tab=models';
+  }
+
+  function dismissWarning(code) {
+    dismissedCodes = new Set([...dismissedCodes, code]);
+  }
+
+  onMount(async () => {
+    try {
+      warnings = await fetchWarnings();
+    } catch (e) {
+      console.error('Failed to load warnings:', e);
+    }
+  });
 
   // Track which conversation we've already loaded to avoid re-fetching
   // when we ourselves trigger the activeConversationId change (e.g. during
@@ -162,6 +185,8 @@
                   timestamp: new Date().toISOString(),
                 });
                 currentAssistantIdx = displayItems.length - 1;
+              } else if (event.type === 'warnings') {
+                warnings = event.warnings;
               } else if (event.type === 'error') {
                 displayItems[currentAssistantIdx].content +=
                   `\n\nError: ${event.message}`;
@@ -210,6 +235,49 @@
       buddy
     </h1>
   </header>
+
+  <!-- Warning banners -->
+  {#if activeWarnings.length > 0}
+    <div class="flex-shrink-0 px-4 pt-3 space-y-2">
+      {#each activeWarnings as warning (warning.code)}
+        <div
+          class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm
+            {warning.severity === 'warning'
+              ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300'
+              : 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300'}"
+        >
+          {#if warning.severity === 'warning'}
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+            </svg>
+          {:else}
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M12 2a10 10 0 100 20 10 10 0 000-20z" />
+            </svg>
+          {/if}
+          <span class="flex-1">{warning.message}</span>
+          <a
+            href={settingsLink(warning.code)}
+            class="flex-shrink-0 font-medium underline hover:no-underline
+              {warning.severity === 'warning'
+                ? 'text-amber-700 dark:text-amber-400'
+                : 'text-blue-700 dark:text-blue-400'}"
+          >
+            Settings
+          </a>
+          <button
+            onclick={() => dismissWarning(warning.code)}
+            class="flex-shrink-0 p-0.5 rounded hover:bg-black/10 dark:hover:bg-white/10 transition-colors cursor-pointer"
+            aria-label="Dismiss warning"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      {/each}
+    </div>
+  {/if}
 
   <!-- Messages -->
   <div

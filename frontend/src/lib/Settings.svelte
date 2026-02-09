@@ -2,6 +2,8 @@
   import { onMount, onDestroy } from 'svelte';
   import { fetchConfig, putConfigChat, putConfigMemory, putConfigModels, putConfigSkills, testProvider } from './api.js';
 
+  let { initialTab = null } = $props();
+
   let config = $state(null);
   let loading = $state(true);
   let error = $state(null);
@@ -15,7 +17,13 @@
   let saving = $state(false);
   let saveMessage = $state(null);
 
-  onMount(loadConfig);
+  onMount(() => {
+    const validTabs = ['general', 'models', 'skills'];
+    if (validTabs.includes(initialTab)) {
+      activeTab = initialTab;
+    }
+    loadConfig();
+  });
 
   async function loadConfig() {
     loading = true;

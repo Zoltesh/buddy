@@ -12,9 +12,18 @@
   let activeConversationId = $state(null);
   let sidebarOpen = $state(false);
   let currentRoute = $state(getRoute());
+  let hashParams = $state(getHashParams());
 
   function getRoute() {
-    return window.location.hash.slice(1) || '/';
+    const hash = window.location.hash.slice(1) || '/';
+    const qIdx = hash.indexOf('?');
+    return qIdx >= 0 ? hash.slice(0, qIdx) : hash;
+  }
+
+  function getHashParams() {
+    const hash = window.location.hash.slice(1) || '/';
+    const qIdx = hash.indexOf('?');
+    return qIdx >= 0 ? new URLSearchParams(hash.slice(qIdx + 1)) : new URLSearchParams();
   }
 
   onMount(() => {
@@ -22,6 +31,7 @@
 
     function onHashChange() {
       currentRoute = getRoute();
+      hashParams = getHashParams();
       sidebarOpen = false;
     }
     window.addEventListener('hashchange', onHashChange);
@@ -133,6 +143,6 @@
   </div>
 
   {#if currentRoute === '/settings'}
-    <Settings />
+    <Settings initialTab={hashParams.get('tab')} />
   {/if}
 </div>

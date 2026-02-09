@@ -30,22 +30,22 @@ Users are clearly informed in the chat interface when features are degraded, wit
 
 ## Acceptance Criteria
 
-- [ ] Warnings from `GET /api/warnings` are displayed as banners in the chat UI
-- [ ] Warning severity determines banner color (yellow for Warning, blue for Info)
-- [ ] Each banner includes a link to the relevant Settings section
-- [ ] Banners are dismissible for the current session
-- [ ] Dismissed banners reappear on page reload if the issue persists
-- [ ] Multiple warnings stack vertically
-- [ ] Banners update when new `ChatEvent::Warnings` events arrive
-- [ ] No banner space is rendered when there are no warnings
-- [ ] Banner links navigate to the correct Settings section
+- [x] Warnings from `GET /api/warnings` are displayed as banners in the chat UI
+- [x] Warning severity determines banner color (yellow for Warning, blue for Info)
+- [x] Each banner includes a link to the relevant Settings section
+- [x] Banners are dismissible for the current session
+- [x] Dismissed banners reappear on page reload if the issue persists
+- [x] Multiple warnings stack vertically
+- [x] Banners update when new `ChatEvent::Warnings` events arrive
+- [x] No banner space is rendered when there are no warnings
+- [x] Banner links navigate to the correct Settings section
 
 ## Test Cases
 
-- [ ] Load chat with a `no_embedding_model` warning active; assert a yellow banner appears with a message about embedding and a link to Settings
-- [ ] Load chat with a `single_chat_provider` info; assert a blue/gray banner appears with a link to Settings > Models
-- [ ] Load chat with no warnings; assert no banner is rendered
-- [ ] Dismiss a warning banner; assert it disappears; reload the page; assert it reappears
-- [ ] Load chat with multiple warnings; assert all are displayed as stacked banners
-- [ ] Start a chat that emits a `ChatEvent::Warnings` event; assert banners update to reflect the new warnings
-- [ ] Click the Settings link in a banner; assert navigation to the Settings page
+- [x] Load chat with a `no_embedding_model` warning active; assert a yellow banner appears with a message about embedding and a link to Settings
+- [x] Load chat with a `single_chat_provider` info; assert a blue/gray banner appears with a link to Settings > Models
+- [x] Load chat with no warnings; assert no banner is rendered
+- [x] Dismiss a warning banner; assert it disappears; reload the page; assert it reappears
+- [x] Load chat with multiple warnings; assert all are displayed as stacked banners
+- [x] Start a chat that emits a `ChatEvent::Warnings` event; assert banners update to reflect the new warnings
+- [x] Click the Settings link in a banner; assert navigation to the Settings page
