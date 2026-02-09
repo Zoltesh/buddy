@@ -19,7 +19,7 @@ mod testutil;
 mod types;
 mod warning;
 
-use api::{approve_handler, chat_handler, clear_memory, create_conversation, delete_conversation, get_config, get_conversation, get_warnings, list_conversations, migrate_memory, new_pending_approvals, put_config_chat, put_config_memory, put_config_models, put_config_server, put_config_skills, test_provider, AppState};
+use api::{approve_handler, chat_handler, clear_memory, create_conversation, delete_conversation, discover_models, get_config, get_conversation, get_warnings, list_conversations, migrate_memory, new_pending_approvals, put_config_chat, put_config_memory, put_config_models, put_config_server, put_config_skills, test_provider, AppState};
 use provider::{AnyProvider, ProviderChain};
 use store::Store;
 
@@ -111,6 +111,7 @@ async fn main() {
         .route("/api/config/server", put(put_config_server::<AppProvider>))
         .route("/api/config/memory", put(put_config_memory::<AppProvider>))
         .route("/api/config/test-provider", post(test_provider::<AppProvider>))
+        .route("/api/config/discover-models", post(discover_models::<AppProvider>))
         .with_state(state)
         .fallback_service(
             ServeDir::new("frontend/dist")

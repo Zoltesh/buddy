@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{ApiError, AppState};
 use crate::provider::Provider;
+use url::Url;
 
 // ── Validation types and helpers ────────────────────────────────────────
 
@@ -404,4 +405,160 @@ pub async fn test_provider<P: Provider + 'static>(
         })
         .into_response(),
     }
+}
+
+// ── Model discovery ─────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct DiscoverModelsRequest {
+    pub endpoint: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct DiscoveredModel {
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub loaded: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_length: Option<u64>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct DiscoverModelsResponse {
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub models: Option<Vec<DiscoveredModel>>,
+}
+
+/// Extract the origin (scheme + host + port) from an endpoint URL.
+fn base_url(endpoint: &str) -> Result<Url, String> {
+    let mut url = Url::parse(endpoint).map_err(|e| format!("invalid endpoint URL: {e}"))?;
+    url.set_path("");
+    url.set_query(None);
+    url.set_fragment(None);
+    Ok(url)
+}
+
+/// Try the native LM Studio REST API (`/api/v0/models`).
+async fn try_native_discovery(
+    client: &reqwest::Client,
+    base: &Url,
+) -> Option<Vec<DiscoveredModel>> {
+    let url = format!("{}api/v0/models", base.as_str());
+    let resp = client.get(&url).send().await.ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    let json: serde_json::Value = resp.json().await.ok()?;
+    let data = json.get("data")?.as_array()?;
+    let models = data
+        .iter()
+        .filter_map(|m| {
+            let id = m.get("id")?.as_str()?.to_string();
+            let loaded = m
+                .get("state")
+                .and_then(|s| s.as_str())
+                .map(|s| s == "loaded");
+            let context_length = m
+                .get("max_context_length")
+                .and_then(|v| v.as_u64());
+            Some(DiscoveredModel {
+                id,
+                loaded,
+                context_length,
+            })
+        })
+        .collect();
+    Some(models)
+}
+
+/// Fallback: try the OpenAI-compatible `/models` endpoint.
+async fn try_openai_discovery(
+    client: &reqwest::Client,
+    endpoint: &str,
+) -> Option<Vec<DiscoveredModel>> {
+    let url = format!("{}/models", endpoint.trim_end_matches('/'));
+    let resp = client.get(&url).send().await.ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    let json: serde_json::Value = resp.json().await.ok()?;
+    let data = json.get("data")?.as_array()?;
+    let models = data
+        .iter()
+        .filter_map(|m| {
+            let id = m.get("id")?.as_str()?.to_string();
+            Some(DiscoveredModel {
+                id,
+                loaded: None,
+                context_length: None,
+            })
+        })
+        .collect();
+    Some(models)
+}
+
+/// `POST /api/config/discover-models` — query an LM Studio endpoint for available models.
+pub async fn discover_models<P: Provider + 'static>(
+    State(_state): State<Arc<AppState<P>>>,
+    Json(req): Json<DiscoverModelsRequest>,
+) -> Json<DiscoverModelsResponse> {
+    if req.endpoint.trim().is_empty() {
+        return Json(DiscoverModelsResponse {
+            status: "error".into(),
+            message: Some("endpoint is required".into()),
+            models: None,
+        });
+    }
+
+    let base = match base_url(&req.endpoint) {
+        Ok(b) => b,
+        Err(e) => {
+            return Json(DiscoverModelsResponse {
+                status: "error".into(),
+                message: Some(e),
+                models: None,
+            });
+        }
+    };
+
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            return Json(DiscoverModelsResponse {
+                status: "error".into(),
+                message: Some(format!("failed to build HTTP client: {e}")),
+                models: None,
+            });
+        }
+    };
+
+    // Try native LM Studio API first for richer metadata.
+    if let Some(models) = try_native_discovery(&client, &base).await {
+        return Json(DiscoverModelsResponse {
+            status: "ok".into(),
+            message: None,
+            models: Some(models),
+        });
+    }
+
+    // Fall back to OpenAI-compatible /models endpoint.
+    if let Some(models) = try_openai_discovery(&client, &req.endpoint).await {
+        return Json(DiscoverModelsResponse {
+            status: "ok".into(),
+            message: None,
+            models: Some(models),
+        });
+    }
+
+    Json(DiscoverModelsResponse {
+        status: "error".into(),
+        message: Some("Connection failed: could not reach the models endpoint".into()),
+        models: None,
+    })
 }

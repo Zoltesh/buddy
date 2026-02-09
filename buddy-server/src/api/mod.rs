@@ -33,8 +33,8 @@ use crate::provider::Provider;
 // Re-export handler functions for use in main.rs router setup.
 pub use chat::{approve_handler, chat_handler};
 pub use config::{
-    get_config, put_config_chat, put_config_memory, put_config_models, put_config_server,
-    put_config_skills, test_provider,
+    discover_models, get_config, put_config_chat, put_config_memory, put_config_models,
+    put_config_server, put_config_skills, test_provider,
 };
 pub use conversation::{
     create_conversation, delete_conversation, get_conversation, list_conversations,

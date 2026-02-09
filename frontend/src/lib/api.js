@@ -75,6 +75,22 @@ export function putConfigSkills(skills) {
   return putConfigSection('skills', skills);
 }
 
+/** Discover available models from an LM Studio endpoint. */
+export async function discoverModels(endpoint) {
+  const res = await fetch('/api/config/discover-models', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ endpoint }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    const err = new Error('Discovery failed');
+    err.details = data;
+    throw err;
+  }
+  return data;
+}
+
 /** Test a provider's connectivity without saving. */
 export async function testProvider(entry) {
   const res = await fetch('/api/config/test-provider', {

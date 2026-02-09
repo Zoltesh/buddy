@@ -1,6 +1,6 @@
 <script>
   import { onDestroy } from 'svelte';
-  import { formatApiError, putConfigModels, testProvider } from '../api.js';
+  import { discoverModels, formatApiError, putConfigModels, testProvider } from '../api.js';
 
   let { config = $bindable() } = $props();
 
@@ -18,6 +18,11 @@
   let providerStatus = $state({}); // keyed by "chat_0", "embedding_1", etc.
   let recheckRunning = $state(false);
   let touchedFields = $state({}); // tracks which form fields have been blurred
+
+  // Model discovery state
+  let discovering = $state(false);
+  let discoveredModels = $state(null); // array or null
+  let discoveryError = $state(null);
 
   // Drag-and-drop reorder state
   let drag = $state(null); // { slot, fromIndex, currentIndex, snapshot }
@@ -157,6 +162,8 @@
     modelErrors = {};
     touchedFields = {};
     testResult = null;
+    discoveredModels = null;
+    discoveryError = null;
   }
 
   function startEdit(slot, index) {
@@ -170,6 +177,8 @@
     modelErrors = {};
     touchedFields = {};
     testResult = null;
+    discoveredModels = null;
+    discoveryError = null;
   }
 
   function cancelEdit() {
@@ -177,6 +186,8 @@
     modelErrors = {};
     touchedFields = {};
     testResult = null;
+    discoveredModels = null;
+    discoveryError = null;
   }
 
   function markTouched(field) {
@@ -290,6 +301,37 @@
     }
   }
 
+  async function runDiscoverModels() {
+    const endpoint = editingProvider?.form?.endpoint?.trim();
+    if (!endpoint) {
+      discoveryError = 'Enter an endpoint first';
+      return;
+    }
+    discovering = true;
+    discoveredModels = null;
+    discoveryError = null;
+    try {
+      const result = await discoverModels(endpoint);
+      if (result.status === 'ok' && result.models?.length > 0) {
+        discoveredModels = result.models;
+      } else if (result.status === 'ok') {
+        discoveryError = 'No models found';
+      } else {
+        discoveryError = result.message || 'Discovery failed';
+      }
+    } catch (e) {
+      discoveryError = formatApiError(e, { includeField: false });
+    } finally {
+      discovering = false;
+    }
+  }
+
+  function selectDiscoveredModel(id) {
+    editingProvider.form.model = id;
+    discoveredModels = null;
+    discoveryError = null;
+  }
+
   // ── Section status ──────────────────────────────────────────────────
 
   function chatSectionStatus() {
@@ -347,6 +389,44 @@
       />
       {#if modelErrors.model || getFieldError('model')}
         <p class="text-xs text-red-600 dark:text-red-400 mt-1">{modelErrors.model || getFieldError('model')}</p>
+      {/if}
+      {#if editingProvider.form.type === 'lmstudio'}
+        <div class="flex items-center gap-2 mt-1.5">
+          <button
+            onclick={runDiscoverModels}
+            disabled={discovering || savingModels}
+            class="px-2.5 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded-md
+                   text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800
+                   disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+          >
+            {discovering ? 'Discovering...' : 'Discover Models'}
+          </button>
+          {#if discoveryError}
+            <span class="text-xs text-red-600 dark:text-red-400">{discoveryError}</span>
+          {/if}
+        </div>
+        {#if discoveredModels}
+          <div class="mt-1.5 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 max-h-40 overflow-y-auto">
+            {#each discoveredModels as m}
+              <button
+                onclick={() => selectDiscoveredModel(m.id)}
+                class="w-full text-left px-3 py-1.5 text-sm hover:bg-blue-50 dark:hover:bg-blue-900/30
+                       transition-colors cursor-pointer
+                       {m.id === editingProvider.form.model ? 'bg-blue-50 dark:bg-blue-900/30 font-medium' : ''}"
+              >
+                <span class="text-gray-900 dark:text-gray-100">{m.id}</span>
+                {#if m.loaded != null}
+                  <span class="ml-2 text-xs {m.loaded ? 'text-green-600 dark:text-green-400' : 'text-gray-400 dark:text-gray-500'}">
+                    {m.loaded ? 'loaded' : 'not loaded'}
+                  </span>
+                {/if}
+                {#if m.context_length}
+                  <span class="ml-2 text-xs text-gray-400 dark:text-gray-500">{m.context_length.toLocaleString()} ctx</span>
+                {/if}
+              </button>
+            {/each}
+          </div>
+        {/if}
       {/if}
     </div>
 

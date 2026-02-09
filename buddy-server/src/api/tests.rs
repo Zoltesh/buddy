@@ -2808,6 +2808,240 @@ approval = "once"
     }
 }
 
+/// Tests for task 041 — LM Studio model discovery.
+mod discover_models {
+    use super::*;
+
+    fn discover_app() -> Router {
+        let state = Arc::new(AppState {
+            provider: arc_swap::ArcSwap::from_pointee(MockProvider {
+                tokens: vec!["hi".into()],
+            }),
+            registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
+            store: crate::store::Store::open_in_memory().unwrap(),
+            embedder: arc_swap::ArcSwap::from_pointee(None),
+            vector_store: arc_swap::ArcSwap::from_pointee(None),
+            working_memory: crate::skill::working_memory::new_working_memory_map(),
+            memory_config: arc_swap::ArcSwap::from_pointee(
+                crate::config::MemoryConfig::default(),
+            ),
+            warnings: crate::warning::new_shared_warnings(),
+            pending_approvals: new_pending_approvals(),
+            conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
+            approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
+            approval_timeout: std::time::Duration::from_secs(1),
+            config: std::sync::RwLock::new(test_config()),
+            config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
+            on_config_change: None,
+        });
+        Router::new()
+            .route(
+                "/api/config/discover-models",
+                post(super::super::config::discover_models::<MockProvider>),
+            )
+            .route("/api/config", get(get_config::<MockProvider>))
+            .with_state(state)
+    }
+
+    fn post_discover(endpoint: &str) -> Request<Body> {
+        Request::builder()
+            .method("POST")
+            .uri("/api/config/discover-models")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({ "endpoint": endpoint }).to_string(),
+            ))
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn discover_unreachable_endpoint_returns_error() {
+        let app = discover_app();
+        let response = app.oneshot(post_discover("http://127.0.0.1:1")).await.unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["status"], "error");
+        assert!(json["message"].as_str().unwrap().contains("Connection failed"));
+    }
+
+    #[tokio::test]
+    async fn discover_empty_endpoint_returns_error() {
+        let app = discover_app();
+        let response = app.oneshot(post_discover("")).await.unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["status"], "error");
+        assert!(json["message"].as_str().unwrap().contains("endpoint"));
+    }
+
+    #[tokio::test]
+    async fn discover_with_mock_native_api() {
+        // Start a mock server that returns LM Studio native API response.
+        let mock_app = Router::new().route(
+            "/api/v0/models",
+            get(|| async {
+                axum::Json(serde_json::json!({
+                    "object": "list",
+                    "data": [
+                        {
+                            "id": "qwen/qwen3-8b",
+                            "object": "model",
+                            "type": "llm",
+                            "state": "loaded",
+                            "max_context_length": 32768
+                        },
+                        {
+                            "id": "meta-llama/llama-3.1-8b",
+                            "object": "model",
+                            "type": "llm",
+                            "state": "not-loaded",
+                            "max_context_length": 8192
+                        }
+                    ]
+                }))
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, mock_app).await.unwrap();
+        });
+
+        let app = discover_app();
+        let response = app
+            .oneshot(post_discover(&format!("http://{addr}/v1")))
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["status"], "ok");
+
+        let models = json["models"].as_array().unwrap();
+        assert_eq!(models.len(), 2);
+        assert_eq!(models[0]["id"], "qwen/qwen3-8b");
+        assert_eq!(models[0]["loaded"], true);
+        assert_eq!(models[0]["context_length"], 32768);
+        assert_eq!(models[1]["id"], "meta-llama/llama-3.1-8b");
+        assert_eq!(models[1]["loaded"], false);
+
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn discover_falls_back_to_openai_compat() {
+        // Mock server that only has /v1/models (no native API).
+        let mock_app = Router::new().route(
+            "/v1/models",
+            get(|| async {
+                axum::Json(serde_json::json!({
+                    "object": "list",
+                    "data": [
+                        { "id": "gpt-4o-mini", "object": "model" },
+                        { "id": "gpt-4", "object": "model" }
+                    ]
+                }))
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, mock_app).await.unwrap();
+        });
+
+        let app = discover_app();
+        let response = app
+            .oneshot(post_discover(&format!("http://{addr}/v1")))
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["status"], "ok");
+
+        let models = json["models"].as_array().unwrap();
+        assert_eq!(models.len(), 2);
+        assert_eq!(models[0]["id"], "gpt-4o-mini");
+        // OpenAI-compat fallback doesn't provide loaded/context_length
+        assert!(models[0].get("loaded").is_none());
+
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn discover_timeout_when_endpoint_hangs() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let _handle = tokio::spawn(async move {
+            loop {
+                let _ = listener.accept().await;
+            }
+        });
+
+        let app = discover_app();
+        let start = std::time::Instant::now();
+        let response = app
+            .oneshot(post_discover(&format!("http://{addr}/v1")))
+            .await
+            .unwrap();
+        let elapsed = start.elapsed();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["status"], "error");
+
+        assert!(
+            elapsed < std::time::Duration::from_secs(10),
+            "request took too long: {elapsed:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn discover_does_not_modify_config() {
+        let app = discover_app();
+
+        let before = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/config")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let before_bytes = before.into_body().collect().await.unwrap().to_bytes();
+
+        let _ = app
+            .clone()
+            .oneshot(post_discover("http://127.0.0.1:1"))
+            .await
+            .unwrap();
+
+        let after = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/config")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let after_bytes = after.into_body().collect().await.unwrap().to_bytes();
+
+        assert_eq!(before_bytes, after_bytes);
+    }
+}
+
 /// Tests for task 034 — Settings page layout.
 /// Verify the API contracts that the Settings frontend depends on.
 mod settings_page {
