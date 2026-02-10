@@ -39,6 +39,10 @@ impl Embedder for LocalEmbedder {
     fn model_name(&self) -> &str {
         MODEL_NAME
     }
+
+    fn provider_type(&self) -> &str {
+        "local"
+    }
 }
 
 #[cfg(test)]

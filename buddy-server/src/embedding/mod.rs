@@ -32,4 +32,7 @@ pub trait Embedder: Send + Sync {
 
     /// Model identifier string.
     fn model_name(&self) -> &str;
+
+    /// Provider type identifier (e.g., "local", "openai").
+    fn provider_type(&self) -> &str;
 }

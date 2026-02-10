@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use crate::config::{ApprovalPolicy, Config};
 use crate::embedding;
+use crate::embedding::Embedder;
 use crate::memory;
 use crate::provider::lmstudio::LmStudioProvider;
 use crate::provider::openai::OpenAiProvider;
@@ -120,6 +121,16 @@ pub fn build_embedder(
     if needs_local {
         let embedder = embedding::local::LocalEmbedder::new()
             .map_err(|e| ReloadError::EmbedderInit(e.to_string()))?;
+        let model = embedder.model_name();
+        let dims = embedder.dimensions();
+
+        // Log which embedder is being used
+        if has_local {
+            println!("Using external embedder: {model}");
+        } else {
+            println!("Using built-in local embedder ({model}, {dims} dims)");
+        }
+
         return Ok(Some(Arc::new(embedder) as Arc<dyn embedding::Embedder>));
     }
 
@@ -202,7 +213,7 @@ pub fn build_approval_overrides(
 pub fn refresh_warnings(
     warnings: &warning::SharedWarnings,
     provider_count: usize,
-    embedder: &Option<Arc<dyn embedding::Embedder>>,
+    _embedder: &Option<Arc<dyn embedding::Embedder>>,
     vector_store: &Option<Arc<dyn memory::VectorStore>>,
 ) {
     let mut collector = warnings.write().unwrap();
@@ -392,5 +403,168 @@ approval = "trust"
         let list = collector.list();
         let count = list.iter().filter(|w| w.code == "no_vector_store").count();
         assert_eq!(count, 1, "should not duplicate warnings after refresh");
+    }
+
+    // Test cases for task 042: Default Local Embedder Activation
+
+    #[test]
+    fn build_embedder_with_no_embedding_section_returns_local_embedder() {
+        // Start with a config that has no [models.embedding] section
+        let config = lmstudio_config();
+        let embedder = build_embedder(&config).unwrap();
+
+        // Assert it returns Some containing a LocalEmbedder
+        assert!(embedder.is_some(), "embedder should be Some");
+        let embedder = embedder.unwrap();
+
+        // Verify model name and dimensions
+        assert_eq!(
+            embedder.model_name(),
+            "all-MiniLM-L6-v2",
+            "model name should be all-MiniLM-L6-v2"
+        );
+        assert_eq!(embedder.dimensions(), 384, "dimensions should be 384");
+    }
+
+    #[test]
+    fn build_embedder_with_explicit_local_provider_returns_local_embedder() {
+        // Start with a config that has one external embedding provider
+        let config = Config::parse(
+            r#"
+[[models.chat.providers]]
+type = "lmstudio"
+model = "test-model"
+endpoint = "http://localhost:1234/v1"
+
+[[models.embedding.providers]]
+type = "local"
+model = "all-MiniLM-L6-v2"
+"#,
+        )
+        .unwrap();
+
+        let embedder = build_embedder(&config).unwrap();
+
+        // Assert it returns the external provider (which is currently local)
+        assert!(embedder.is_some(), "embedder should be Some");
+        let embedder = embedder.unwrap();
+        assert_eq!(embedder.model_name(), "all-MiniLM-L6-v2");
+    }
+
+    #[test]
+    fn build_vector_store_with_default_embedder_succeeds() {
+        // Start with a config that has no [models.embedding] section
+        let config = lmstudio_config();
+        let embedder = build_embedder(&config).unwrap();
+
+        // Call build_vector_store with the default embedder
+        let vector_store = build_vector_store(&embedder).unwrap();
+
+        // Assert it returns a functioning SqliteVectorStore
+        assert!(
+            vector_store.is_some(),
+            "vector store should be created with embedder"
+        );
+    }
+
+    #[test]
+    fn no_embedding_provider_warning_not_emitted_with_default_embedder() {
+        // Start with a config that has no [models.embedding] section
+        let config = lmstudio_config();
+        let embedder = build_embedder(&config).unwrap();
+        let vector_store = build_vector_store(&embedder).unwrap();
+
+        // Collect warnings
+        let warnings = warning::new_shared_warnings();
+        refresh_warnings(&warnings, 1, &embedder, &vector_store);
+
+        // Assert the list does NOT contain a warning with code "no_embedding_provider"
+        let collector = warnings.read().unwrap();
+        let list = collector.list();
+        assert!(
+            !list
+                .iter()
+                .any(|w| w.code == "no_embedding_provider"),
+            "should not emit no_embedding_provider warning"
+        );
+    }
+
+    #[test]
+    fn reload_from_config_activates_local_embedder_when_external_removed() {
+        use crate::api::AppState;
+        use crate::skill;
+        use crate::store::Store;
+
+        // Start with a config that has an external provider (local type)
+        let config_with_external = Config::parse(
+            r#"
+[[models.chat.providers]]
+type = "lmstudio"
+model = "test-model"
+endpoint = "http://localhost:1234/v1"
+
+[[models.embedding.providers]]
+type = "local"
+model = "all-MiniLM-L6-v2"
+"#,
+        )
+        .unwrap();
+
+        // Create AppState with the initial config
+        let tmp = std::env::temp_dir().join("buddy_test_reload_embedder");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let db_path = tmp.join("test.db");
+
+        let store = Store::open(&db_path).unwrap();
+        let provider = build_provider_chain(&config_with_external).unwrap();
+        let embedder = build_embedder(&config_with_external).unwrap();
+        let vector_store = build_vector_store(&embedder).unwrap();
+        let working_memory = skill::working_memory::new_working_memory_map();
+        let registry = build_skill_registry(
+            &config_with_external,
+            working_memory.clone(),
+            &embedder,
+            &vector_store,
+        );
+        let approval_overrides = build_approval_overrides(&config_with_external);
+        let warnings = warning::new_shared_warnings();
+
+        let state = AppState {
+            provider: arc_swap::ArcSwap::from_pointee(provider),
+            registry: arc_swap::ArcSwap::from_pointee(registry),
+            store,
+            embedder: arc_swap::ArcSwap::from_pointee(embedder),
+            vector_store: arc_swap::ArcSwap::from_pointee(vector_store),
+            working_memory,
+            memory_config: arc_swap::ArcSwap::from_pointee(config_with_external.memory.clone()),
+            warnings,
+            pending_approvals: crate::api::new_pending_approvals(),
+            conversation_approvals: Arc::new(tokio::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
+            approval_overrides: arc_swap::ArcSwap::from_pointee(approval_overrides),
+            approval_timeout: std::time::Duration::from_secs(60),
+            config: std::sync::RwLock::new(config_with_external),
+            config_path: tmp.join("buddy.toml"),
+            on_config_change: None,
+        };
+
+        // Call reload_from_config with a config that removes all external providers
+        let config_without_external = lmstudio_config();
+        reload_from_config(&config_without_external, &state).unwrap();
+
+        // Assert the embedder is now a LocalEmbedder
+        let embedder = state.embedder.load();
+        assert!(embedder.is_some(), "embedder should be Some after reload");
+        let embedder = embedder.as_ref().as_ref().unwrap();
+        assert_eq!(
+            embedder.model_name(),
+            "all-MiniLM-L6-v2",
+            "should be local embedder after reload"
+        );
+
+        // Cleanup
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

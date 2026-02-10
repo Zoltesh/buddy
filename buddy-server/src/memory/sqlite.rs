@@ -277,6 +277,30 @@ impl VectorStore for SqliteVectorStore {
     fn needs_migration(&self) -> bool {
         self.migration_required.load(Ordering::Relaxed)
     }
+
+    fn count(&self) -> Result<usize, VectorStoreError> {
+        let conn = self.conn.lock().unwrap();
+        let count: usize = conn
+            .query_row("SELECT COUNT(*) FROM vectors", [], |row| row.get(0))
+            .map_err(|e| VectorStoreError::StorageError(format!("failed to count entries: {e}")))?;
+        Ok(count)
+    }
+
+    fn stored_model_info(&self) -> Result<Option<super::StoredModelInfo>, VectorStoreError> {
+        let conn = self.conn.lock().unwrap();
+        let result: Option<(String, i64)> = conn
+            .query_row(
+                "SELECT model_name, dimensions FROM vectors LIMIT 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .ok();
+
+        Ok(result.map(|(model_name, dimensions)| super::StoredModelInfo {
+            model_name,
+            dimensions: dimensions as usize,
+        }))
+    }
 }
 
 #[cfg(test)]

@@ -61,6 +61,13 @@ pub struct StoreMetadata {
     pub entry_count: usize,
 }
 
+/// Information about the stored embeddings model.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StoredModelInfo {
+    pub model_name: String,
+    pub dimensions: usize,
+}
+
 /// Trait abstracting vector storage and similarity search.
 pub trait VectorStore: Send + Sync {
     fn store(&self, entry: VectorEntry) -> Result<(), VectorStoreError>;
@@ -77,4 +84,9 @@ pub trait VectorStore: Send + Sync {
     fn clear(&self) -> Result<(), VectorStoreError>;
     /// Returns true when the embedding model has changed and migration is needed.
     fn needs_migration(&self) -> bool;
+    /// Returns the number of stored entries.
+    fn count(&self) -> Result<usize, VectorStoreError>;
+    /// Returns the model name and dimensions from the stored vectors (not the current config).
+    /// Returns None if the store is empty.
+    fn stored_model_info(&self) -> Result<Option<StoredModelInfo>, VectorStoreError>;
 }

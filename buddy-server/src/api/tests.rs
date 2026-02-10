@@ -4235,3 +4235,336 @@ mod app_shell_navigation {
         );
     }
 }
+
+// ── Task 044: Embedding migration detection ────────────────────────────
+
+use axum::routing::put;
+use crate::testutil::MockEmbedder;
+use crate::memory::sqlite::SqliteVectorStore;
+use crate::memory::{VectorEntry, VectorStore};
+use crate::api::config::put_config_models;
+use crate::api::memory::get_memory_status;
+
+fn test_app_with_vector_store(
+    embedder: Option<Arc<dyn crate::embedding::Embedder>>,
+    vector_store: Option<Arc<dyn VectorStore>>,
+) -> Router {
+    let state = Arc::new(AppState {
+        provider: arc_swap::ArcSwap::from_pointee(MockProvider { tokens: vec![] }),
+        registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
+        store: crate::store::Store::open_in_memory().unwrap(),
+        embedder: arc_swap::ArcSwap::from_pointee(embedder),
+        vector_store: arc_swap::ArcSwap::from_pointee(vector_store),
+        working_memory: crate::skill::working_memory::new_working_memory_map(),
+        memory_config: arc_swap::ArcSwap::from_pointee(crate::config::MemoryConfig::default()),
+        warnings: crate::warning::new_shared_warnings(),
+        pending_approvals: new_pending_approvals(),
+        conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
+        approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
+        approval_timeout: std::time::Duration::from_secs(1),
+        config: std::sync::RwLock::new(test_config()),
+        config_path: std::path::PathBuf::from("/tmp/buddy-test-044.toml"),
+        on_config_change: None,
+    });
+    Router::new()
+        .route("/api/config/models", put(put_config_models::<MockProvider>))
+        .route("/api/memory/status", get(get_memory_status::<MockProvider>))
+        .with_state(state)
+}
+
+#[tokio::test]
+async fn migration_required_when_model_changed_and_memories_exist() {
+    // Store one memory with model "A".
+    let store = Arc::new(SqliteVectorStore::open_in_memory("model-A", 3).unwrap());
+    store.store(VectorEntry {
+        id: "e1".to_string(),
+        embedding: vec![1.0, 0.0, 0.0],
+        source_text: "test memory".to_string(),
+        metadata: serde_json::json!({}),
+    }).unwrap();
+
+    // Change config to model "B" (different dimensions).
+    let embedder_b: Arc<dyn crate::embedding::Embedder> = Arc::new(MockEmbedder::new(5));
+    let store_b = Arc::new(SqliteVectorStore::open_in_memory("model-B", 5).unwrap());
+    // Copy entry with old dimensions to trigger mismatch.
+    store_b.store(VectorEntry {
+        id: "e1".to_string(),
+        embedding: vec![1.0, 0.0, 0.0],
+        source_text: "test memory".to_string(),
+        metadata: serde_json::json!({}),
+    }).unwrap_err(); // This will fail dimension check, so let's simulate properly.
+
+    // Actually, let's simulate the real scenario: store with model A has an entry,
+    // then we open with model B config.
+    let path = std::env::temp_dir().join("buddy-test-044-migration-required.db");
+    let _ = std::fs::remove_file(&path);
+
+    {
+        let store_a = SqliteVectorStore::open(&path, "model-A", 3).unwrap();
+        store_a.store(VectorEntry {
+            id: "e1".to_string(),
+            embedding: vec![1.0, 0.0, 0.0],
+            source_text: "test memory".to_string(),
+            metadata: serde_json::json!({}),
+        }).unwrap();
+    }
+
+    // Now open with model B - this will detect migration needed.
+    let store_b = Arc::new(SqliteVectorStore::open(&path, "model-B", 5).unwrap());
+    let embedder_b: Arc<dyn crate::embedding::Embedder> = Arc::new(MockEmbedder::new(5));
+
+    let app = test_app_with_vector_store(Some(embedder_b), Some(store_b));
+
+    let body = serde_json::json!({
+        "chat": {
+            "providers": [
+                {
+                    "type": "lmstudio",
+                    "model": "new-model",
+                    "endpoint": "http://localhost:1234/v1"
+                }
+            ]
+        }
+    });
+
+    let req = Request::builder()
+        .method("PUT")
+        .uri("/api/config/models")
+        .header("content-type", "application/json")
+        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body_bytes = resp.into_body().collect().await.unwrap().to_bytes();
+    let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert_eq!(
+        json["embedding_migration_required"], true,
+        "should require migration when model changed and memories exist"
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
+
+#[tokio::test]
+async fn migration_not_required_when_no_memories() {
+    // Empty store with model B.
+    let store = Arc::new(SqliteVectorStore::open_in_memory("model-B", 5).unwrap());
+    let embedder: Arc<dyn crate::embedding::Embedder> = Arc::new(MockEmbedder::new(5));
+
+    let app = test_app_with_vector_store(Some(embedder), Some(store));
+
+    let body = serde_json::json!({
+        "chat": {
+            "providers": [
+                {
+                    "type": "lmstudio",
+                    "model": "different-model",
+                    "endpoint": "http://localhost:1234/v1"
+                }
+            ]
+        }
+    });
+
+    let req = Request::builder()
+        .method("PUT")
+        .uri("/api/config/models")
+        .header("content-type", "application/json")
+        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body_bytes = resp.into_body().collect().await.unwrap().to_bytes();
+    let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert_eq!(
+        json["embedding_migration_required"], false,
+        "should not require migration when no memories exist"
+    );
+}
+
+#[tokio::test]
+async fn migration_not_required_when_model_unchanged() {
+    // Store with model A, keep using model A.
+    let path = std::env::temp_dir().join("buddy-test-044-no-change.db");
+    let _ = std::fs::remove_file(&path);
+
+    {
+        let store_a = SqliteVectorStore::open(&path, "model-A", 3).unwrap();
+        store_a.store(VectorEntry {
+            id: "e1".to_string(),
+            embedding: vec![1.0, 0.0, 0.0],
+            source_text: "test memory".to_string(),
+            metadata: serde_json::json!({}),
+        }).unwrap();
+    }
+
+    let store = Arc::new(SqliteVectorStore::open(&path, "model-A", 3).unwrap());
+    let embedder: Arc<dyn crate::embedding::Embedder> = Arc::new(MockEmbedder::new(3));
+
+    let app = test_app_with_vector_store(Some(embedder), Some(store));
+
+    let body = serde_json::json!({
+        "chat": {
+            "providers": [
+                {
+                    "type": "lmstudio",
+                    "model": "same-model",
+                    "endpoint": "http://localhost:1234/v1"
+                }
+            ]
+        }
+    });
+
+    let req = Request::builder()
+        .method("PUT")
+        .uri("/api/config/models")
+        .header("content-type", "application/json")
+        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body_bytes = resp.into_body().collect().await.unwrap().to_bytes();
+    let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert_eq!(
+        json["embedding_migration_required"], false,
+        "should not require migration when model unchanged"
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
+
+#[tokio::test]
+async fn memory_status_empty_store() {
+    let store = Arc::new(SqliteVectorStore::open_in_memory("model-A", 3).unwrap());
+    let embedder: Arc<dyn crate::embedding::Embedder> = Arc::new(MockEmbedder::new(3));
+
+    let app = test_app_with_vector_store(Some(embedder), Some(store));
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/memory/status")
+        .body(Body::empty())
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body_bytes = resp.into_body().collect().await.unwrap().to_bytes();
+    let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert_eq!(json["total_entries"], 0);
+    assert_eq!(json["migration_required"], false);
+    assert_eq!(json["stored_model"], serde_json::Value::Null);
+    assert_eq!(json["stored_dimensions"], serde_json::Value::Null);
+    assert_eq!(json["active_model"], "test-embedder");
+    assert_eq!(json["active_dimensions"], 3);
+}
+
+#[tokio::test]
+async fn memory_status_with_mismatch() {
+    // Store a memory with model "all-MiniLM-L6-v2", 384 dims.
+    let path = std::env::temp_dir().join("buddy-test-044-status-mismatch.db");
+    let _ = std::fs::remove_file(&path);
+
+    {
+        let store_old = SqliteVectorStore::open(&path, "all-MiniLM-L6-v2", 384).unwrap();
+        store_old.store(VectorEntry {
+            id: "e1".to_string(),
+            embedding: vec![0.0; 384],
+            source_text: "test memory".to_string(),
+            metadata: serde_json::json!({}),
+        }).unwrap();
+    }
+
+    // Change active embedder to "text-embedding-3-small", 1536 dims.
+    let store = Arc::new(SqliteVectorStore::open(&path, "text-embedding-3-small", 1536).unwrap());
+    let embedder: Arc<dyn crate::embedding::Embedder> = Arc::new(MockEmbedder::new(1536));
+
+    let app = test_app_with_vector_store(Some(embedder), Some(store));
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/memory/status")
+        .body(Body::empty())
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body_bytes = resp.into_body().collect().await.unwrap().to_bytes();
+    let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert_eq!(json["total_entries"], 1);
+    assert_eq!(json["migration_required"], true);
+    assert_eq!(json["stored_model"], "all-MiniLM-L6-v2");
+    assert_eq!(json["stored_dimensions"], 384);
+    assert_eq!(json["active_model"], "test-embedder");
+    assert_eq!(json["active_dimensions"], 1536);
+
+    let _ = std::fs::remove_file(&path);
+}
+
+#[tokio::test]
+async fn memory_status_after_migration() {
+    // Store a memory with model A, migrate to model B, then check status.
+    let path = std::env::temp_dir().join("buddy-test-044-after-migrate.db");
+    let _ = std::fs::remove_file(&path);
+
+    {
+        let store_a = SqliteVectorStore::open(&path, "model-A", 3).unwrap();
+        store_a.store(VectorEntry {
+            id: "e1".to_string(),
+            embedding: vec![1.0, 0.0, 0.0],
+            source_text: "test memory".to_string(),
+            metadata: serde_json::json!({}),
+        }).unwrap();
+    }
+
+    // Open with model B - migration needed.
+    let store_b = SqliteVectorStore::open(&path, "model-B", 5).unwrap();
+    assert!(store_b.needs_migration());
+
+    // Simulate migration: clear and re-store.
+    let entries = store_b.list_all().unwrap();
+    store_b.clear().unwrap();
+    for entry in entries {
+        store_b.store(VectorEntry {
+            id: entry.id,
+            embedding: vec![0.0; 5], // New 5-dim embedding
+            source_text: entry.source_text,
+            metadata: entry.metadata,
+        }).unwrap();
+    }
+
+    let store = Arc::new(store_b);
+    let embedder: Arc<dyn crate::embedding::Embedder> = Arc::new(MockEmbedder::new(5));
+
+    let app = test_app_with_vector_store(Some(embedder), Some(store));
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/memory/status")
+        .body(Body::empty())
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body_bytes = resp.into_body().collect().await.unwrap().to_bytes();
+    let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert_eq!(json["total_entries"], 1);
+    assert_eq!(json["migration_required"], false, "migration should not be required after re-embedding");
+    assert_eq!(json["stored_model"], "model-B");
+    assert_eq!(json["stored_dimensions"], 5);
+
+    let _ = std::fs::remove_file(&path);
+}

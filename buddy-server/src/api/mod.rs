@@ -15,6 +15,7 @@
 mod chat;
 mod config;
 mod conversation;
+mod embedder;
 mod memory;
 #[cfg(test)]
 mod tests;
@@ -39,7 +40,8 @@ pub use config::{
 pub use conversation::{
     create_conversation, delete_conversation, get_conversation, list_conversations,
 };
-pub use memory::{clear_memory, migrate_memory};
+pub use embedder::get_embedder_health;
+pub use memory::{clear_memory, get_memory_status, migrate_memory};
 
 // ── Shared types ────────────────────────────────────────────────────────
 

@@ -168,6 +168,14 @@ pub async fn get_config<P: Provider + 'static>(
     Json(config.clone())
 }
 
+/// Response wrapper for models config changes that includes migration status.
+#[derive(Serialize)]
+struct ModelsConfigResponse {
+    #[serde(flatten)]
+    config: crate::config::Config,
+    embedding_migration_required: bool,
+}
+
 /// `PUT /api/config/models` — update the models section.
 pub async fn put_config_models<P: Provider + 'static>(
     State(state): State<Arc<AppState<P>>>,
@@ -178,7 +186,22 @@ pub async fn put_config_models<P: Provider + 'static>(
         return (StatusCode::BAD_REQUEST, Json(ValidationErrorResponse { errors })).into_response();
     }
     match apply_config_update(&state, |config| config.models = models) {
-        Ok(config) => Json(config).into_response(),
+        Ok(config) => {
+            // Check if migration is required after config change.
+            let migration_required = {
+                let vs_snap = state.vector_store.load();
+                if let Some(vector_store) = vs_snap.as_ref() {
+                    let count = vector_store.count().unwrap_or(0);
+                    vector_store.needs_migration() && count > 0
+                } else {
+                    false
+                }
+            };
+            Json(ModelsConfigResponse {
+                config,
+                embedding_migration_required: migration_required,
+            }).into_response()
+        },
         Err(resp) => resp,
     }
 }

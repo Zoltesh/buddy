@@ -312,6 +312,78 @@ impl crate::embedding::Embedder for MockEmbedder {
     fn model_name(&self) -> &str {
         "test-embedder"
     }
+
+    fn provider_type(&self) -> &str {
+        "mock"
+    }
+}
+
+/// A mock embedder that always returns an error.
+pub struct FailingEmbedder {
+    dims: usize,
+}
+
+impl FailingEmbedder {
+    pub fn new(dims: usize) -> Self {
+        Self { dims }
+    }
+}
+
+impl crate::embedding::Embedder for FailingEmbedder {
+    fn embed(&self, _texts: &[&str]) -> Result<Vec<Vec<f32>>, crate::embedding::EmbedError> {
+        Err(crate::embedding::EmbedError::EncodingFailed(
+            "mock embedder failure".into(),
+        ))
+    }
+
+    fn dimensions(&self) -> usize {
+        self.dims
+    }
+
+    fn model_name(&self) -> &str {
+        "failing-embedder"
+    }
+
+    fn provider_type(&self) -> &str {
+        "mock-failing"
+    }
+}
+
+/// A mock embedder that returns vectors with wrong dimensions.
+pub struct WrongDimensionEmbedder {
+    declared_dims: usize,
+    actual_dims: usize,
+}
+
+impl WrongDimensionEmbedder {
+    pub fn new(declared_dims: usize, actual_dims: usize) -> Self {
+        Self {
+            declared_dims,
+            actual_dims,
+        }
+    }
+}
+
+impl crate::embedding::Embedder for WrongDimensionEmbedder {
+    fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, crate::embedding::EmbedError> {
+        let mut results = Vec::new();
+        for _ in texts {
+            results.push(vec![0.0f32; self.actual_dims]);
+        }
+        Ok(results)
+    }
+
+    fn dimensions(&self) -> usize {
+        self.declared_dims
+    }
+
+    fn model_name(&self) -> &str {
+        "wrong-dimension-embedder"
+    }
+
+    fn provider_type(&self) -> &str {
+        "mock-wrong-dims"
+    }
 }
 
 // ── HTTP test helpers ───────────────────────────────────────────────────

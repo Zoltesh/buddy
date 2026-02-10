@@ -19,7 +19,7 @@ mod testutil;
 mod types;
 mod warning;
 
-use api::{approve_handler, chat_handler, clear_memory, create_conversation, delete_conversation, discover_models, get_config, get_conversation, get_warnings, list_conversations, migrate_memory, new_pending_approvals, put_config_chat, put_config_memory, put_config_models, put_config_server, put_config_skills, test_provider, AppState};
+use api::{approve_handler, chat_handler, clear_memory, create_conversation, delete_conversation, discover_models, get_config, get_conversation, get_embedder_health, get_memory_status, get_warnings, list_conversations, migrate_memory, new_pending_approvals, put_config_chat, put_config_memory, put_config_models, put_config_server, put_config_skills, test_provider, AppState};
 use provider::{AnyProvider, ProviderChain};
 use store::Store;
 
@@ -102,7 +102,9 @@ async fn main() {
         .route("/api/conversations/{id}", get(get_conversation::<AppProvider>).delete(delete_conversation::<AppProvider>))
         .route("/api/chat/{conversation_id}/approve", post(approve_handler::<AppProvider>))
         .route("/api/memory/migrate", post(migrate_memory::<AppProvider>))
+        .route("/api/memory/status", get(get_memory_status::<AppProvider>))
         .route("/api/memory", axum::routing::delete(clear_memory::<AppProvider>))
+        .route("/api/embedder/health", get(get_embedder_health::<AppProvider>))
         .route("/api/warnings", get(get_warnings::<AppProvider>))
         .route("/api/config", get(get_config::<AppProvider>))
         .route("/api/config/models", put(put_config_models::<AppProvider>))
