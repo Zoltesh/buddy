@@ -1,4 +1,7 @@
+pub mod gemini;
 pub mod lmstudio;
+pub mod mistral;
+pub mod ollama;
 pub mod openai;
 
 use std::future::Future;
@@ -72,6 +75,9 @@ pub trait Provider: Send + Sync {
 pub enum AnyProvider {
     OpenAi(openai::OpenAiProvider),
     LmStudio(lmstudio::LmStudioProvider),
+    Mistral(mistral::MistralProvider),
+    Ollama(ollama::OllamaProvider),
+    Gemini(gemini::GeminiProvider),
 }
 
 impl Provider for AnyProvider {
@@ -83,6 +89,9 @@ impl Provider for AnyProvider {
         match self {
             Self::OpenAi(p) => p.complete(messages, tools).await,
             Self::LmStudio(p) => p.complete(messages, tools).await,
+            Self::Mistral(p) => p.complete(messages, tools).await,
+            Self::Ollama(p) => p.complete(messages, tools).await,
+            Self::Gemini(p) => p.complete(messages, tools).await,
         }
     }
 }

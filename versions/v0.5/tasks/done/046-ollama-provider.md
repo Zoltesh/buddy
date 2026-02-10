@@ -36,22 +36,22 @@ Users can add an Ollama provider in the Models settings, point it at their Ollam
 
 ## Acceptance Criteria
 
-- [ ] `provider/ollama.rs` exists with `OllamaProvider` implementing the `Provider` trait
-- [ ] `OllamaProvider` reuses OpenAI request building and SSE parsing — no duplicated parsing logic
-- [ ] `ProviderType` enum has an `Ollama` variant that serializes as `"ollama"`
-- [ ] `AnyProvider` enum has an `Ollama` variant
-- [ ] `build_provider_chain()` constructs `OllamaProvider` for `"ollama"` type
-- [ ] No API key is sent in requests to Ollama
-- [ ] Default endpoint is `http://localhost:11434` when config `endpoint` is absent
-- [ ] `POST /api/config/test-provider` works for `"ollama"` type
-- [ ] Config with `type = "ollama"` parses correctly
-- [ ] All existing tests pass
+- [x] `provider/ollama.rs` exists with `OllamaProvider` implementing the `Provider` trait
+- [x] `OllamaProvider` reuses OpenAI request building and SSE parsing — no duplicated parsing logic
+- [x] `ProviderType` enum has an `Ollama` variant that serializes as `"ollama"`
+- [x] `AnyProvider` enum has an `Ollama` variant
+- [x] `build_provider_chain()` constructs `OllamaProvider` for `"ollama"` type
+- [x] No API key is sent in requests to Ollama
+- [x] Default endpoint is `http://localhost:11434` when config `endpoint` is absent
+- [x] `POST /api/config/test-provider` works for `"ollama"` type
+- [x] Config with `type = "ollama"` parses correctly
+- [x] All existing tests pass
 
 ## Test Cases
 
-- [ ] Parse a config TOML with `type = "ollama"`, `model = "llama3"`, no endpoint; assert `ProviderType::Ollama` and default endpoint `http://localhost:11434`
-- [ ] Parse a config TOML with `type = "ollama"` and a custom endpoint; assert the custom endpoint is used
-- [ ] Build a provider chain with an Ollama entry; assert the chain contains an `OllamaProvider`
-- [ ] Send a request through `OllamaProvider` to a mock HTTP server; assert the request hits `{endpoint}/v1/chat/completions`, has no `Authorization` header, and the body matches OpenAI chat completion format
-- [ ] Send a request through `OllamaProvider` to an unreachable endpoint; assert `ProviderError::Network`
-- [ ] POST to `/api/config/test-provider` with `type: "ollama"` and an unreachable endpoint; assert `{ "status": "error" }` with a connection error message
+- [x] Parse a config TOML with `type = "ollama"`, `model = "llama3"`, no endpoint; assert `ProviderType::Ollama` and default endpoint `http://localhost:11434`
+- [x] Parse a config TOML with `type = "ollama"` and a custom endpoint; assert the custom endpoint is used
+- [x] Build a provider chain with an Ollama entry; assert the chain contains an `OllamaProvider`
+- [x] Send a request through `OllamaProvider` to a mock HTTP server; assert the request hits `{endpoint}/v1/chat/completions`, has no `Authorization` header, and the body matches OpenAI chat completion format
+- [x] Send a request through `OllamaProvider` to an unreachable endpoint; assert `ProviderError::Network`
+- [x] POST to `/api/config/test-provider` with `type: "ollama"` and an unreachable endpoint; assert `{ "status": "error" }` with a connection error message

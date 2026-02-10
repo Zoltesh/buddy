@@ -31,11 +31,11 @@ fn validate_provider(
     i: usize,
     errors: &mut Vec<FieldError>,
 ) {
-    if !["openai", "lmstudio", "local"].contains(&p.provider_type.as_str()) {
+    if !["openai", "mistral", "lmstudio", "ollama", "gemini", "local"].contains(&p.provider_type.as_str()) {
         errors.push(FieldError {
             field: format!("{prefix}[{i}].type"),
             message: format!(
-                "unknown provider type '{}'; expected openai, lmstudio, or local",
+                "unknown provider type '{}'; expected openai, mistral, lmstudio, ollama, gemini, or local",
                 p.provider_type
             ),
         });
@@ -306,11 +306,11 @@ pub async fn test_provider<P: Provider + 'static>(
     Json(entry): Json<crate::config::ProviderEntry>,
 ) -> axum::response::Response {
     // Validate provider type.
-    if !["openai", "lmstudio", "local"].contains(&entry.provider_type.as_str()) {
+    if !["openai", "mistral", "lmstudio", "ollama", "gemini", "local"].contains(&entry.provider_type.as_str()) {
         let errors = vec![FieldError {
             field: "type".into(),
             message: format!(
-                "unknown provider type '{}'; expected openai, lmstudio, or local",
+                "unknown provider type '{}'; expected openai, mistral, lmstudio, ollama, gemini, or local",
                 entry.provider_type
             ),
         }];
@@ -340,11 +340,11 @@ pub async fn test_provider<P: Provider + 'static>(
         }
     };
 
-    // OpenAI type requires an API key.
-    if entry.provider_type == "openai" && api_key.is_empty() {
+    // OpenAI, Mistral, and Gemini types require an API key.
+    if (entry.provider_type == "openai" || entry.provider_type == "mistral" || entry.provider_type == "gemini") && api_key.is_empty() {
         return Json(TestProviderResponse {
             status: "error".into(),
-            message: "an API key is required when type = \"openai\"".into(),
+            message: format!("an API key is required when type = \"{}\"", entry.provider_type),
         })
         .into_response();
     }
@@ -361,11 +361,19 @@ pub async fn test_provider<P: Provider + 'static>(
     let endpoint = match &entry.endpoint {
         Some(ep) => ep.clone(),
         None => {
-            return Json(TestProviderResponse {
-                status: "error".into(),
-                message: "endpoint is required for remote providers".into(),
-            })
-            .into_response();
+            // Ollama, Mistral, and Gemini have default endpoints.
+            match entry.provider_type.as_str() {
+                "ollama" => "http://localhost:11434".to_string(),
+                "mistral" => "https://api.mistral.ai".to_string(),
+                "gemini" => "https://generativelanguage.googleapis.com".to_string(),
+                _ => {
+                    return Json(TestProviderResponse {
+                        status: "error".into(),
+                        message: "endpoint is required for remote providers".into(),
+                    })
+                    .into_response();
+                }
+            }
         }
     };
 
@@ -385,18 +393,45 @@ pub async fn test_provider<P: Provider + 'static>(
     };
 
     // Send a minimal non-streaming chat completion request.
-    let url = format!("{}/chat/completions", endpoint.trim_end_matches('/'));
-    let body = serde_json::json!({
-        "model": entry.model,
-        "messages": [{"role": "user", "content": "hi"}],
-        "max_tokens": 1,
-        "stream": false,
-    });
-
-    let mut request = client.post(&url).json(&body);
-    if !api_key.is_empty() {
-        request = request.header("Authorization", format!("Bearer {api_key}"));
-    }
+    // Gemini uses a different API format.
+    let request = if entry.provider_type == "gemini" {
+        let url = format!(
+            "{}/v1beta/models/{}:generateContent?key={}",
+            endpoint.trim_end_matches('/'),
+            entry.model,
+            api_key
+        );
+        let body = serde_json::json!({
+            "contents": [{
+                "role": "user",
+                "parts": [{"text": "hi"}]
+            }]
+        });
+        client.post(&url).json(&body)
+    } else if entry.provider_type == "ollama" {
+        // Ollama uses /v1/chat/completions.
+        let url = format!("{}/v1/chat/completions", endpoint.trim_end_matches('/'));
+        let body = serde_json::json!({
+            "model": entry.model,
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 1,
+            "stream": false,
+        });
+        client.post(&url).json(&body)
+    } else {
+        let url = format!("{}/chat/completions", endpoint.trim_end_matches('/'));
+        let body = serde_json::json!({
+            "model": entry.model,
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 1,
+            "stream": false,
+        });
+        let mut req = client.post(&url).json(&body);
+        if !api_key.is_empty() {
+            req = req.header("Authorization", format!("Bearer {api_key}"));
+        }
+        req
+    };
 
     let result = request.send().await;
 
@@ -411,10 +446,17 @@ pub async fn test_provider<P: Provider + 'static>(
                 .into_response()
             } else {
                 let body_text = response.text().await.unwrap_or_default();
-                let error = crate::provider::openai::map_error_status(
-                    status_code.as_u16(),
-                    &body_text,
-                );
+                let error = if entry.provider_type == "gemini" {
+                    crate::provider::gemini::map_gemini_error(
+                        status_code.as_u16(),
+                        &body_text,
+                    )
+                } else {
+                    crate::provider::openai::map_error_status(
+                        status_code.as_u16(),
+                        &body_text,
+                    )
+                };
                 Json(TestProviderResponse {
                     status: "error".into(),
                     message: format!("{error}"),

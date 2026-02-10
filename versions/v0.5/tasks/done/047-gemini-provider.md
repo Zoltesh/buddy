@@ -48,26 +48,26 @@ Users can add a Google Gemini provider in the Models settings and use Gemini mod
 
 ## Acceptance Criteria
 
-- [ ] `provider/gemini.rs` exists with `GeminiProvider` implementing the `Provider` trait
-- [ ] Messages are correctly mapped to Gemini's `contents` format with proper role names
-- [ ] System prompt is sent as `systemInstruction`, not in `contents`
-- [ ] Consecutive same-role messages are merged before sending
-- [ ] Tool definitions are mapped to Gemini's `functionDeclarations` format
-- [ ] SSE responses are parsed into `Token::Text` and `Token::ToolCall` correctly
-- [ ] `functionCall` responses produce valid `Token::ToolCall` with correct name and arguments
-- [ ] API key is sent as a query parameter
-- [ ] HTTP errors are mapped to appropriate `ProviderError` variants
-- [ ] Config with `type = "gemini"` parses correctly
-- [ ] All existing tests pass
+- [x] `provider/gemini.rs` exists with `GeminiProvider` implementing the `Provider` trait
+- [x] Messages are correctly mapped to Gemini's `contents` format with proper role names
+- [x] System prompt is sent as `systemInstruction`, not in `contents`
+- [x] Consecutive same-role messages are merged before sending
+- [x] Tool definitions are mapped to Gemini's `functionDeclarations` format
+- [x] SSE responses are parsed into `Token::Text` and `Token::ToolCall` correctly
+- [x] `functionCall` responses produce valid `Token::ToolCall` with correct name and arguments
+- [x] API key is sent as a query parameter
+- [x] HTTP errors are mapped to appropriate `ProviderError` variants
+- [x] Config with `type = "gemini"` parses correctly
+- [x] All existing tests pass
 
 ## Test Cases
 
-- [ ] Parse a config TOML with `type = "gemini"`, `model = "gemini-2.0-flash"`, `api_key_env = "GEMINI_API_KEY"`; assert `ProviderType::Gemini`
-- [ ] Build a Gemini request body from a conversation with user, assistant, and system messages; assert system message is in `systemInstruction`, user/assistant are in `contents` with correct roles
-- [ ] Build a Gemini request body from a conversation where two consecutive user messages exist; assert they are merged into one `contents` entry with multiple parts
-- [ ] Build a Gemini request body with tools; assert `tools[0].functionDeclarations` contains the correct function names and parameter schemas
-- [ ] Parse a Gemini SSE stream containing text chunks; assert `Token::Text` tokens are emitted with the correct text
-- [ ] Parse a Gemini SSE stream containing a `functionCall` part; assert a `Token::ToolCall` is emitted with the correct name and arguments JSON
-- [ ] Send a request through `GeminiProvider` to a mock HTTP server; assert the URL contains the model name and API key as query parameter
-- [ ] Send a request to an unreachable endpoint; assert `ProviderError::Network`
-- [ ] POST to `/api/config/test-provider` with `type: "gemini"` and a missing env var; assert error mentioning the env var name
+- [x] Parse a config TOML with `type = "gemini"`, `model = "gemini-2.0-flash"`, `api_key_env = "GEMINI_API_KEY"`; assert `ProviderType::Gemini`
+- [x] Build a Gemini request body from a conversation with user, assistant, and system messages; assert system message is in `systemInstruction`, user/assistant are in `contents` with correct roles
+- [x] Build a Gemini request body from a conversation where two consecutive user messages exist; assert they are merged into one `contents` entry with multiple parts
+- [x] Build a Gemini request body with tools; assert `tools[0].functionDeclarations` contains the correct function names and parameter schemas
+- [x] Parse a Gemini SSE stream containing text chunks; assert `Token::Text` tokens are emitted with the correct text
+- [x] Parse a Gemini SSE stream containing a `functionCall` part; assert a `Token::ToolCall` is emitted with the correct name and arguments JSON
+- [x] Send a request through `GeminiProvider` to a mock HTTP server; assert the URL contains the model name and API key as query parameter
+- [x] Send a request to an unreachable endpoint; assert `ProviderError::Network`
+- [x] POST to `/api/config/test-provider` with `type: "gemini"` and a missing env var; assert error mentioning the env var name

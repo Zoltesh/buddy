@@ -635,4 +635,75 @@ similarity_threshold = 0.7
             "You are a helpful, friendly AI assistant."
         );
     }
+
+    // Test cases for task 046: Ollama Provider
+
+    #[test]
+    fn parse_ollama_provider_with_no_endpoint_defaults_to_localhost_11434() {
+        let toml = r#"
+[[models.chat.providers]]
+type = "ollama"
+model = "llama3"
+"#;
+        let config = Config::parse(toml).unwrap();
+        assert_eq!(config.models.chat.providers[0].provider_type, "ollama");
+        assert_eq!(config.models.chat.providers[0].model, "llama3");
+        assert!(config.models.chat.providers[0].endpoint.is_none());
+    }
+
+    #[test]
+    fn parse_ollama_provider_with_custom_endpoint() {
+        let toml = r#"
+[[models.chat.providers]]
+type = "ollama"
+model = "llama3"
+endpoint = "http://192.168.1.100:11434"
+"#;
+        let config = Config::parse(toml).unwrap();
+        assert_eq!(config.models.chat.providers[0].provider_type, "ollama");
+        assert_eq!(config.models.chat.providers[0].model, "llama3");
+        assert_eq!(
+            config.models.chat.providers[0].endpoint.as_deref(),
+            Some("http://192.168.1.100:11434")
+        );
+    }
+
+    // Test cases for task 048: Mistral Provider
+
+    #[test]
+    fn parse_mistral_provider_with_defaults() {
+        let toml = r#"
+[[models.chat.providers]]
+type = "mistral"
+model = "mistral-large-latest"
+api_key_env = "MISTRAL_API_KEY"
+"#;
+        let config = Config::parse(toml).unwrap();
+        assert_eq!(config.models.chat.providers[0].provider_type, "mistral");
+        assert_eq!(config.models.chat.providers[0].model, "mistral-large-latest");
+        assert_eq!(
+            config.models.chat.providers[0].api_key_env.as_deref(),
+            Some("MISTRAL_API_KEY")
+        );
+        // endpoint is optional — will default to https://api.mistral.ai in reload.rs
+        assert!(config.models.chat.providers[0].endpoint.is_none());
+    }
+
+    #[test]
+    fn parse_mistral_provider_with_custom_endpoint() {
+        let toml = r#"
+[[models.chat.providers]]
+type = "mistral"
+model = "mistral-large-latest"
+api_key_env = "MISTRAL_API_KEY"
+endpoint = "https://custom.mistral.example"
+"#;
+        let config = Config::parse(toml).unwrap();
+        assert_eq!(config.models.chat.providers[0].provider_type, "mistral");
+        assert_eq!(config.models.chat.providers[0].model, "mistral-large-latest");
+        assert_eq!(
+            config.models.chat.providers[0].endpoint.as_deref(),
+            Some("https://custom.mistral.example")
+        );
+    }
 }

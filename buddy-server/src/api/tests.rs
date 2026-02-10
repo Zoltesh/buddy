@@ -2656,6 +2656,41 @@ approval = "once"
     }
 
     #[tokio::test]
+    async fn test_provider_gemini_missing_env_var_returns_error() {
+        let app = test_provider_app();
+        // SAFETY: Ensure the env var is not set for this test.
+        unsafe { std::env::remove_var("BUDDY_TEST_GEMINI_NOTSET_047") };
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/config/test-provider")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "type": "gemini",
+                            "model": "gemini-2.0-flash",
+                            "endpoint": "https://generativelanguage.googleapis.com",
+                            "api_key_env": "BUDDY_TEST_GEMINI_NOTSET_047"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["status"], "error");
+        assert!(json["message"]
+            .as_str()
+            .unwrap()
+            .contains("BUDDY_TEST_GEMINI_NOTSET_047"));
+    }
+
+    #[tokio::test]
     async fn test_provider_does_not_modify_config() {
         let app = test_provider_app();
 
@@ -2754,6 +2789,80 @@ approval = "once"
         assert!(
             elapsed < std::time::Duration::from_secs(10),
             "request took too long: {elapsed:?}"
+        );
+    }
+
+    // Test cases for task 046: Ollama Provider
+
+    #[tokio::test]
+    async fn test_provider_ollama_unreachable_endpoint() {
+        let app = test_provider_app();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/config/test-provider")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "type": "ollama",
+                            "model": "llama3",
+                            "endpoint": "http://127.0.0.1:1"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["status"], "error");
+        assert!(json["message"]
+            .as_str()
+            .unwrap()
+            .contains("Connection failed"));
+    }
+
+    // Test case for task 048: Mistral Provider
+
+    #[tokio::test]
+    async fn test_provider_mistral_missing_env_var() {
+        let app = test_provider_app();
+        // SAFETY: test-only; ensure env var is not set.
+        unsafe { std::env::remove_var("BUDDY_TEST_MISTRAL_NOTSET_048") };
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/config/test-provider")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{
+                            "type": "mistral",
+                            "model": "mistral-large-latest",
+                            "api_key_env": "BUDDY_TEST_MISTRAL_NOTSET_048"
+                        }"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+
+        assert_eq!(json["status"], "error");
+        assert!(
+            json["message"]
+                .as_str()
+                .unwrap()
+                .contains("BUDDY_TEST_MISTRAL_NOTSET_048")
         );
     }
 }
