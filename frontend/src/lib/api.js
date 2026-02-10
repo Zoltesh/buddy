@@ -164,6 +164,32 @@ export function toDisplayItems(messages) {
   return items;
 }
 
+/** Get the current embedder health status. */
+export async function getEmbedderHealth() {
+  const res = await fetch('/api/embedder/health');
+  if (!res.ok) throw new Error('Failed to get embedder health');
+  return res.json();
+}
+
+/** Get memory status including count and migration requirement. */
+export async function getMemoryStatus() {
+  const res = await fetch('/api/memory/status');
+  if (!res.ok) throw new Error('Failed to get memory status');
+  return res.json();
+}
+
+/** Trigger memory migration (re-embedding with new model). */
+export async function migrateMemory() {
+  const res = await fetch('/api/memory/migrate', { method: 'POST' });
+  if (!res.ok) {
+    const data = await res.json();
+    const err = new Error('Migration failed');
+    err.details = data;
+    throw err;
+  }
+  return res.json();
+}
+
 /**
  * Format a timestamp as a relative time string.
  */

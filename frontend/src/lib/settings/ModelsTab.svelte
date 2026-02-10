@@ -1,6 +1,6 @@
 <script>
-  import { onDestroy } from 'svelte';
-  import { discoverModels, formatApiError, putConfigModels, testProvider } from '../api.js';
+  import { onDestroy, onMount } from 'svelte';
+  import { discoverModels, formatApiError, getEmbedderHealth, getMemoryStatus, migrateMemory, putConfigModels, testProvider } from '../api.js';
 
   let { config = $bindable() } = $props();
 
@@ -26,6 +26,14 @@
 
   // Drag-and-drop reorder state
   let drag = $state(null); // { slot, fromIndex, currentIndex, snapshot }
+
+  // Embedder health and migration state
+  let embedderHealth = $state(null); // EmbedderHealthResponse
+  let memoryStatus = $state(null); // MemoryStatusResponse
+  let showMigrationDialog = $state(false);
+  let migrationInProgress = $state(false);
+  let migrationError = $state(null);
+  let showMigrationBanner = $state(false);
 
   // ── Provider testing ────────────────────────────────────────────────
 
@@ -57,6 +65,51 @@
     await Promise.allSettled(promises);
     recheckRunning = false;
   }
+
+  // ── Embedder health and migration ──────────────────────────────────
+
+  async function fetchEmbedderHealth() {
+    try {
+      embedderHealth = await getEmbedderHealth();
+    } catch (e) {
+      console.error('Failed to fetch embedder health:', e);
+      embedderHealth = null;
+    }
+  }
+
+  async function fetchMemoryStatus() {
+    try {
+      memoryStatus = await getMemoryStatus();
+    } catch (e) {
+      console.error('Failed to fetch memory status:', e);
+      memoryStatus = null;
+    }
+  }
+
+  async function handleMigrateNow() {
+    migrationInProgress = true;
+    migrationError = null;
+    try {
+      await migrateMemory();
+      showMigrationDialog = false;
+      showMigrationBanner = false;
+      await fetchMemoryStatus();
+    } catch (e) {
+      migrationError = formatApiError(e, { includeField: false });
+    } finally {
+      migrationInProgress = false;
+    }
+  }
+
+  function dismissMigrationDialog() {
+    showMigrationDialog = false;
+    showMigrationBanner = true;
+  }
+
+  onMount(() => {
+    fetchEmbedderHealth();
+    fetchMemoryStatus();
+  });
 
   // ── Drag and drop ───────────────────────────────────────────────────
 
@@ -104,9 +157,12 @@
     savingModels = true;
     modelsSaveMessage = null;
     try {
-      const updated = await putConfigModels(buildModelsPayload(slot, providers));
-      config = updated;
+      const response = await putConfigModels(buildModelsPayload(slot, providers));
+      config = response;
       providerStatus = {};
+
+      // Refresh health after reordering (though unlikely to need migration from reorder)
+      await fetchEmbedderHealth();
     } catch (e) {
       if (slot === 'chat') {
         config.models.chat.providers = snapshot;
@@ -242,13 +298,22 @@
       currentProviders[index] = entry;
     }
     try {
-      const updated = await putConfigModels(buildModelsPayload(slot, currentProviders));
-      config = updated;
+      const response = await putConfigModels(buildModelsPayload(slot, currentProviders));
+      config = response;
       editingProvider = null;
       modelErrors = {};
       testResult = null;
       modelsSaveMessage = { type: 'success', text: 'Provider saved.' };
       providerStatus = {};
+
+      // Refresh health and memory status after saving
+      await Promise.all([fetchEmbedderHealth(), fetchMemoryStatus()]);
+
+      // Check if migration is required (for embedding config changes)
+      if (slot === 'embedding' && response.embedding_migration_required) {
+        showMigrationDialog = true;
+        showMigrationBanner = false;
+      }
     } catch (e) {
       modelsSaveMessage = { type: 'error', text: formatApiError(e) };
     } finally {
@@ -270,14 +335,23 @@
     savingModels = true;
     modelsSaveMessage = null;
     try {
-      const updated = await putConfigModels(buildModelsPayload(slot, currentProviders));
-      config = updated;
+      const response = await putConfigModels(buildModelsPayload(slot, currentProviders));
+      config = response;
       confirmingDelete = null;
       if (editingProvider?.slot === slot && editingProvider?.index === index) {
         editingProvider = null;
       }
       modelsSaveMessage = { type: 'success', text: 'Provider removed.' };
       providerStatus = {};
+
+      // Refresh health and memory status after deleting
+      await Promise.all([fetchEmbedderHealth(), fetchMemoryStatus()]);
+
+      // Check if migration is required (for embedding config changes)
+      if (slot === 'embedding' && response.embedding_migration_required) {
+        showMigrationDialog = true;
+        showMigrationBanner = false;
+      }
     } catch (e) {
       modelsSaveMessage = { type: 'error', text: formatApiError(e) };
     } finally {
@@ -578,22 +652,34 @@
       </div>
 
       {#if slot.key === 'embedding'}
+        {@const isActive = slot.providers.length === 0}
+        {@const isHealthy = embedderHealth?.status === 'healthy'}
+        {@const showHealthWarning = isActive && embedderHealth && !isHealthy}
         <div class="rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-100/60 dark:bg-gray-800/30 px-4 py-3 mb-2">
           <div class="flex items-center justify-between mb-1">
             <div class="flex items-center gap-2">
               <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400">Built-in</span>
               <span class="text-sm font-medium text-gray-500 dark:text-gray-400">Local</span>
-              <svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-label="Active"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+              {#if isActive}
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">Active</span>
+              {:else}
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400">Standby</span>
+              {/if}
             </div>
           </div>
           <div class="text-sm text-gray-400 dark:text-gray-500 space-y-0.5">
-            <div>Model: <span class="text-gray-600 dark:text-gray-400">all-MiniLM-L6-v2</span></div>
-            <div>Dimensions: <span class="text-gray-600 dark:text-gray-400">384</span></div>
+            <div>Model: <span class="text-gray-600 dark:text-gray-400">{embedderHealth?.model_name ?? 'all-MiniLM-L6-v2'}</span></div>
+            <div>Dimensions: <span class="text-gray-600 dark:text-gray-400">{embedderHealth?.dimensions ?? '384'}</span></div>
           </div>
-          {#if slot.providers.length === 0}
+          {#if showHealthWarning}
+            <div class="mt-2 flex items-start gap-1.5 text-xs text-red-600 dark:text-red-400">
+              <svg class="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M12 2a10 10 0 100 20 10 10 0 000-20z" /></svg>
+              <span>{embedderHealth.message}</span>
+            </div>
+          {:else if isActive}
             <p class="text-xs text-gray-400 dark:text-gray-500 mt-2">Active by default. Add an external provider to override.</p>
           {:else}
-            <p class="text-xs text-gray-400 dark:text-gray-500 mt-2">Standby — overridden by the configured provider below.</p>
+            <p class="text-xs text-gray-400 dark:text-gray-500 mt-2">Overridden by external provider.</p>
           {/if}
         </div>
       {/if}
@@ -697,6 +783,12 @@
                     <div>API Key: <span class="text-gray-900 dark:text-gray-200">${provider.api_key_env}</span></div>
                   {/if}
                 </div>
+                {#if slot.key === 'embedding' && i === 0 && embedderHealth && embedderHealth.status === 'unhealthy'}
+                  <div class="mt-2 flex items-start gap-1.5 text-xs text-red-600 dark:text-red-400">
+                    <svg class="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M12 2a10 10 0 100 20 10 10 0 000-20z" /></svg>
+                    <span>{embedderHealth.message}</span>
+                  </div>
+                {/if}
               </div>
             {/if}
           {/each}
@@ -724,4 +816,70 @@
       {/if}
     </section>
   {/each}
+
+  <!-- Migration banner (persistent if user clicked "Later") -->
+  {#if showMigrationBanner}
+    <div class="rounded-lg border border-yellow-300 dark:border-yellow-700 bg-yellow-50 dark:bg-yellow-900/20 px-4 py-3 flex items-start gap-3">
+      <svg class="w-5 h-5 text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+      </svg>
+      <div class="flex-1">
+        <p class="text-sm text-yellow-800 dark:text-yellow-200 font-medium">Memories need re-embedding</p>
+        <p class="text-xs text-yellow-700 dark:text-yellow-300 mt-0.5">The embedding model changed. Memories must be re-embedded to work with the new model.</p>
+      </div>
+      <button
+        onclick={handleMigrateNow}
+        disabled={migrationInProgress}
+        class="px-3 py-1.5 text-sm font-medium rounded-lg bg-yellow-600 dark:bg-yellow-500 text-white hover:bg-yellow-700 dark:hover:bg-yellow-600 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {migrationInProgress ? 'Re-embedding...' : 'Re-embed Now'}
+      </button>
+    </div>
+  {/if}
 </div>
+
+<!-- Migration dialog modal -->
+{#if showMigrationDialog}
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" role="dialog" aria-modal="true" onclick={(e) => { if (e.target === e.currentTarget) dismissMigrationDialog(); }} onkeydown={(e) => { if (e.key === 'Escape') dismissMigrationDialog(); }}>
+    <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+      <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Re-embedding Required</h3>
+      <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+        The new embedding model produces vectors in a different format than the stored memories.
+        {#if memoryStatus?.total_entries}
+          All {memoryStatus.total_entries} {memoryStatus.total_entries === 1 ? 'memory' : 'memories'} need to be re-embedded to work with the new model.
+        {:else}
+          All memories need to be re-embedded to work with the new model.
+        {/if}
+      </p>
+      {#if migrationError}
+        <div class="mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+          <p class="text-sm text-red-600 dark:text-red-400">{migrationError}</p>
+        </div>
+      {/if}
+      <div class="flex items-center gap-2 justify-end">
+        <button
+          onclick={dismissMigrationDialog}
+          disabled={migrationInProgress}
+          class="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors cursor-pointer disabled:opacity-50"
+        >
+          Later
+        </button>
+        <button
+          onclick={handleMigrateNow}
+          disabled={migrationInProgress}
+          class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+        >
+          {#if migrationInProgress}
+            <svg class="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg>
+            Re-embedding...
+          {:else}
+            Re-embed Now
+          {/if}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
