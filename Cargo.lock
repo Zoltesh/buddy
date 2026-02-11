@@ -332,6 +332,12 @@ dependencies = [
 [[package]]
 name = "buddy-core"
 version = "0.5.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "toml",
+]
 
 [[package]]
 name = "buddy-server"

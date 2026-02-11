@@ -10,6 +10,7 @@ use std::sync::Mutex;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::Router;
+use buddy_core::types::{Message, MessageContent, Role};
 use chrono::Utc;
 use http_body_util::BodyExt;
 use tower::ServiceExt;
@@ -17,7 +18,6 @@ use tower::ServiceExt;
 use crate::api::{ChatEvent, ChatRequest};
 use crate::provider::{Provider, ProviderError, Token, TokenStream};
 use crate::skill::{PermissionLevel, Skill, SkillError};
-use crate::types::{Message, MessageContent, Role};
 
 // ── Mock skills ─────────────────────────────────────────────────────────
 

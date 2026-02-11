@@ -1,19 +1,9 @@
-use clap::Parser;
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 const DEFAULT_HOST: &str = "127.0.0.1";
 const DEFAULT_PORT: u16 = 3000;
-const DEFAULT_CONFIG_PATH: &str = "buddy.toml";
 const DEFAULT_DATABASE: &str = "buddy.db";
-
-#[derive(Parser)]
-#[command(name = "buddy-server")]
-struct Cli {
-    /// Path to the configuration file
-    #[arg(long = "config", default_value = DEFAULT_CONFIG_PATH)]
-    config: PathBuf,
-}
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
 pub struct Config {
@@ -212,12 +202,6 @@ fn default_similarity_threshold() -> f32 {
 }
 
 impl Config {
-    pub fn load() -> Result<(Self, PathBuf), String> {
-        let cli = Cli::parse();
-        let config = Self::from_file(&cli.config)?;
-        Ok((config, cli.config))
-    }
-
     pub fn from_file(path: &Path) -> Result<Self, String> {
         let contents = std::fs::read_to_string(path)
             .map_err(|e| format!("failed to read config file '{}': {e}", path.display()))?;

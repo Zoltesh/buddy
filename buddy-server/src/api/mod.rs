@@ -50,7 +50,7 @@ pub use memory::{clear_memory, get_memory_status, migrate_memory};
 pub struct ChatRequest {
     #[serde(default)]
     pub conversation_id: Option<String>,
-    pub messages: Vec<crate::types::Message>,
+    pub messages: Vec<buddy_core::types::Message>,
     #[serde(default)]
     pub disable_memory: bool,
 }
@@ -118,13 +118,13 @@ pub struct AppState<P> {
     pub embedder: arc_swap::ArcSwap<Option<std::sync::Arc<dyn crate::embedding::Embedder>>>,
     pub vector_store: arc_swap::ArcSwap<Option<std::sync::Arc<dyn crate::memory::VectorStore>>>,
     pub working_memory: crate::skill::working_memory::WorkingMemoryMap,
-    pub memory_config: arc_swap::ArcSwap<crate::config::MemoryConfig>,
+    pub memory_config: arc_swap::ArcSwap<buddy_core::config::MemoryConfig>,
     pub warnings: crate::warning::SharedWarnings,
     pub pending_approvals: PendingApprovals,
     pub conversation_approvals: ConversationApprovals,
-    pub approval_overrides: arc_swap::ArcSwap<HashMap<String, crate::config::ApprovalPolicy>>,
+    pub approval_overrides: arc_swap::ArcSwap<HashMap<String, buddy_core::config::ApprovalPolicy>>,
     pub approval_timeout: std::time::Duration,
-    pub config: std::sync::RwLock<crate::config::Config>,
+    pub config: std::sync::RwLock<buddy_core::config::Config>,
     pub config_path: std::path::PathBuf,
     /// Optional callback invoked after a successful config write to hot-reload
     /// runtime components. Set to `Some` in production (via `reload::reload_from_config`),

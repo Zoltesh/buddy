@@ -1,11 +1,10 @@
 use std::path::Path;
 use std::sync::Mutex;
 
+use buddy_core::types::{Message, MessageContent, Role};
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
-
-use crate::types::{Message, MessageContent, Role};
 
 /// A conversation with all its messages.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

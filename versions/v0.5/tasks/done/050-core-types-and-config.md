@@ -34,20 +34,20 @@ The first code migration: `types.rs` and `config.rs` move from `buddy-server/src
 
 ## Acceptance Criteria
 
-- [ ] `buddy-core/src/types.rs` exists with `Message`, `Role`, `MessageContent` types
-- [ ] `buddy-core/src/config.rs` exists with `Config`, `ProviderEntry`, and all config structs
-- [ ] `buddy-core/src/config.rs` does NOT contain `clap` imports, `Cli` struct, or `Config::load()`
-- [ ] `buddy-server/src/main.rs` has a local `Cli` struct and `load_config()` function
-- [ ] `buddy-server/src/types.rs` and `buddy-server/src/config.rs` no longer exist
-- [ ] All `buddy-server` modules import types and config from `buddy_core`
-- [ ] `cargo test` passes all existing tests
-- [ ] `cargo test -p buddy-core` passes types and config tests
+- [x] `buddy-core/src/types.rs` exists with `Message`, `Role`, `MessageContent` types
+- [x] `buddy-core/src/config.rs` exists with `Config`, `ProviderEntry`, and all config structs
+- [x] `buddy-core/src/config.rs` does NOT contain `clap` imports, `Cli` struct, or `Config::load()`
+- [x] `buddy-server/src/main.rs` has a local `Cli` struct and `load_config()` function
+- [x] `buddy-server/src/types.rs` and `buddy-server/src/config.rs` no longer exist
+- [x] All `buddy-server` modules import types and config from `buddy_core`
+- [x] `cargo test` passes all existing tests
+- [x] `cargo test -p buddy-core` passes types and config tests
 
 ## Test Cases
 
-- [ ] Run `cargo test -p buddy-core`; assert all config parsing and types tests pass
-- [ ] Run `cargo test -p buddy-server`; assert all existing server tests pass
-- [ ] Verify `buddy-server/src/types.rs` does not exist (confirm it was removed, not just copied)
-- [ ] Verify `buddy-server/src/config.rs` does not exist
-- [ ] Verify `buddy-core/src/config.rs` does not contain the string `clap`
-- [ ] Run `cargo build -p buddy-core`; assert it compiles independently with no dependency on `buddy-server`
+- [x] Run `cargo test -p buddy-core`; assert all config parsing and types tests pass
+- [x] Run `cargo test -p buddy-server`; assert all existing server tests pass
+- [x] Verify `buddy-server/src/types.rs` does not exist (confirm it was removed, not just copied)
+- [x] Verify `buddy-server/src/config.rs` does not exist
+- [x] Verify `buddy-core/src/config.rs` does not contain the string `clap`
+- [x] Run `cargo build -p buddy-core`; assert it compiles independently with no dependency on `buddy-server`

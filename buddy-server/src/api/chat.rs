@@ -15,11 +15,11 @@ use futures_util::StreamExt;
 use tokio::sync::oneshot;
 
 use super::{ApiError, AppState, ApproveRequest, ChatEvent, ChatRequest, MemorySnippet};
-use crate::config::ApprovalPolicy;
+use buddy_core::config::ApprovalPolicy;
+use buddy_core::types::{Message, MessageContent, Role};
 use crate::provider::{Provider, Token};
 use crate::skill::PermissionLevel;
 use crate::store::title_from_message;
-use crate::types::{Message, MessageContent, Role};
 
 /// Maximum number of tool-call loop iterations before aborting.
 pub(super) const MAX_TOOL_ITERATIONS: usize = 10;
@@ -78,7 +78,7 @@ pub async fn chat_handler<P: Provider + 'static>(
                 .iter()
                 .find(|m| matches!(m.content, MessageContent::Text { .. }) && matches!(m.role, Role::User))
                 .and_then(|m| match &m.content {
-                    MessageContent::Text { text } => Some(title_from_message(text)),
+                    MessageContent::Text { text } => Some(title_from_message(&text)),
                     _ => None,
                 })
                 .unwrap_or_else(|| "New conversation".to_string());

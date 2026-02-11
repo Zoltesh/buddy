@@ -1,9 +1,9 @@
+use buddy_core::types::{Message, MessageContent, Role};
 use futures_util::StreamExt;
 use reqwest::Client;
 use serde::Deserialize;
 
 use crate::provider::{Provider, ProviderError, Token, TokenStream};
-use crate::types::{Message, MessageContent, Role};
 
 /// Google Gemini provider.
 ///
@@ -337,7 +337,7 @@ impl Provider for GeminiProvider {
 mod tests {
     use super::*;
     use chrono::Utc;
-    use crate::config::Config;
+    use buddy_core::config::Config;
 
     fn make_user_message(text: &str) -> Message {
         Message {

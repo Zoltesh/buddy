@@ -8,9 +8,9 @@ use http_body_util::BodyExt;
 use tower::ServiceExt;
 use tower_http::services::ServeDir;
 
+use buddy_core::types::MessageContent;
 use crate::provider::ProviderChain;
 use crate::skill::SkillRegistry;
-use crate::types::MessageContent;
 use crate::testutil::{
     ConfigurableMockProvider, FailingSkill, MockEchoSkill, MockProvider, MockResponse,
     SequencedProvider, make_chat_body, make_chat_body_with_conversation, post_chat,
@@ -19,8 +19,8 @@ use crate::testutil::{
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
-fn test_config() -> crate::config::Config {
-    crate::config::Config::parse(
+fn test_config() -> buddy_core::config::Config {
+    buddy_core::config::Config::parse(
         r#"
 [[models.chat.providers]]
 type = "lmstudio"
@@ -51,7 +51,7 @@ fn test_app(tokens: Vec<String>) -> Router {
         embedder: arc_swap::ArcSwap::from_pointee(None),
         vector_store: arc_swap::ArcSwap::from_pointee(None),
         working_memory: crate::skill::working_memory::new_working_memory_map(),
-        memory_config: arc_swap::ArcSwap::from_pointee(crate::config::MemoryConfig::default()),
+        memory_config: arc_swap::ArcSwap::from_pointee(buddy_core::config::MemoryConfig::default()),
         warnings: crate::warning::new_shared_warnings(),
         pending_approvals: new_pending_approvals(),
         conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
@@ -74,7 +74,7 @@ fn test_app_with_static(tokens: Vec<String>, static_dir: &str) -> Router {
         embedder: arc_swap::ArcSwap::from_pointee(None),
         vector_store: arc_swap::ArcSwap::from_pointee(None),
         working_memory: crate::skill::working_memory::new_working_memory_map(),
-        memory_config: arc_swap::ArcSwap::from_pointee(crate::config::MemoryConfig::default()),
+        memory_config: arc_swap::ArcSwap::from_pointee(buddy_core::config::MemoryConfig::default()),
         warnings: crate::warning::new_shared_warnings(),
         pending_approvals: new_pending_approvals(),
         conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
@@ -98,7 +98,7 @@ fn sequenced_app(responses: Vec<MockResponse>, registry: SkillRegistry) -> Route
         embedder: arc_swap::ArcSwap::from_pointee(None),
         vector_store: arc_swap::ArcSwap::from_pointee(None),
         working_memory: crate::skill::working_memory::new_working_memory_map(),
-        memory_config: arc_swap::ArcSwap::from_pointee(crate::config::MemoryConfig::default()),
+        memory_config: arc_swap::ArcSwap::from_pointee(buddy_core::config::MemoryConfig::default()),
         warnings: crate::warning::new_shared_warnings(),
         pending_approvals: new_pending_approvals(),
         conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
@@ -121,7 +121,7 @@ fn conversation_app(tokens: Vec<String>) -> (Arc<AppState<MockProvider>>, Router
         embedder: arc_swap::ArcSwap::from_pointee(None),
         vector_store: arc_swap::ArcSwap::from_pointee(None),
         working_memory: crate::skill::working_memory::new_working_memory_map(),
-        memory_config: arc_swap::ArcSwap::from_pointee(crate::config::MemoryConfig::default()),
+        memory_config: arc_swap::ArcSwap::from_pointee(buddy_core::config::MemoryConfig::default()),
         warnings: crate::warning::new_shared_warnings(),
         pending_approvals: new_pending_approvals(),
         conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
@@ -483,7 +483,7 @@ mod tool_loop {
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
-            memory_config: arc_swap::ArcSwap::from_pointee(crate::config::MemoryConfig::default()),
+            memory_config: arc_swap::ArcSwap::from_pointee(buddy_core::config::MemoryConfig::default()),
             warnings: crate::warning::new_shared_warnings(),
             pending_approvals: new_pending_approvals(),
             conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
@@ -703,7 +703,7 @@ mod conversations {
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
-            memory_config: arc_swap::ArcSwap::from_pointee(crate::config::MemoryConfig::default()),
+            memory_config: arc_swap::ArcSwap::from_pointee(buddy_core::config::MemoryConfig::default()),
             warnings: crate::warning::new_shared_warnings(),
             pending_approvals: new_pending_approvals(),
             conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
@@ -780,7 +780,7 @@ mod warnings {
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
-            memory_config: arc_swap::ArcSwap::from_pointee(crate::config::MemoryConfig::default()),
+            memory_config: arc_swap::ArcSwap::from_pointee(buddy_core::config::MemoryConfig::default()),
             warnings,
             pending_approvals: new_pending_approvals(),
             conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
@@ -841,7 +841,7 @@ mod warnings {
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
-            memory_config: arc_swap::ArcSwap::from_pointee(crate::config::MemoryConfig::default()),
+            memory_config: arc_swap::ArcSwap::from_pointee(buddy_core::config::MemoryConfig::default()),
             warnings: warnings.clone(),
             pending_approvals: new_pending_approvals(),
             conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
@@ -898,7 +898,7 @@ mod warnings {
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
-            memory_config: arc_swap::ArcSwap::from_pointee(crate::config::MemoryConfig::default()),
+            memory_config: arc_swap::ArcSwap::from_pointee(buddy_core::config::MemoryConfig::default()),
             warnings: warnings.clone(),
             pending_approvals: new_pending_approvals(),
             conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
@@ -1029,7 +1029,7 @@ mod warnings {
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
-            memory_config: arc_swap::ArcSwap::from_pointee(crate::config::MemoryConfig::default()),
+            memory_config: arc_swap::ArcSwap::from_pointee(buddy_core::config::MemoryConfig::default()),
             warnings,
             pending_approvals: new_pending_approvals(),
             conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
@@ -1155,7 +1155,7 @@ mod warnings {
 
 mod approval {
     use super::*;
-    use crate::config::ApprovalPolicy;
+    use buddy_core::config::ApprovalPolicy;
     use crate::testutil::{MockMutatingSkill, MockNetworkSkill};
 
     fn registry_with_mutating() -> SkillRegistry {
@@ -1183,7 +1183,7 @@ mod approval {
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
-            memory_config: arc_swap::ArcSwap::from_pointee(crate::config::MemoryConfig::default()),
+            memory_config: arc_swap::ArcSwap::from_pointee(buddy_core::config::MemoryConfig::default()),
             warnings: crate::warning::new_shared_warnings(),
             pending_approvals: new_pending_approvals(),
             conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
@@ -1557,7 +1557,7 @@ mod approval {
 mod config_api {
     use super::*;
 
-    fn config_app(config: crate::config::Config) -> Router {
+    fn config_app(config: buddy_core::config::Config) -> Router {
         let state = Arc::new(AppState {
             provider: arc_swap::ArcSwap::from_pointee(MockProvider {
                 tokens: vec!["hi".into()],
@@ -1567,7 +1567,7 @@ mod config_api {
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
-            memory_config: arc_swap::ArcSwap::from_pointee(crate::config::MemoryConfig::default()),
+            memory_config: arc_swap::ArcSwap::from_pointee(buddy_core::config::MemoryConfig::default()),
             warnings: crate::warning::new_shared_warnings(),
             pending_approvals: new_pending_approvals(),
             conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
@@ -1584,7 +1584,7 @@ mod config_api {
 
     #[tokio::test]
     async fn full_config_returns_all_sections() {
-        let config = crate::config::Config::parse(
+        let config = buddy_core::config::Config::parse(
             r#"
 [server]
 host = "0.0.0.0"
@@ -1672,7 +1672,7 @@ similarity_threshold = 0.8
 
     #[tokio::test]
     async fn minimal_config_returns_nulls_for_optional_sections() {
-        let config = crate::config::Config::parse(
+        let config = buddy_core::config::Config::parse(
             r#"
 [[models.chat.providers]]
 type = "lmstudio"
@@ -1706,7 +1706,7 @@ endpoint = "http://localhost:1234/v1"
 
     #[tokio::test]
     async fn api_key_env_present_but_secret_not_leaked() {
-        let config = crate::config::Config::parse(
+        let config = buddy_core::config::Config::parse(
             r#"
 [[models.chat.providers]]
 type = "openai"
@@ -1749,7 +1749,7 @@ api_key_env = "BUDDY_TEST_SECRET_029"
 
     #[tokio::test]
     async fn round_trip_json_to_config() {
-        let config = crate::config::Config::parse(
+        let config = buddy_core::config::Config::parse(
             r#"
 [server]
 host = "127.0.0.1"
@@ -1792,7 +1792,7 @@ similarity_threshold = 0.5
             .unwrap();
 
         let bytes = response.into_body().collect().await.unwrap().to_bytes();
-        let deserialized: crate::config::Config =
+        let deserialized: buddy_core::config::Config =
             serde_json::from_slice(&bytes).expect("should deserialize back into Config");
 
         assert_eq!(deserialized.server.host, "127.0.0.1");
@@ -1820,7 +1820,7 @@ model = "test-model"
 endpoint = "http://localhost:1234/v1"
 "#;
         std::fs::write(&config_path, initial_toml).unwrap();
-        let config = crate::config::Config::parse(initial_toml).unwrap();
+        let config = buddy_core::config::Config::parse(initial_toml).unwrap();
         let state = Arc::new(AppState {
             provider: arc_swap::ArcSwap::from_pointee(MockProvider { tokens: vec!["hi".into()] }),
             registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
@@ -1828,7 +1828,7 @@ endpoint = "http://localhost:1234/v1"
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
-            memory_config: arc_swap::ArcSwap::from_pointee(crate::config::MemoryConfig::default()),
+            memory_config: arc_swap::ArcSwap::from_pointee(buddy_core::config::MemoryConfig::default()),
             warnings: crate::warning::new_shared_warnings(),
             pending_approvals: new_pending_approvals(),
             conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
@@ -1876,7 +1876,7 @@ endpoint = "http://localhost:1234/v1"
         assert_eq!(response.status(), StatusCode::OK);
 
         let disk = std::fs::read_to_string(dir.join("buddy.toml")).unwrap();
-        let reparsed = crate::config::Config::parse(&disk).unwrap();
+        let reparsed = buddy_core::config::Config::parse(&disk).unwrap();
         assert_eq!(reparsed.models.chat.providers[0].model, "gpt-4o");
         assert_eq!(reparsed.models.chat.providers[0].provider_type, "openai");
 
@@ -1994,7 +1994,7 @@ endpoint = "http://localhost:1234/v1"
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         let bytes = response.into_body().collect().await.unwrap().to_bytes();
-        let updated: crate::config::Config = serde_json::from_slice(&bytes).unwrap();
+        let updated: buddy_core::config::Config = serde_json::from_slice(&bytes).unwrap();
         let provider = &updated.models.chat.providers[0];
         assert_eq!(provider.api_key.as_deref(), Some("sk-test-direct-key"));
 
@@ -2024,7 +2024,7 @@ endpoint = "http://localhost:1234/v1"
         assert_eq!(response.status(), StatusCode::OK);
 
         let disk = std::fs::read_to_string(dir.join("buddy.toml")).unwrap();
-        let reparsed = crate::config::Config::parse(&disk).unwrap();
+        let reparsed = buddy_core::config::Config::parse(&disk).unwrap();
         assert!(reparsed.skills.read_file.is_some());
         // Models section should be unchanged.
         assert_eq!(reparsed.models.chat.providers[0].model, "test-model");
@@ -2066,7 +2066,7 @@ approval = "once"
             tmp = std::env::temp_dir().to_str().unwrap()
         );
         std::fs::write(&config_path, &initial_toml).unwrap();
-        let config = crate::config::Config::parse(&initial_toml).unwrap();
+        let config = buddy_core::config::Config::parse(&initial_toml).unwrap();
         let state = Arc::new(AppState {
             provider: arc_swap::ArcSwap::from_pointee(MockProvider {
                 tokens: vec!["hi".into()],
@@ -2077,7 +2077,7 @@ approval = "once"
             vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
             memory_config: arc_swap::ArcSwap::from_pointee(
-                crate::config::MemoryConfig::default(),
+                buddy_core::config::MemoryConfig::default(),
             ),
             warnings: crate::warning::new_shared_warnings(),
             pending_approvals: new_pending_approvals(),
@@ -2363,7 +2363,7 @@ approval = "once"
         assert_eq!(response.status(), StatusCode::OK);
 
         let disk = std::fs::read_to_string(dir.join("buddy.toml")).unwrap();
-        let reparsed = crate::config::Config::parse(&disk).unwrap();
+        let reparsed = buddy_core::config::Config::parse(&disk).unwrap();
         assert_eq!(reparsed.chat.system_prompt, "You are a pirate.");
 
         std::fs::remove_dir_all(&dir).ok();
@@ -2390,7 +2390,7 @@ approval = "once"
         assert_eq!(response.status(), StatusCode::OK);
 
         let disk = std::fs::read_to_string(dir.join("buddy.toml")).unwrap();
-        let reparsed = crate::config::Config::parse(&disk).unwrap();
+        let reparsed = buddy_core::config::Config::parse(&disk).unwrap();
         assert_eq!(reparsed.server.port, 8080);
         assert_eq!(reparsed.server.host, "0.0.0.0");
 
@@ -2419,7 +2419,7 @@ approval = "once"
         assert_eq!(response.status(), StatusCode::OK);
 
         let disk = std::fs::read_to_string(dir.join("buddy.toml")).unwrap();
-        let reparsed = crate::config::Config::parse(&disk).unwrap();
+        let reparsed = buddy_core::config::Config::parse(&disk).unwrap();
         assert!(!reparsed.memory.auto_retrieve);
         assert_eq!(reparsed.memory.auto_retrieve_limit, 10);
 
@@ -2508,7 +2508,7 @@ approval = "once"
             vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
             memory_config: arc_swap::ArcSwap::from_pointee(
-                crate::config::MemoryConfig::default(),
+                buddy_core::config::MemoryConfig::default(),
             ),
             warnings: crate::warning::new_shared_warnings(),
             pending_approvals: new_pending_approvals(),
@@ -2882,7 +2882,7 @@ mod discover_models {
             vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
             memory_config: arc_swap::ArcSwap::from_pointee(
-                crate::config::MemoryConfig::default(),
+                buddy_core::config::MemoryConfig::default(),
             ),
             warnings: crate::warning::new_shared_warnings(),
             pending_approvals: new_pending_approvals(),
@@ -3107,7 +3107,7 @@ mod settings_page {
     use super::*;
 
     // Reuse config_api helpers.
-    fn config_app(config: crate::config::Config) -> Router {
+    fn config_app(config: buddy_core::config::Config) -> Router {
         let state = Arc::new(AppState {
             provider: arc_swap::ArcSwap::from_pointee(MockProvider {
                 tokens: vec!["hi".into()],
@@ -3118,7 +3118,7 @@ mod settings_page {
             vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
             memory_config: arc_swap::ArcSwap::from_pointee(
-                crate::config::MemoryConfig::default(),
+                buddy_core::config::MemoryConfig::default(),
             ),
             warnings: crate::warning::new_shared_warnings(),
             pending_approvals: new_pending_approvals(),
@@ -3153,7 +3153,7 @@ auto_retrieve_limit = 3
 similarity_threshold = 0.5
 "#;
         std::fs::write(&config_path, initial_toml).unwrap();
-        let config = crate::config::Config::parse(initial_toml).unwrap();
+        let config = buddy_core::config::Config::parse(initial_toml).unwrap();
         let state = Arc::new(AppState {
             provider: arc_swap::ArcSwap::from_pointee(MockProvider {
                 tokens: vec!["hi".into()],
@@ -3164,7 +3164,7 @@ similarity_threshold = 0.5
             vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
             memory_config: arc_swap::ArcSwap::from_pointee(
-                crate::config::MemoryConfig::default(),
+                buddy_core::config::MemoryConfig::default(),
             ),
             warnings: crate::warning::new_shared_warnings(),
             pending_approvals: new_pending_approvals(),
@@ -3192,7 +3192,7 @@ similarity_threshold = 0.5
     /// Test case 1: Load settings page; GET /api/config returns all sections populated.
     #[tokio::test]
     async fn get_config_returns_all_sections_for_settings_page() {
-        let config = crate::config::Config::parse(
+        let config = buddy_core::config::Config::parse(
             r#"
 [[models.chat.providers]]
 type = "openai"
@@ -3255,7 +3255,7 @@ similarity_threshold = 0.8
     /// Test case 2: No embedding providers; embedding section is null.
     #[tokio::test]
     async fn no_embedding_returns_null() {
-        let config = crate::config::Config::parse(
+        let config = buddy_core::config::Config::parse(
             r#"
 [[models.chat.providers]]
 type = "lmstudio"
@@ -3381,7 +3381,7 @@ endpoint = "http://localhost:1234/v1"
     /// from the API side, we verify the endpoint always returns 200 with valid JSON.
     #[tokio::test]
     async fn get_config_always_returns_valid_json() {
-        let config = crate::config::Config::parse(
+        let config = buddy_core::config::Config::parse(
             r#"
 [[models.chat.providers]]
 type = "lmstudio"
@@ -3462,7 +3462,7 @@ model = "test-model"
 endpoint = "http://localhost:1234/v1"
 "#;
         std::fs::write(&config_path, initial_toml).unwrap();
-        let config = crate::config::Config::parse(initial_toml).unwrap();
+        let config = buddy_core::config::Config::parse(initial_toml).unwrap();
 
         // Start with single-provider warning (matches single-provider startup).
         let warnings = new_shared_warnings();
@@ -3485,7 +3485,7 @@ endpoint = "http://localhost:1234/v1"
             vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
             memory_config: arc_swap::ArcSwap::from_pointee(
-                crate::config::MemoryConfig::default(),
+                buddy_core::config::MemoryConfig::default(),
             ),
             warnings,
             pending_approvals: new_pending_approvals(),
@@ -3772,7 +3772,7 @@ type = "local"
 model = "all-minilm"
 "#;
         std::fs::write(&config_path, initial_toml).unwrap();
-        let config = crate::config::Config::parse(initial_toml).unwrap();
+        let config = buddy_core::config::Config::parse(initial_toml).unwrap();
         let state = Arc::new(AppState {
             provider: arc_swap::ArcSwap::from_pointee(MockProvider {
                 tokens: vec!["hi".into()],
@@ -3783,7 +3783,7 @@ model = "all-minilm"
             vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
             memory_config: arc_swap::ArcSwap::from_pointee(
-                crate::config::MemoryConfig::default(),
+                buddy_core::config::MemoryConfig::default(),
             ),
             warnings: crate::warning::new_shared_warnings(),
             pending_approvals: new_pending_approvals(),
@@ -3941,7 +3941,7 @@ type = "lmstudio"
 model = "deepseek-coder"
 endpoint = "http://localhost:1234/v1"
 "#;
-        let config = crate::config::Config::parse(initial_toml).unwrap();
+        let config = buddy_core::config::Config::parse(initial_toml).unwrap();
         let state = Arc::new(AppState {
             provider: arc_swap::ArcSwap::from_pointee(MockProvider {
                 tokens: vec!["hi".into()],
@@ -3952,7 +3952,7 @@ endpoint = "http://localhost:1234/v1"
             vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
             memory_config: arc_swap::ArcSwap::from_pointee(
-                crate::config::MemoryConfig::default(),
+                buddy_core::config::MemoryConfig::default(),
             ),
             warnings: crate::warning::new_shared_warnings(),
             pending_approvals: new_pending_approvals(),
@@ -4051,7 +4051,7 @@ model = "gpt-4"
 endpoint = "https://api.openai.com/v1"
 "#;
         std::fs::write(&config_path, initial_toml).unwrap();
-        let config = crate::config::Config::parse(initial_toml).unwrap();
+        let config = buddy_core::config::Config::parse(initial_toml).unwrap();
         let state = Arc::new(AppState {
             provider: arc_swap::ArcSwap::from_pointee(MockProvider {
                 tokens: vec!["hi".into()],
@@ -4062,7 +4062,7 @@ endpoint = "https://api.openai.com/v1"
             vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
             memory_config: arc_swap::ArcSwap::from_pointee(
-                crate::config::MemoryConfig::default(),
+                buddy_core::config::MemoryConfig::default(),
             ),
             warnings: crate::warning::new_shared_warnings(),
             pending_approvals: new_pending_approvals(),
@@ -4365,7 +4365,7 @@ fn test_app_with_vector_store(
         embedder: arc_swap::ArcSwap::from_pointee(embedder),
         vector_store: arc_swap::ArcSwap::from_pointee(vector_store),
         working_memory: crate::skill::working_memory::new_working_memory_map(),
-        memory_config: arc_swap::ArcSwap::from_pointee(crate::config::MemoryConfig::default()),
+        memory_config: arc_swap::ArcSwap::from_pointee(buddy_core::config::MemoryConfig::default()),
         warnings: crate::warning::new_shared_warnings(),
         pending_approvals: new_pending_approvals(),
         conversation_approvals: Arc::new(Mutex::new(HashMap::new())),

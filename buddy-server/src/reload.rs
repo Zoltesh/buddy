@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::config::{ApprovalPolicy, Config};
+use buddy_core::config::{ApprovalPolicy, Config};
 use crate::embedding;
 use crate::embedding::Embedder;
 use crate::memory;
@@ -331,7 +331,7 @@ pub fn reload_from_config(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
+    use buddy_core::config::Config;
 
     fn lmstudio_config() -> Config {
         Config::parse(

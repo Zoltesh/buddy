@@ -1,13 +1,13 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use axum::routing::{get, post, put};
 use axum::Router;
+use clap::Parser;
 use tokio::signal;
 use tower_http::services::{ServeDir, ServeFile};
 
 mod api;
-mod config;
 mod embedding;
 mod memory;
 mod provider;
@@ -16,8 +16,23 @@ mod skill;
 pub mod store;
 #[cfg(test)]
 mod testutil;
-mod types;
 mod warning;
+
+const DEFAULT_CONFIG_PATH: &str = "buddy.toml";
+
+#[derive(Parser)]
+#[command(name = "buddy-server")]
+struct Cli {
+    /// Path to the configuration file
+    #[arg(long = "config", default_value = DEFAULT_CONFIG_PATH)]
+    config: PathBuf,
+}
+
+fn load_config() -> Result<(buddy_core::config::Config, PathBuf), String> {
+    let cli = Cli::parse();
+    let config = buddy_core::config::Config::from_file(&cli.config)?;
+    Ok((config, cli.config))
+}
 
 use api::{approve_handler, chat_handler, clear_memory, create_conversation, delete_conversation, discover_models, get_config, get_conversation, get_embedder_health, get_memory_status, get_warnings, list_conversations, migrate_memory, new_pending_approvals, put_config_chat, put_config_memory, put_config_models, put_config_server, put_config_skills, test_provider, AppState};
 use provider::{AnyProvider, ProviderChain};
@@ -27,7 +42,7 @@ type AppProvider = ProviderChain<AnyProvider>;
 
 #[tokio::main]
 async fn main() {
-    let (config, config_path) = config::Config::load().unwrap_or_else(|e| {
+    let (config, config_path) = load_config().unwrap_or_else(|e| {
         eprintln!("Error: {e}");
         std::process::exit(1);
     });

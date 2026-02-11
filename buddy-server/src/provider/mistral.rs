@@ -1,8 +1,8 @@
+use buddy_core::types::Message;
 use reqwest::Client;
 
 use crate::provider::openai::{build_request_body, map_error_status, parse_sse_stream};
 use crate::provider::{Provider, ProviderError, TokenStream};
-use crate::types::Message;
 
 /// Mistral AI provider. Uses Mistral's OpenAI-compatible API endpoint.
 /// API key is sent as a Bearer token in the Authorization header.
@@ -67,7 +67,7 @@ mod tests {
         build_request_body, map_error_status, parse_sse_line, SseChunk, ToolCallAccumulator,
     };
     use crate::provider::{ProviderError, Token};
-    use crate::types::{Message, MessageContent, Role};
+    use buddy_core::types::{Message, MessageContent, Role};
     use chrono::Utc;
 
     fn make_messages() -> Vec<Message> {

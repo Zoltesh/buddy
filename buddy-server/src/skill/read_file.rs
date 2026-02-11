@@ -2,7 +2,7 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 
-use crate::config::ReadFileConfig;
+use buddy_core::config::ReadFileConfig;
 
 use super::{Skill, SkillError, normalize_path};
 

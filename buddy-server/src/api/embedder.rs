@@ -113,8 +113,8 @@ pub async fn get_embedder_health<P: Provider + 'static>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use buddy_core::config::{Config, MemoryConfig};
     use crate::api::new_pending_approvals;
-    use crate::config::{Config, MemoryConfig};
     use crate::embedding::Embedder;
     use crate::skill::SkillRegistry;
     use crate::store::Store;

@@ -1,8 +1,8 @@
+use buddy_core::types::Message;
 use reqwest::Client;
 
 use crate::provider::openai::{build_request_body, map_error_status, parse_sse_stream};
 use crate::provider::{Provider, ProviderError, TokenStream};
-use crate::types::Message;
 
 /// Ollama provider. Connects to a local Ollama server using its
 /// OpenAI-compatible chat completions endpoint. No API key required.
@@ -64,7 +64,7 @@ mod tests {
         build_request_body, map_error_status, parse_sse_line, SseChunk, ToolCallAccumulator,
     };
     use crate::provider::{ProviderError, Token};
-    use crate::types::{Message, MessageContent, Role};
+    use buddy_core::types::{Message, MessageContent, Role};
     use chrono::Utc;
 
     fn make_messages() -> Vec<Message> {

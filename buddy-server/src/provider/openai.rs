@@ -1,9 +1,9 @@
+use buddy_core::types::{Message, MessageContent, Role};
 use futures_util::StreamExt;
 use reqwest::Client;
 use serde::Deserialize;
 
 use crate::provider::{Provider, ProviderError, Token, TokenStream};
-use crate::types::{Message, MessageContent, Role};
 
 /// OpenAI-compatible provider (works with OpenAI, Azure OpenAI, and any
 /// endpoint that speaks the same chat-completions protocol).

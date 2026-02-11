@@ -26,7 +26,7 @@ pub struct ValidationErrorResponse {
 }
 
 fn validate_provider(
-    p: &crate::config::ProviderEntry,
+    p: &buddy_core::config::ProviderEntry,
     prefix: &str,
     i: usize,
     errors: &mut Vec<FieldError>,
@@ -48,7 +48,7 @@ fn validate_provider(
     }
 }
 
-fn validate_models(models: &crate::config::ModelsConfig) -> Vec<FieldError> {
+fn validate_models(models: &buddy_core::config::ModelsConfig) -> Vec<FieldError> {
     let mut errors = Vec::new();
     if models.chat.providers.is_empty() {
         errors.push(FieldError {
@@ -67,7 +67,7 @@ fn validate_models(models: &crate::config::ModelsConfig) -> Vec<FieldError> {
     errors
 }
 
-fn validate_server(server: &crate::config::ServerConfig) -> Vec<FieldError> {
+fn validate_server(server: &buddy_core::config::ServerConfig) -> Vec<FieldError> {
     let mut errors = Vec::new();
     if server.port == 0 {
         errors.push(FieldError {
@@ -78,7 +78,7 @@ fn validate_server(server: &crate::config::ServerConfig) -> Vec<FieldError> {
     errors
 }
 
-pub(crate) fn validate_skills(skills: &crate::config::SkillsConfig) -> Vec<FieldError> {
+pub(crate) fn validate_skills(skills: &buddy_core::config::SkillsConfig) -> Vec<FieldError> {
     let mut errors = Vec::new();
     if let Some(ref rf) = skills.read_file {
         for (i, dir) in rf.allowed_directories.iter().enumerate() {
@@ -130,8 +130,8 @@ fn atomic_write(path: &std::path::Path, content: &str) -> Result<(), String> {
 /// Apply a mutation to the config, persist to disk, and trigger hot-reload.
 fn apply_config_update<P: Provider + 'static>(
     state: &Arc<AppState<P>>,
-    mutate: impl FnOnce(&mut crate::config::Config),
-) -> Result<crate::config::Config, axum::response::Response> {
+    mutate: impl FnOnce(&mut buddy_core::config::Config),
+) -> Result<buddy_core::config::Config, axum::response::Response> {
     {
         let mut config = state.config.write().unwrap();
         mutate(&mut config);
@@ -163,7 +163,7 @@ fn apply_config_update<P: Provider + 'static>(
 /// `GET /api/config` — return the current configuration as JSON.
 pub async fn get_config<P: Provider + 'static>(
     State(state): State<Arc<AppState<P>>>,
-) -> Json<crate::config::Config> {
+) -> Json<buddy_core::config::Config> {
     let config = state.config.read().unwrap();
     Json(config.clone())
 }
@@ -172,14 +172,14 @@ pub async fn get_config<P: Provider + 'static>(
 #[derive(Serialize)]
 struct ModelsConfigResponse {
     #[serde(flatten)]
-    config: crate::config::Config,
+    config: buddy_core::config::Config,
     embedding_migration_required: bool,
 }
 
 /// `PUT /api/config/models` — update the models section.
 pub async fn put_config_models<P: Provider + 'static>(
     State(state): State<Arc<AppState<P>>>,
-    Json(models): Json<crate::config::ModelsConfig>,
+    Json(models): Json<buddy_core::config::ModelsConfig>,
 ) -> axum::response::Response {
     let errors = validate_models(&models);
     if !errors.is_empty() {
@@ -209,7 +209,7 @@ pub async fn put_config_models<P: Provider + 'static>(
 /// `PUT /api/config/skills` — update the skills section.
 pub async fn put_config_skills<P: Provider + 'static>(
     State(state): State<Arc<AppState<P>>>,
-    Json(skills): Json<crate::config::SkillsConfig>,
+    Json(skills): Json<buddy_core::config::SkillsConfig>,
 ) -> axum::response::Response {
     let errors = validate_skills(&skills);
     if !errors.is_empty() {
@@ -224,7 +224,7 @@ pub async fn put_config_skills<P: Provider + 'static>(
 /// `PUT /api/config/chat` — update the chat section.
 pub async fn put_config_chat<P: Provider + 'static>(
     State(state): State<Arc<AppState<P>>>,
-    Json(chat): Json<crate::config::ChatConfig>,
+    Json(chat): Json<buddy_core::config::ChatConfig>,
 ) -> axum::response::Response {
     match apply_config_update(&state, |config| config.chat = chat) {
         Ok(config) => Json(config).into_response(),
@@ -236,7 +236,7 @@ pub async fn put_config_chat<P: Provider + 'static>(
 #[derive(Serialize)]
 struct ConfigWithNotes {
     #[serde(flatten)]
-    config: crate::config::Config,
+    config: buddy_core::config::Config,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     notes: Vec<String>,
 }
@@ -247,7 +247,7 @@ struct ConfigWithNotes {
 /// restart to take effect. The response includes a note indicating this.
 pub async fn put_config_server<P: Provider + 'static>(
     State(state): State<Arc<AppState<P>>>,
-    Json(server): Json<crate::config::ServerConfig>,
+    Json(server): Json<buddy_core::config::ServerConfig>,
 ) -> axum::response::Response {
     let errors = validate_server(&server);
     if !errors.is_empty() {
@@ -284,7 +284,7 @@ pub async fn put_config_server<P: Provider + 'static>(
 /// `PUT /api/config/memory` — update the memory section.
 pub async fn put_config_memory<P: Provider + 'static>(
     State(state): State<Arc<AppState<P>>>,
-    Json(memory): Json<crate::config::MemoryConfig>,
+    Json(memory): Json<buddy_core::config::MemoryConfig>,
 ) -> axum::response::Response {
     match apply_config_update(&state, |config| config.memory = memory) {
         Ok(config) => Json(config).into_response(),
@@ -303,7 +303,7 @@ pub struct TestProviderResponse {
 /// `POST /api/config/test-provider` — dry-run connectivity check for a provider.
 pub async fn test_provider<P: Provider + 'static>(
     State(_state): State<Arc<AppState<P>>>,
-    Json(entry): Json<crate::config::ProviderEntry>,
+    Json(entry): Json<buddy_core::config::ProviderEntry>,
 ) -> axum::response::Response {
     // Validate provider type.
     if !["openai", "mistral", "lmstudio", "ollama", "gemini", "local"].contains(&entry.provider_type.as_str()) {
