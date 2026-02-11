@@ -292,8 +292,8 @@ impl MockEmbedder {
     }
 }
 
-impl crate::embedding::Embedder for MockEmbedder {
-    fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, crate::embedding::EmbedError> {
+impl buddy_core::embedding::Embedder for MockEmbedder {
+    fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, buddy_core::embedding::EmbedError> {
         let mut counter = self.counter.lock().unwrap();
         let mut results = Vec::new();
         for _ in texts {
@@ -329,9 +329,9 @@ impl FailingEmbedder {
     }
 }
 
-impl crate::embedding::Embedder for FailingEmbedder {
-    fn embed(&self, _texts: &[&str]) -> Result<Vec<Vec<f32>>, crate::embedding::EmbedError> {
-        Err(crate::embedding::EmbedError::EncodingFailed(
+impl buddy_core::embedding::Embedder for FailingEmbedder {
+    fn embed(&self, _texts: &[&str]) -> Result<Vec<Vec<f32>>, buddy_core::embedding::EmbedError> {
+        Err(buddy_core::embedding::EmbedError::EncodingFailed(
             "mock embedder failure".into(),
         ))
     }
@@ -364,8 +364,8 @@ impl WrongDimensionEmbedder {
     }
 }
 
-impl crate::embedding::Embedder for WrongDimensionEmbedder {
-    fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, crate::embedding::EmbedError> {
+impl buddy_core::embedding::Embedder for WrongDimensionEmbedder {
+    fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, buddy_core::embedding::EmbedError> {
         let mut results = Vec::new();
         for _ in texts {
             results.push(vec![0.0f32; self.actual_dims]);

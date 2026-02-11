@@ -5,8 +5,8 @@ use std::sync::Arc;
 use chrono::Utc;
 use uuid::Uuid;
 
-use crate::embedding::Embedder;
-use crate::memory::{VectorEntry, VectorStore};
+use buddy_core::embedding::Embedder;
+use buddy_core::memory::{VectorEntry, VectorStore};
 
 use super::{PermissionLevel, Skill, SkillError};
 
@@ -119,8 +119,8 @@ impl Skill for RememberSkill {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::memory::sqlite::SqliteVectorStore;
-    use crate::memory::VectorStore;
+    use buddy_core::memory::sqlite::SqliteVectorStore;
+    use buddy_core::memory::VectorStore;
     use crate::testutil::MockEmbedder;
 
     fn setup() -> (Arc<dyn Embedder>, Arc<dyn VectorStore>, RememberSkill) {

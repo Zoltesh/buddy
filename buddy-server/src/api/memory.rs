@@ -58,7 +58,7 @@ pub async fn migrate_memory<P: Provider + 'static>(
 
     let count = entries.len();
     for (entry, embedding) in entries.into_iter().zip(new_embeddings) {
-        let new_entry = crate::memory::VectorEntry {
+        let new_entry = buddy_core::memory::VectorEntry {
             id: entry.id,
             embedding,
             source_text: entry.source_text,

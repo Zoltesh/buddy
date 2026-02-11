@@ -114,9 +114,9 @@ pub struct ApproveRequest {
 pub struct AppState<P> {
     pub provider: arc_swap::ArcSwap<P>,
     pub registry: arc_swap::ArcSwap<crate::skill::SkillRegistry>,
-    pub store: crate::store::Store,
-    pub embedder: arc_swap::ArcSwap<Option<std::sync::Arc<dyn crate::embedding::Embedder>>>,
-    pub vector_store: arc_swap::ArcSwap<Option<std::sync::Arc<dyn crate::memory::VectorStore>>>,
+    pub store: buddy_core::store::Store,
+    pub embedder: arc_swap::ArcSwap<Option<std::sync::Arc<dyn buddy_core::embedding::Embedder>>>,
+    pub vector_store: arc_swap::ArcSwap<Option<std::sync::Arc<dyn buddy_core::memory::VectorStore>>>,
     pub working_memory: crate::skill::working_memory::WorkingMemoryMap,
     pub memory_config: arc_swap::ArcSwap<buddy_core::config::MemoryConfig>,
     pub warnings: crate::warning::SharedWarnings,

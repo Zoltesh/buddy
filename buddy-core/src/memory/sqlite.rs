@@ -35,7 +35,8 @@ impl SqliteVectorStore {
     }
 
     /// Open an in-memory vector store (for testing).
-    #[cfg(test)]
+    ///
+    /// This is a test helper and should not be used in production code.
     pub fn open_in_memory(model_name: &str, dimensions: usize) -> Result<Self, VectorStoreError> {
         let conn = Connection::open_in_memory()
             .map_err(|e| VectorStoreError::StorageError(format!("failed to open in-memory db: {e}")))?;

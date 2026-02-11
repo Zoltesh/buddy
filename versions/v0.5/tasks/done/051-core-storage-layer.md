@@ -30,20 +30,20 @@ The storage layer — conversation store (`store.rs`), embedding system (`embedd
 
 ## Acceptance Criteria
 
-- [ ] `buddy-core/src/store.rs` exists with `Store` and all conversation types
-- [ ] `buddy-core/src/embedding/` exists with `Embedder` trait and `LocalEmbedder`
-- [ ] `buddy-core/src/memory/` exists with `VectorStore` trait and `SqliteVectorStore`
-- [ ] `buddy-server/src/store.rs`, `buddy-server/src/embedding/`, and `buddy-server/src/memory/` no longer exist
-- [ ] All `buddy-server` modules import storage types from `buddy_core`
-- [ ] `cargo test` passes all existing tests
-- [ ] `cargo test -p buddy-core` passes store, embedding, and memory tests
-- [ ] `buddy-core` compiles independently (`cargo build -p buddy-core`)
+- [x] `buddy-core/src/store.rs` exists with `Store` and all conversation types
+- [x] `buddy-core/src/embedding/` exists with `Embedder` trait and `LocalEmbedder`
+- [x] `buddy-core/src/memory/` exists with `VectorStore` trait and `SqliteVectorStore`
+- [x] `buddy-server/src/store.rs`, `buddy-server/src/embedding/`, and `buddy-server/src/memory/` no longer exist
+- [x] All `buddy-server` modules import storage types from `buddy_core`
+- [x] `cargo test` passes all existing tests
+- [x] `cargo test -p buddy-core` passes store, embedding, and memory tests
+- [x] `buddy-core` compiles independently (`cargo build -p buddy-core`)
 
 ## Test Cases
 
-- [ ] Run `cargo test -p buddy-core`; assert store, embedding, and memory tests pass
-- [ ] Run `cargo test -p buddy-server`; assert all existing server tests pass
-- [ ] Verify `buddy-server/src/store.rs` does not exist
-- [ ] Verify `buddy-server/src/embedding/` directory does not exist
-- [ ] Verify `buddy-server/src/memory/` directory does not exist
-- [ ] Run `cargo build -p buddy-core`; assert it compiles independently
+- [x] Run `cargo test -p buddy-core`; assert store, embedding, and memory tests pass
+- [x] Run `cargo test -p buddy-server`; assert all existing server tests pass
+- [x] Verify `buddy-server/src/store.rs` does not exist
+- [x] Verify `buddy-server/src/embedding/` directory does not exist
+- [x] Verify `buddy-server/src/memory/` directory does not exist
+- [x] Run `cargo build -p buddy-core`; assert it compiles independently

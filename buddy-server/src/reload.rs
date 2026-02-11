@@ -8,9 +8,9 @@ use std::path::Path;
 use std::sync::Arc;
 
 use buddy_core::config::{ApprovalPolicy, Config};
-use crate::embedding;
-use crate::embedding::Embedder;
-use crate::memory;
+use buddy_core::embedding;
+use buddy_core::embedding::Embedder;
+use buddy_core::memory;
 use crate::provider::gemini::GeminiProvider;
 use crate::provider::lmstudio::LmStudioProvider;
 use crate::provider::mistral::MistralProvider;
@@ -537,7 +537,7 @@ model = "all-MiniLM-L6-v2"
     fn reload_from_config_activates_local_embedder_when_external_removed() {
         use crate::api::AppState;
         use crate::skill;
-        use crate::store::Store;
+        use buddy_core::store::Store;
 
         // Start with a config that has an external provider (local type)
         let config_with_external = Config::parse(

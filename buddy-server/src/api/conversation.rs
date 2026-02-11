@@ -12,7 +12,7 @@ use crate::provider::Provider;
 /// `GET /api/conversations` — list all conversation summaries.
 pub async fn list_conversations<P: Provider + 'static>(
     State(state): State<Arc<AppState<P>>>,
-) -> Result<Json<Vec<crate::store::ConversationSummary>>, (StatusCode, Json<ApiError>)> {
+) -> Result<Json<Vec<buddy_core::store::ConversationSummary>>, (StatusCode, Json<ApiError>)> {
     let list = state.store.list_conversations().map_err(|e| internal_error(e))?;
     Ok(Json(list))
 }
@@ -20,7 +20,7 @@ pub async fn list_conversations<P: Provider + 'static>(
 /// `POST /api/conversations` — create a new empty conversation.
 pub async fn create_conversation<P: Provider + 'static>(
     State(state): State<Arc<AppState<P>>>,
-) -> Result<(StatusCode, Json<crate::store::Conversation>), (StatusCode, Json<ApiError>)> {
+) -> Result<(StatusCode, Json<buddy_core::store::Conversation>), (StatusCode, Json<ApiError>)> {
     let conv = state.store.create_conversation("New conversation").map_err(|e| internal_error(e))?;
     Ok((StatusCode::CREATED, Json(conv)))
 }
@@ -29,7 +29,7 @@ pub async fn create_conversation<P: Provider + 'static>(
 pub async fn get_conversation<P: Provider + 'static>(
     State(state): State<Arc<AppState<P>>>,
     Path(id): Path<String>,
-) -> Result<Json<crate::store::Conversation>, (StatusCode, Json<ApiError>)> {
+) -> Result<Json<buddy_core::store::Conversation>, (StatusCode, Json<ApiError>)> {
     let conv = state.store.get_conversation(&id).map_err(|e| internal_error(e))?;
     match conv {
         Some(c) => Ok(Json(c)),

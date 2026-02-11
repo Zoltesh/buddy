@@ -19,7 +19,7 @@ use buddy_core::config::ApprovalPolicy;
 use buddy_core::types::{Message, MessageContent, Role};
 use crate::provider::{Provider, Token};
 use crate::skill::PermissionLevel;
-use crate::store::title_from_message;
+use buddy_core::store::title_from_message;
 
 /// Maximum number of tool-call loop iterations before aborting.
 pub(super) const MAX_TOOL_ITERATIONS: usize = 10;
@@ -173,16 +173,9 @@ pub async fn approve_handler<P: Provider + 'static>(
 // ── Internal helpers ────────────────────────────────────────────────────
 
 /// Persist a message to the store, logging errors without crashing.
-fn persist_message(state: &impl AsRef<crate::store::Store>, conversation_id: &str, message: &Message) {
-    let store = state.as_ref();
+fn persist_message(store: &buddy_core::store::Store, conversation_id: &str, message: &Message) {
     if let Err(e) = store.append_message(conversation_id, message) {
         eprintln!("warning: failed to persist message: {e}");
-    }
-}
-
-impl AsRef<crate::store::Store> for crate::store::Store {
-    fn as_ref(&self) -> &crate::store::Store {
-        self
     }
 }
 

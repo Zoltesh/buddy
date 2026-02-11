@@ -8,12 +8,9 @@ use tokio::signal;
 use tower_http::services::{ServeDir, ServeFile};
 
 mod api;
-mod embedding;
-mod memory;
 mod provider;
 mod reload;
 mod skill;
-pub mod store;
 #[cfg(test)]
 mod testutil;
 mod warning;
@@ -35,8 +32,8 @@ fn load_config() -> Result<(buddy_core::config::Config, PathBuf), String> {
 }
 
 use api::{approve_handler, chat_handler, clear_memory, create_conversation, delete_conversation, discover_models, get_config, get_conversation, get_embedder_health, get_memory_status, get_warnings, list_conversations, migrate_memory, new_pending_approvals, put_config_chat, put_config_memory, put_config_models, put_config_server, put_config_skills, test_provider, AppState};
+use buddy_core::store::Store;
 use provider::{AnyProvider, ProviderChain};
-use store::Store;
 
 type AppProvider = ProviderChain<AnyProvider>;
 

@@ -115,9 +115,9 @@ mod tests {
     use super::*;
     use buddy_core::config::{Config, MemoryConfig};
     use crate::api::new_pending_approvals;
-    use crate::embedding::Embedder;
+    use buddy_core::embedding::Embedder;
     use crate::skill::SkillRegistry;
-    use crate::store::Store;
+    use buddy_core::store::Store;
     use crate::testutil::{FailingEmbedder, MockEmbedder, MockProvider, WrongDimensionEmbedder};
     use axum::http::Request;
     use axum::Router;

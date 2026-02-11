@@ -334,9 +334,12 @@ name = "buddy-core"
 version = "0.5.0"
 dependencies = [
  "chrono",
+ "fastembed",
+ "rusqlite",
  "serde",
  "serde_json",
  "toml",
+ "uuid",
 ]
 
 [[package]]

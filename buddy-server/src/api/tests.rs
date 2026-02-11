@@ -47,7 +47,7 @@ fn test_app(tokens: Vec<String>) -> Router {
     let state = Arc::new(AppState {
         provider: arc_swap::ArcSwap::from_pointee(MockProvider { tokens }),
         registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
-        store: crate::store::Store::open_in_memory().unwrap(),
+        store: buddy_core::store::Store::open_in_memory().unwrap(),
         embedder: arc_swap::ArcSwap::from_pointee(None),
         vector_store: arc_swap::ArcSwap::from_pointee(None),
         working_memory: crate::skill::working_memory::new_working_memory_map(),
@@ -70,7 +70,7 @@ fn test_app_with_static(tokens: Vec<String>, static_dir: &str) -> Router {
     let state = Arc::new(AppState {
         provider: arc_swap::ArcSwap::from_pointee(MockProvider { tokens }),
         registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
-        store: crate::store::Store::open_in_memory().unwrap(),
+        store: buddy_core::store::Store::open_in_memory().unwrap(),
         embedder: arc_swap::ArcSwap::from_pointee(None),
         vector_store: arc_swap::ArcSwap::from_pointee(None),
         working_memory: crate::skill::working_memory::new_working_memory_map(),
@@ -94,7 +94,7 @@ fn sequenced_app(responses: Vec<MockResponse>, registry: SkillRegistry) -> Route
     let state = Arc::new(AppState {
         provider: arc_swap::ArcSwap::from_pointee(SequencedProvider::new(responses)),
         registry: arc_swap::ArcSwap::from_pointee(registry),
-        store: crate::store::Store::open_in_memory().unwrap(),
+        store: buddy_core::store::Store::open_in_memory().unwrap(),
         embedder: arc_swap::ArcSwap::from_pointee(None),
         vector_store: arc_swap::ArcSwap::from_pointee(None),
         working_memory: crate::skill::working_memory::new_working_memory_map(),
@@ -117,7 +117,7 @@ fn conversation_app(tokens: Vec<String>) -> (Arc<AppState<MockProvider>>, Router
     let state = Arc::new(AppState {
         provider: arc_swap::ArcSwap::from_pointee(MockProvider { tokens }),
         registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
-        store: crate::store::Store::open_in_memory().unwrap(),
+        store: buddy_core::store::Store::open_in_memory().unwrap(),
         embedder: arc_swap::ArcSwap::from_pointee(None),
         vector_store: arc_swap::ArcSwap::from_pointee(None),
         working_memory: crate::skill::working_memory::new_working_memory_map(),
@@ -479,7 +479,7 @@ mod tool_loop {
         let state = Arc::new(AppState {
             provider: arc_swap::ArcSwap::from_pointee(chain),
             registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
-            store: crate::store::Store::open_in_memory().unwrap(),
+            store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
@@ -699,7 +699,7 @@ mod conversations {
                 MockResponse::Text(vec!["Final answer.".into()]),
             ])),
             registry: arc_swap::ArcSwap::from_pointee(registry_with_echo()),
-            store: crate::store::Store::open_in_memory().unwrap(),
+            store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
@@ -776,7 +776,7 @@ mod warnings {
         let state = Arc::new(AppState {
             provider: arc_swap::ArcSwap::from_pointee(MockProvider { tokens }),
             registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
-            store: crate::store::Store::open_in_memory().unwrap(),
+            store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
@@ -837,7 +837,7 @@ mod warnings {
         let state = Arc::new(AppState {
             provider: arc_swap::ArcSwap::from_pointee(MockProvider { tokens: vec![] }),
             registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
-            store: crate::store::Store::open_in_memory().unwrap(),
+            store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
@@ -894,7 +894,7 @@ mod warnings {
         let state = Arc::new(AppState {
             provider: arc_swap::ArcSwap::from_pointee(MockProvider { tokens: vec![] }),
             registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
-            store: crate::store::Store::open_in_memory().unwrap(),
+            store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
@@ -1025,7 +1025,7 @@ mod warnings {
         let state = Arc::new(AppState {
             provider: arc_swap::ArcSwap::from_pointee(MockProvider { tokens: vec![] }),
             registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
-            store: crate::store::Store::open_in_memory().unwrap(),
+            store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
@@ -1179,7 +1179,7 @@ mod approval {
         let state = Arc::new(AppState {
             provider: arc_swap::ArcSwap::from_pointee(SequencedProvider::new(responses)),
             registry: arc_swap::ArcSwap::from_pointee(registry),
-            store: crate::store::Store::open_in_memory().unwrap(),
+            store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
@@ -1563,7 +1563,7 @@ mod config_api {
                 tokens: vec!["hi".into()],
             }),
             registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
-            store: crate::store::Store::open_in_memory().unwrap(),
+            store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
@@ -1824,7 +1824,7 @@ endpoint = "http://localhost:1234/v1"
         let state = Arc::new(AppState {
             provider: arc_swap::ArcSwap::from_pointee(MockProvider { tokens: vec!["hi".into()] }),
             registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
-            store: crate::store::Store::open_in_memory().unwrap(),
+            store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
@@ -2072,7 +2072,7 @@ approval = "once"
                 tokens: vec!["hi".into()],
             }),
             registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
-            store: crate::store::Store::open_in_memory().unwrap(),
+            store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
@@ -2503,7 +2503,7 @@ approval = "once"
                 tokens: vec!["hi".into()],
             }),
             registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
-            store: crate::store::Store::open_in_memory().unwrap(),
+            store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
@@ -2877,7 +2877,7 @@ mod discover_models {
                 tokens: vec!["hi".into()],
             }),
             registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
-            store: crate::store::Store::open_in_memory().unwrap(),
+            store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
@@ -3113,7 +3113,7 @@ mod settings_page {
                 tokens: vec!["hi".into()],
             }),
             registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
-            store: crate::store::Store::open_in_memory().unwrap(),
+            store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
@@ -3159,7 +3159,7 @@ similarity_threshold = 0.5
                 tokens: vec!["hi".into()],
             }),
             registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
-            store: crate::store::Store::open_in_memory().unwrap(),
+            store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
@@ -3480,7 +3480,7 @@ endpoint = "http://localhost:1234/v1"
                 tokens: vec!["hi".into()],
             }),
             registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
-            store: crate::store::Store::open_in_memory().unwrap(),
+            store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
@@ -3778,7 +3778,7 @@ model = "all-minilm"
                 tokens: vec!["hi".into()],
             }),
             registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
-            store: crate::store::Store::open_in_memory().unwrap(),
+            store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
@@ -3947,7 +3947,7 @@ endpoint = "http://localhost:1234/v1"
                 tokens: vec!["hi".into()],
             }),
             registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
-            store: crate::store::Store::open_in_memory().unwrap(),
+            store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
@@ -4057,7 +4057,7 @@ endpoint = "https://api.openai.com/v1"
                 tokens: vec!["hi".into()],
             }),
             registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
-            store: crate::store::Store::open_in_memory().unwrap(),
+            store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
             working_memory: crate::skill::working_memory::new_working_memory_map(),
@@ -4349,19 +4349,19 @@ mod app_shell_navigation {
 
 use axum::routing::put;
 use crate::testutil::MockEmbedder;
-use crate::memory::sqlite::SqliteVectorStore;
-use crate::memory::{VectorEntry, VectorStore};
+use buddy_core::memory::sqlite::SqliteVectorStore;
+use buddy_core::memory::{VectorEntry, VectorStore};
 use crate::api::config::put_config_models;
 use crate::api::memory::get_memory_status;
 
 fn test_app_with_vector_store(
-    embedder: Option<Arc<dyn crate::embedding::Embedder>>,
+    embedder: Option<Arc<dyn buddy_core::embedding::Embedder>>,
     vector_store: Option<Arc<dyn VectorStore>>,
 ) -> Router {
     let state = Arc::new(AppState {
         provider: arc_swap::ArcSwap::from_pointee(MockProvider { tokens: vec![] }),
         registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
-        store: crate::store::Store::open_in_memory().unwrap(),
+        store: buddy_core::store::Store::open_in_memory().unwrap(),
         embedder: arc_swap::ArcSwap::from_pointee(embedder),
         vector_store: arc_swap::ArcSwap::from_pointee(vector_store),
         working_memory: crate::skill::working_memory::new_working_memory_map(),
@@ -4393,7 +4393,7 @@ async fn migration_required_when_model_changed_and_memories_exist() {
     }).unwrap();
 
     // Change config to model "B" (different dimensions).
-    let embedder_b: Arc<dyn crate::embedding::Embedder> = Arc::new(MockEmbedder::new(5));
+    let embedder_b: Arc<dyn buddy_core::embedding::Embedder> = Arc::new(MockEmbedder::new(5));
     let store_b = Arc::new(SqliteVectorStore::open_in_memory("model-B", 5).unwrap());
     // Copy entry with old dimensions to trigger mismatch.
     store_b.store(VectorEntry {
@@ -4420,7 +4420,7 @@ async fn migration_required_when_model_changed_and_memories_exist() {
 
     // Now open with model B - this will detect migration needed.
     let store_b = Arc::new(SqliteVectorStore::open(&path, "model-B", 5).unwrap());
-    let embedder_b: Arc<dyn crate::embedding::Embedder> = Arc::new(MockEmbedder::new(5));
+    let embedder_b: Arc<dyn buddy_core::embedding::Embedder> = Arc::new(MockEmbedder::new(5));
 
     let app = test_app_with_vector_store(Some(embedder_b), Some(store_b));
 
@@ -4461,7 +4461,7 @@ async fn migration_required_when_model_changed_and_memories_exist() {
 async fn migration_not_required_when_no_memories() {
     // Empty store with model B.
     let store = Arc::new(SqliteVectorStore::open_in_memory("model-B", 5).unwrap());
-    let embedder: Arc<dyn crate::embedding::Embedder> = Arc::new(MockEmbedder::new(5));
+    let embedder: Arc<dyn buddy_core::embedding::Embedder> = Arc::new(MockEmbedder::new(5));
 
     let app = test_app_with_vector_store(Some(embedder), Some(store));
 
@@ -4513,7 +4513,7 @@ async fn migration_not_required_when_model_unchanged() {
     }
 
     let store = Arc::new(SqliteVectorStore::open(&path, "model-A", 3).unwrap());
-    let embedder: Arc<dyn crate::embedding::Embedder> = Arc::new(MockEmbedder::new(3));
+    let embedder: Arc<dyn buddy_core::embedding::Embedder> = Arc::new(MockEmbedder::new(3));
 
     let app = test_app_with_vector_store(Some(embedder), Some(store));
 
@@ -4553,7 +4553,7 @@ async fn migration_not_required_when_model_unchanged() {
 #[tokio::test]
 async fn memory_status_empty_store() {
     let store = Arc::new(SqliteVectorStore::open_in_memory("model-A", 3).unwrap());
-    let embedder: Arc<dyn crate::embedding::Embedder> = Arc::new(MockEmbedder::new(3));
+    let embedder: Arc<dyn buddy_core::embedding::Embedder> = Arc::new(MockEmbedder::new(3));
 
     let app = test_app_with_vector_store(Some(embedder), Some(store));
 
@@ -4595,7 +4595,7 @@ async fn memory_status_with_mismatch() {
 
     // Change active embedder to "text-embedding-3-small", 1536 dims.
     let store = Arc::new(SqliteVectorStore::open(&path, "text-embedding-3-small", 1536).unwrap());
-    let embedder: Arc<dyn crate::embedding::Embedder> = Arc::new(MockEmbedder::new(1536));
+    let embedder: Arc<dyn buddy_core::embedding::Embedder> = Arc::new(MockEmbedder::new(1536));
 
     let app = test_app_with_vector_store(Some(embedder), Some(store));
 
@@ -4654,7 +4654,7 @@ async fn memory_status_after_migration() {
     }
 
     let store = Arc::new(store_b);
-    let embedder: Arc<dyn crate::embedding::Embedder> = Arc::new(MockEmbedder::new(5));
+    let embedder: Arc<dyn buddy_core::embedding::Embedder> = Arc::new(MockEmbedder::new(5));
 
     let app = test_app_with_vector_store(Some(embedder), Some(store));
 

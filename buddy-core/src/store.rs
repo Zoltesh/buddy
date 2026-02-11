@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::Mutex;
 
-use buddy_core::types::{Message, MessageContent, Role};
+use crate::types::{Message, MessageContent, Role};
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
@@ -46,7 +46,8 @@ impl Store {
     }
 
     /// Open an in-memory database (for testing).
-    #[cfg(test)]
+    ///
+    /// This is a test helper and should not be used in production code.
     pub fn open_in_memory() -> Result<Self, String> {
         let conn = Connection::open_in_memory()
             .map_err(|e| format!("failed to open in-memory database: {e}"))?;
