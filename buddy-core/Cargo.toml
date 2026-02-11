@@ -16,5 +16,5 @@ async-stream = "0.3"
 reqwest = { version = "0.12", features = ["json", "stream"] }
 futures-core = "0.3"
 futures-util = "0.3"
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
 url = "2"

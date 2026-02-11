@@ -9,6 +9,7 @@ pub mod provider;
 pub mod skill;
 pub mod reload;
 pub mod warning;
+pub mod state;
 
 // Test utilities - always available for use by buddy-server and tests
 pub mod testutil;

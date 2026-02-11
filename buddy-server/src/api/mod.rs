@@ -20,16 +20,15 @@ mod memory;
 #[cfg(test)]
 mod tests;
 
-use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::Json;
 use serde::{Deserialize, Serialize};
-use tokio::sync::{oneshot, Mutex};
 
 use buddy_core::provider::Provider;
+pub use buddy_core::state::{AppState, ConversationApprovals, PendingApprovals, new_pending_approvals};
 
 // Re-export handler functions for use in main.rs router setup.
 pub use chat::{approve_handler, chat_handler};
@@ -87,49 +86,11 @@ pub struct ApiError {
     pub message: String,
 }
 
-/// Pending approval requests awaiting user response.
-pub type PendingApprovals = Arc<Mutex<HashMap<String, oneshot::Sender<bool>>>>;
-
-/// Skills already approved once per conversation (`once` policy).
-pub type ConversationApprovals = Arc<Mutex<HashMap<String, HashSet<String>>>>;
-
-/// Create a new empty `PendingApprovals` map.
-pub fn new_pending_approvals() -> PendingApprovals {
-    Arc::new(Mutex::new(HashMap::new()))
-}
-
 /// Request body for `POST /api/chat/{conversation_id}/approve`.
 #[derive(Deserialize)]
 pub struct ApproveRequest {
     pub approval_id: String,
     pub approved: bool,
-}
-
-/// Shared application state.
-///
-/// Fields wrapped in `ArcSwap` are hot-reloadable: they can be atomically
-/// replaced when the configuration changes without interrupting in-flight
-/// requests. Handlers call `.load()` to get a snapshot for the duration of
-/// the request.
-pub struct AppState<P> {
-    pub provider: arc_swap::ArcSwap<P>,
-    pub registry: arc_swap::ArcSwap<buddy_core::skill::SkillRegistry>,
-    pub store: buddy_core::store::Store,
-    pub embedder: arc_swap::ArcSwap<Option<std::sync::Arc<dyn buddy_core::embedding::Embedder>>>,
-    pub vector_store: arc_swap::ArcSwap<Option<std::sync::Arc<dyn buddy_core::memory::VectorStore>>>,
-    pub working_memory: buddy_core::skill::working_memory::WorkingMemoryMap,
-    pub memory_config: arc_swap::ArcSwap<buddy_core::config::MemoryConfig>,
-    pub warnings: buddy_core::warning::SharedWarnings,
-    pub pending_approvals: PendingApprovals,
-    pub conversation_approvals: ConversationApprovals,
-    pub approval_overrides: arc_swap::ArcSwap<HashMap<String, buddy_core::config::ApprovalPolicy>>,
-    pub approval_timeout: std::time::Duration,
-    pub config: std::sync::RwLock<buddy_core::config::Config>,
-    pub config_path: std::path::PathBuf,
-    /// Optional callback invoked after a successful config write to hot-reload
-    /// runtime components. Set to `Some` in production (via `reload::reload_from_config`),
-    /// left as `None` in tests that don't need reload behavior.
-    pub on_config_change: Option<Box<dyn Fn(&Self) -> Result<(), String> + Send + Sync>>,
 }
 
 // ── Error helpers ───────────────────────────────────────────────────────

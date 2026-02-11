@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::routing::{get, post, put};
@@ -29,9 +29,9 @@ fn load_config() -> Result<(buddy_core::config::Config, PathBuf), String> {
     Ok((config, cli.config))
 }
 
-use api::{approve_handler, chat_handler, clear_memory, create_conversation, delete_conversation, discover_models, get_config, get_conversation, get_embedder_health, get_memory_status, get_warnings, list_conversations, migrate_memory, new_pending_approvals, put_config_chat, put_config_memory, put_config_models, put_config_server, put_config_skills, test_provider, AppState};
-use buddy_core::store::Store;
+use api::{approve_handler, chat_handler, clear_memory, create_conversation, delete_conversation, discover_models, get_config, get_conversation, get_embedder_health, get_memory_status, get_warnings, list_conversations, migrate_memory, put_config_chat, put_config_memory, put_config_models, put_config_server, put_config_skills, test_provider};
 use buddy_core::provider::{AnyProvider, ProviderChain};
+use buddy_core::state::AppState;
 
 type AppProvider = ProviderChain<AnyProvider>;
 
@@ -47,64 +47,21 @@ async fn main() {
     let primary_type = config.models.chat.providers[0].provider_type.clone();
     let primary_model = config.models.chat.providers[0].model.clone();
 
-    let store = Store::open(Path::new(&db_path)).unwrap_or_else(|e| {
-        eprintln!("Error: failed to initialize database: {e}");
-        std::process::exit(1);
-    });
-
-    // Build initial runtime components from config using the reload module.
-    let working_memory = buddy_core::skill::working_memory::new_working_memory_map();
-
-    let provider = buddy_core::reload::build_provider_chain(&config).unwrap_or_else(|e| {
-        eprintln!("Error: {e}");
-        std::process::exit(1);
-    });
-    let provider_count = provider.len();
-
-    let embedder = buddy_core::reload::build_embedder(&config).unwrap_or_else(|e| {
+    let mut app_state = AppState::new(config, &config_path).unwrap_or_else(|e| {
         eprintln!("Error: {e}");
         std::process::exit(1);
     });
 
-    let vector_store = buddy_core::reload::build_vector_store(&embedder).unwrap_or_else(|e| {
-        eprintln!("Error: {e}");
-        std::process::exit(1);
-    });
+    let provider_count = app_state.provider.load().len();
+    let skill_count = app_state.registry.load().len();
+    let embedder = app_state.embedder.load_full();
 
-    let registry = buddy_core::reload::build_skill_registry(
-        &config,
-        working_memory.clone(),
-        &embedder,
-        &vector_store,
-    );
-    let skill_count = registry.len();
+    app_state.on_config_change = Some(Box::new(|state| {
+        let config = state.config.read().unwrap();
+        reload::reload_from_config(&config, state).map_err(|e| e.to_string())
+    }));
 
-    let approval_overrides = buddy_core::reload::build_approval_overrides(&config);
-
-    // Collect startup warnings.
-    let warnings = buddy_core::warning::new_shared_warnings();
-    buddy_core::reload::refresh_warnings(&warnings, provider_count, &embedder, &vector_store);
-
-    let state = Arc::new(AppState {
-        provider: arc_swap::ArcSwap::from_pointee(provider),
-        registry: arc_swap::ArcSwap::from_pointee(registry),
-        store,
-        embedder: arc_swap::ArcSwap::from_pointee(embedder.clone()),
-        vector_store: arc_swap::ArcSwap::from_pointee(vector_store),
-        working_memory,
-        memory_config: arc_swap::ArcSwap::from_pointee(config.memory.clone()),
-        warnings,
-        pending_approvals: new_pending_approvals(),
-        conversation_approvals: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-        approval_overrides: arc_swap::ArcSwap::from_pointee(approval_overrides),
-        approval_timeout: std::time::Duration::from_secs(60),
-        config: std::sync::RwLock::new(config),
-        config_path,
-        on_config_change: Some(Box::new(|state| {
-            let config = state.config.read().unwrap();
-            reload::reload_from_config(&config, state).map_err(|e| e.to_string())
-        })),
-    });
+    let state = Arc::new(app_state);
 
     let app = Router::new()
         .route("/api/chat", post(chat_handler::<AppProvider>))
@@ -137,7 +94,7 @@ async fn main() {
             std::process::exit(1);
         });
 
-    let embedder_status = match &embedder {
+    let embedder_status = match embedder.as_ref() {
         Some(e) => format!("{} ({}d)", e.model_name(), e.dimensions()),
         None => "none".into(),
     };

@@ -44,22 +44,22 @@ The final extraction step: `AppState` moves from `buddy-server/src/api/mod.rs` t
 
 ## Acceptance Criteria
 
-- [ ] `buddy-core/src/state.rs` exists with `AppState` and associated types
-- [ ] `AppState::new()` constructor exists and initializes all components from config
-- [ ] `buddy-server/src/api/mod.rs` imports `AppState` from `buddy_core::state`
-- [ ] `buddy-server/src/api/mod.rs` contains only HTTP-specific types and handlers
-- [ ] `buddy-core` does NOT depend on `axum`, `tower`, or `tower-http`
-- [ ] `cargo tree -p buddy-core` shows no Axum dependency
-- [ ] `buddy-core/src/lib.rs` exports all modules in a clean structure
-- [ ] `cargo test` passes all existing tests
-- [ ] `cargo test -p buddy-core` passes all core tests
-- [ ] A hypothetical new binary crate could depend on `buddy-core` and construct an `AppState`
+- [x] `buddy-core/src/state.rs` exists with `AppState` and associated types
+- [x] `AppState::new()` constructor exists and initializes all components from config
+- [x] `buddy-server/src/api/mod.rs` imports `AppState` from `buddy_core::state`
+- [x] `buddy-server/src/api/mod.rs` contains only HTTP-specific types and handlers
+- [x] `buddy-core` does NOT depend on `axum`, `tower`, or `tower-http`
+- [x] `cargo tree -p buddy-core` shows no Axum dependency
+- [x] `buddy-core/src/lib.rs` exports all modules in a clean structure
+- [x] `cargo test` passes all existing tests
+- [x] `cargo test -p buddy-core` passes all core tests
+- [x] A hypothetical new binary crate could depend on `buddy-core` and construct an `AppState`
 
 ## Test Cases
 
-- [ ] Run `cargo test -p buddy-core`; assert all tests pass
-- [ ] Run `cargo test -p buddy-server`; assert all tests pass
-- [ ] Run `cargo tree -p buddy-core`; assert the output does not contain `axum`
-- [ ] Run `cargo build -p buddy-core`; assert it compiles independently
-- [ ] Construct an `AppState` in a buddy-core test using `AppState::new()` with a test config and in-memory stores; assert it succeeds
-- [ ] Verify `buddy-server/src/api/mod.rs` does not define `AppState` (grep for `pub struct AppState` — should only be in `buddy-core`)
+- [x] Run `cargo test -p buddy-core`; assert all tests pass
+- [x] Run `cargo test -p buddy-server`; assert all tests pass
+- [x] Run `cargo tree -p buddy-core`; assert the output does not contain `axum`
+- [x] Run `cargo build -p buddy-core`; assert it compiles independently
+- [x] Construct an `AppState` in a buddy-core test using `AppState::new()` with a test config and in-memory stores; assert it succeeds
+- [x] Verify `buddy-server/src/api/mod.rs` does not define `AppState` (grep for `pub struct AppState` — should only be in `buddy-core`)

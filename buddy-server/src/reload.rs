@@ -18,7 +18,7 @@ pub use buddy_core::reload::{
 /// On error, the existing state is unchanged — the old components remain active.
 pub fn reload_from_config(
     config: &Config,
-    state: &crate::api::AppState<ProviderChain<AnyProvider>>,
+    state: &buddy_core::state::AppState<ProviderChain<AnyProvider>>,
 ) -> Result<(), ReloadError> {
     let provider = build_provider_chain(config)?;
     let embedder = build_embedder(config)?;
@@ -51,9 +51,9 @@ mod tests {
     use super::*;
     use buddy_core::config::Config;
     use buddy_core::skill;
+    use buddy_core::state::AppState;
     use buddy_core::store::Store;
     use buddy_core::warning;
-    use crate::api::AppState;
 
     #[test]
     fn reload_from_config_activates_local_embedder_when_external_removed() {
@@ -101,7 +101,7 @@ model = "all-MiniLM-L6-v2"
             working_memory,
             memory_config: arc_swap::ArcSwap::from_pointee(config_with_external.memory.clone()),
             warnings,
-            pending_approvals: crate::api::new_pending_approvals(),
+            pending_approvals: buddy_core::state::new_pending_approvals(),
             conversation_approvals: Arc::new(tokio::sync::Mutex::new(
                 std::collections::HashMap::new(),
             )),
