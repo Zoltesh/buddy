@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 pub struct Conversation {
     pub id: String,
     pub title: String,
+    pub source: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub messages: Vec<Message>,
@@ -21,6 +22,7 @@ pub struct Conversation {
 pub struct ConversationSummary {
     pub id: String,
     pub title: String,
+    pub source: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub message_count: i64,
@@ -85,13 +87,30 @@ impl Store {
 
             CREATE INDEX IF NOT EXISTS idx_messages_conversation
                 ON messages(conversation_id, sort_order);
+
+            CREATE TABLE IF NOT EXISTS telegram_chats (
+                chat_id INTEGER PRIMARY KEY,
+                conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE
+            );
             ",
         )
         .map_err(|e| format!("migration failed: {e}"))?;
+
+        // Idempotent column addition — ALTER TABLE ADD COLUMN fails if the
+        // column already exists, so we ignore that specific error.
+        match conn.execute(
+            "ALTER TABLE conversations ADD COLUMN source TEXT NOT NULL DEFAULT 'web'",
+            [],
+        ) {
+            Ok(_) => {}
+            Err(e) if e.to_string().contains("duplicate column name") => {}
+            Err(e) => return Err(format!("migration failed: {e}")),
+        }
+
         Ok(())
     }
 
-    /// Create a new conversation with the given title.
+    /// Create a new conversation with the given title (source defaults to `"web"`).
     pub fn create_conversation(&self, title: &str) -> Result<Conversation, String> {
         let id = uuid::Uuid::new_v4().to_string();
         let now = Utc::now();
@@ -107,6 +126,34 @@ impl Store {
         Ok(Conversation {
             id,
             title: title.to_string(),
+            source: "web".to_string(),
+            created_at: now,
+            updated_at: now,
+            messages: Vec::new(),
+        })
+    }
+
+    /// Create a new conversation with the given title and source.
+    pub fn create_conversation_with_source(
+        &self,
+        title: &str,
+        source: &str,
+    ) -> Result<Conversation, String> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = Utc::now();
+        let now_str = now.to_rfc3339();
+
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO conversations (id, title, source, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![id, title, source, now_str, now_str],
+        )
+        .map_err(|e| format!("failed to create conversation: {e}"))?;
+
+        Ok(Conversation {
+            id,
+            title: title.to_string(),
+            source: source.to_string(),
             created_at: now,
             updated_at: now,
             messages: Vec::new(),
@@ -118,7 +165,7 @@ impl Store {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
             .prepare(
-                "SELECT c.id, c.title, c.created_at, c.updated_at,
+                "SELECT c.id, c.title, c.source, c.created_at, c.updated_at,
                         (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id) as msg_count
                  FROM conversations c
                  ORDER BY c.updated_at DESC",
@@ -127,14 +174,15 @@ impl Store {
 
         let rows = stmt
             .query_map([], |row| {
-                let created_str: String = row.get(2)?;
-                let updated_str: String = row.get(3)?;
+                let created_str: String = row.get(3)?;
+                let updated_str: String = row.get(4)?;
                 Ok(ConversationSummary {
                     id: row.get(0)?,
                     title: row.get(1)?,
+                    source: row.get(2)?,
                     created_at: parse_datetime(&created_str),
                     updated_at: parse_datetime(&updated_str),
-                    message_count: row.get(4)?,
+                    message_count: row.get(5)?,
                 })
             })
             .map_err(|e| format!("failed to list conversations: {e}"))?;
@@ -152,16 +200,17 @@ impl Store {
 
         // Fetch conversation metadata.
         let mut stmt = conn
-            .prepare("SELECT id, title, created_at, updated_at FROM conversations WHERE id = ?1")
+            .prepare("SELECT id, title, source, created_at, updated_at FROM conversations WHERE id = ?1")
             .map_err(|e| format!("failed to prepare get query: {e}"))?;
 
         let conv = stmt
             .query_row(params![id], |row| {
-                let created_str: String = row.get(2)?;
-                let updated_str: String = row.get(3)?;
+                let created_str: String = row.get(3)?;
+                let updated_str: String = row.get(4)?;
                 Ok(Conversation {
                     id: row.get(0)?,
                     title: row.get(1)?,
+                    source: row.get(2)?,
                     created_at: parse_datetime(&created_str),
                     updated_at: parse_datetime(&updated_str),
                     messages: Vec::new(),
@@ -257,6 +306,38 @@ impl Store {
         )
         .map_err(|e| format!("failed to update conversation timestamp: {e}"))?;
 
+        Ok(())
+    }
+
+    /// Look up the conversation ID for a Telegram chat.
+    pub fn get_conversation_id_for_telegram_chat(
+        &self,
+        chat_id: i64,
+    ) -> Result<Option<String>, String> {
+        let conn = self.conn.lock().unwrap();
+        let result = conn
+            .query_row(
+                "SELECT conversation_id FROM telegram_chats WHERE chat_id = ?1",
+                params![chat_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| format!("failed to look up telegram chat: {e}"))?;
+        Ok(result)
+    }
+
+    /// Map a Telegram chat to a buddy conversation.
+    pub fn set_telegram_chat_mapping(
+        &self,
+        chat_id: i64,
+        conversation_id: &str,
+    ) -> Result<(), String> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO telegram_chats (chat_id, conversation_id) VALUES (?1, ?2)",
+            params![chat_id, conversation_id],
+        )
+        .map_err(|e| format!("failed to set telegram chat mapping: {e}"))?;
         Ok(())
     }
 
@@ -608,5 +689,68 @@ mod tests {
 
         let loaded = store.get_conversation(&conv.id).unwrap().unwrap();
         assert_eq!(loaded.title, "Updated");
+    }
+
+    // ── Test: web conversation has source "web" ─────────────────────────
+
+    #[test]
+    fn web_conversation_has_source_web() {
+        let store = Store::open_in_memory().unwrap();
+        let conv = store.create_conversation("Web chat").unwrap();
+        assert_eq!(conv.source, "web");
+
+        let convs = store.list_conversations().unwrap();
+        assert_eq!(convs[0].source, "web");
+
+        let loaded = store.get_conversation(&conv.id).unwrap().unwrap();
+        assert_eq!(loaded.source, "web");
+    }
+
+    // ── Test: telegram conversation has source "telegram" ───────────────
+
+    #[test]
+    fn telegram_conversation_has_source_telegram() {
+        let store = Store::open_in_memory().unwrap();
+        let conv = store
+            .create_conversation_with_source("TG Chat", "telegram")
+            .unwrap();
+        assert_eq!(conv.source, "telegram");
+
+        let convs = store.list_conversations().unwrap();
+        assert_eq!(convs[0].source, "telegram");
+    }
+
+    // ── Test: existing conversations default to source "web" ────────────
+
+    #[test]
+    fn existing_conversations_default_to_web() {
+        // create_conversation does NOT specify source in its INSERT,
+        // relying on the database DEFAULT 'web' value.
+        let store = Store::open_in_memory().unwrap();
+        let _conv = store.create_conversation("Old conversation").unwrap();
+
+        let convs = store.list_conversations().unwrap();
+        assert_eq!(convs[0].source, "web");
+    }
+
+    // ── Test: telegram chat mapping ─────────────────────────────────────
+
+    #[test]
+    fn telegram_chat_mapping_round_trip() {
+        let store = Store::open_in_memory().unwrap();
+        let conv = store.create_conversation("Test").unwrap();
+
+        // No mapping initially.
+        assert!(store
+            .get_conversation_id_for_telegram_chat(12345)
+            .unwrap()
+            .is_none());
+
+        // Set mapping.
+        store.set_telegram_chat_mapping(12345, &conv.id).unwrap();
+        let found = store
+            .get_conversation_id_for_telegram_chat(12345)
+            .unwrap();
+        assert_eq!(found, Some(conv.id));
     }
 }

@@ -413,9 +413,11 @@ dependencies = [
 name = "buddy-telegram"
 version = "0.1.0"
 dependencies = [
+ "arc-swap",
  "buddy-core",
  "chrono",
  "env_logger",
+ "futures-util",
  "log",
  "serde",
  "serde_json",

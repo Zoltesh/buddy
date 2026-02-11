@@ -42,25 +42,25 @@ Users can have full text conversations with buddy through Telegram. Messages and
 
 ## Acceptance Criteria
 
-- [ ] Text messages from Telegram are processed through the provider chain
-- [ ] Responses are sent back as Telegram messages
-- [ ] Each Telegram chat_id maps to a persistent buddy conversation
-- [ ] Messages are stored in the SQLite database
-- [ ] Conversations created from Telegram have source `"telegram"`
-- [ ] Web conversations have source `"web"` (default, no change to existing behavior)
-- [ ] `ConversationSummary` includes the `source` field
-- [ ] Responses exceeding 4096 characters are split into multiple messages
-- [ ] Provider errors result in user-friendly Telegram messages
-- [ ] Tool calls are gracefully declined with an informational message
-- [ ] All existing tests pass
+- [x] Text messages from Telegram are processed through the provider chain
+- [x] Responses are sent back as Telegram messages
+- [x] Each Telegram chat_id maps to a persistent buddy conversation
+- [x] Messages are stored in the SQLite database
+- [x] Conversations created from Telegram have source `"telegram"`
+- [x] Web conversations have source `"web"` (default, no change to existing behavior)
+- [x] `ConversationSummary` includes the `source` field
+- [x] Responses exceeding 4096 characters are split into multiple messages
+- [x] Provider errors result in user-friendly Telegram messages
+- [x] Tool calls are gracefully declined with an informational message
+- [x] All existing tests pass
 
 ## Test Cases
 
-- [ ] Send a text message from a new Telegram chat; assert a conversation is created in the database with source `"telegram"` and the message is stored
-- [ ] Send a text message; assert the provider chain is called with the conversation history and a response is returned
-- [ ] Send two messages from the same chat_id; assert both messages are in the same conversation
-- [ ] Send a message that triggers a tool call; assert the response is an informational message about tool unavailability (not an error)
-- [ ] Trigger a provider error; assert the Telegram reply is a user-friendly error message, not a raw error
-- [ ] Create a conversation via the web API; assert its source is `"web"`
-- [ ] Create a conversation via Telegram; list conversations via `Store::list_conversations()`; assert the source field is `"telegram"`
-- [ ] Existing conversations created before the migration have source `"web"` (default column value)
+- [x] Send a text message from a new Telegram chat; assert a conversation is created in the database with source `"telegram"` and the message is stored
+- [x] Send a text message; assert the provider chain is called with the conversation history and a response is returned
+- [x] Send two messages from the same chat_id; assert both messages are in the same conversation
+- [x] Send a message that triggers a tool call; assert the response is an informational message about tool unavailability (not an error)
+- [x] Trigger a provider error; assert the Telegram reply is a user-friendly error message, not a raw error
+- [x] Create a conversation via the web API; assert its source is `"web"`
+- [x] Create a conversation via Telegram; list conversations via `Store::list_conversations()`; assert the source field is `"telegram"`
+- [x] Existing conversations created before the migration have source `"web"` (default column value)

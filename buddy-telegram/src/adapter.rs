@@ -1,6 +1,9 @@
 use buddy_core::types::{Message, MessageContent, Role};
 use chrono::Utc;
 
+/// Telegram's maximum message length (in characters after entity parsing).
+const TELEGRAM_MAX_LENGTH: usize = 4096;
+
 /// Converts a Telegram message to a buddy-core `Message`.
 ///
 /// Returns `None` if the Telegram message contains no text (e.g. photos, stickers).
@@ -25,6 +28,75 @@ pub fn buddy_to_telegram(message: &Message) -> String {
         MessageContent::ToolCall { name, .. } => format!("Using tool: {name}..."),
         MessageContent::ToolResult { content, .. } => content.clone(),
     }
+}
+
+/// Escape special characters for Telegram's MarkdownV2 parse mode.
+pub fn escape_markdown_v2(text: &str) -> String {
+    let mut result = String::with_capacity(text.len() * 2);
+    for c in text.chars() {
+        if matches!(
+            c,
+            '_' | '*'
+                | '['
+                | ']'
+                | '('
+                | ')'
+                | '~'
+                | '`'
+                | '>'
+                | '#'
+                | '+'
+                | '-'
+                | '='
+                | '|'
+                | '{'
+                | '}'
+                | '.'
+                | '!'
+                | '\\'
+        ) {
+            result.push('\\');
+        }
+        result.push(c);
+    }
+    result
+}
+
+/// Split text into chunks that fit within Telegram's message length limit.
+///
+/// Prefers splitting at newline or space boundaries for readability.
+pub fn split_message(text: &str) -> Vec<String> {
+    let chars: Vec<char> = text.chars().collect();
+    if chars.len() <= TELEGRAM_MAX_LENGTH {
+        return vec![text.to_string()];
+    }
+
+    let mut parts = Vec::new();
+    let mut start = 0;
+
+    while start < chars.len() {
+        let remaining = chars.len() - start;
+        if remaining <= TELEGRAM_MAX_LENGTH {
+            parts.push(chars[start..].iter().collect());
+            break;
+        }
+
+        let end = start + TELEGRAM_MAX_LENGTH;
+        let chunk = &chars[start..end];
+
+        // Prefer splitting at a newline, then a space.
+        let split_offset = chunk
+            .iter()
+            .rposition(|&c| c == '\n')
+            .or_else(|| chunk.iter().rposition(|&c| c == ' '))
+            .map(|i| i + 1)
+            .unwrap_or(TELEGRAM_MAX_LENGTH);
+
+        parts.push(chars[start..start + split_offset].iter().collect());
+        start += split_offset;
+    }
+
+    parts
 }
 
 #[cfg(test)]
