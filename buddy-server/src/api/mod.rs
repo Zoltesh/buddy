@@ -12,6 +12,7 @@
 //! - Works transparently with HTTP proxies and load balancers
 //! - WebSocket can be added later if bidirectional communication is needed
 
+pub mod auth;
 mod chat;
 mod config;
 mod conversation;

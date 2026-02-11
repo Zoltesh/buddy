@@ -30,6 +30,7 @@ fn load_config() -> Result<(buddy_core::config::Config, PathBuf), String> {
 }
 
 use api::{approve_handler, chat_handler, clear_memory, create_conversation, delete_conversation, discover_models, get_config, get_conversation, get_embedder_health, get_memory_status, get_warnings, list_conversations, migrate_memory, put_config_chat, put_config_memory, put_config_models, put_config_server, put_config_skills, test_provider};
+use api::auth::{auth_middleware, auth_status, verify_token};
 use buddy_core::provider::{AnyProvider, ProviderChain};
 use buddy_core::state::AppState;
 
@@ -63,7 +64,8 @@ async fn main() {
 
     let state = Arc::new(app_state);
 
-    let app = Router::new()
+    // Routes protected by auth middleware.
+    let protected_api = Router::new()
         .route("/api/chat", post(chat_handler::<AppProvider>))
         .route("/api/conversations", get(list_conversations::<AppProvider>).post(create_conversation::<AppProvider>))
         .route("/api/conversations/{id}", get(get_conversation::<AppProvider>).delete(delete_conversation::<AppProvider>))
@@ -81,7 +83,18 @@ async fn main() {
         .route("/api/config/memory", put(put_config_memory::<AppProvider>))
         .route("/api/config/test-provider", post(test_provider::<AppProvider>))
         .route("/api/config/discover-models", post(discover_models::<AppProvider>))
-        .with_state(state)
+        .route_layer(axum::middleware::from_fn_with_state(state.clone(), auth_middleware::<AppProvider>))
+        .with_state(state.clone());
+
+    // Auth endpoints — exempt from auth middleware.
+    let public_api = Router::new()
+        .route("/api/auth/verify", post(verify_token::<AppProvider>))
+        .route("/api/auth/status", get(auth_status::<AppProvider>))
+        .with_state(state);
+
+    let app = Router::new()
+        .merge(protected_api)
+        .merge(public_api)
         .fallback_service(
             ServeDir::new("frontend/dist")
                 .fallback(ServeFile::new("frontend/dist/index.html")),

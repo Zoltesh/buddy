@@ -18,6 +18,8 @@ pub struct Config {
     pub storage: StorageConfig,
     #[serde(default)]
     pub memory: MemoryConfig,
+    #[serde(default)]
+    pub auth: AuthConfig,
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
@@ -187,6 +189,11 @@ impl Default for MemoryConfig {
             similarity_threshold: default_similarity_threshold(),
         }
     }
+}
+
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone, Default)]
+pub struct AuthConfig {
+    pub token_hash: Option<String>,
 }
 
 fn default_auto_retrieve() -> bool {
@@ -689,5 +696,31 @@ endpoint = "https://custom.mistral.example"
             config.models.chat.providers[0].endpoint.as_deref(),
             Some("https://custom.mistral.example")
         );
+    }
+
+    // Test cases for task 054: Auth Config
+
+    #[test]
+    fn parse_config_with_auth_token_hash() {
+        let toml = r#"
+[[models.chat.providers]]
+type = "lmstudio"
+model = "deepseek-coder"
+endpoint = "http://localhost:1234/v1"
+
+[auth]
+token_hash = "sha256:abc123def456"
+"#;
+        let config = Config::parse(toml).unwrap();
+        assert_eq!(
+            config.auth.token_hash,
+            Some("sha256:abc123def456".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_config_without_auth_section() {
+        let config = Config::parse(minimal_chat_toml()).unwrap();
+        assert_eq!(config.auth.token_hash, None);
     }
 }

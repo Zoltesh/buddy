@@ -4681,3 +4681,246 @@ async fn memory_status_after_migration() {
 
     let _ = std::fs::remove_file(&path);
 }
+
+// ── Auth tests ──────────────────────────────────────────────────────
+
+mod auth {
+    use super::*;
+    use crate::api::auth::{auth_middleware, auth_status, hash_token, verify_token};
+    use axum::middleware;
+
+    fn auth_config(host: &str, token_hash: Option<&str>) -> buddy_core::config::Config {
+        let mut config = test_config();
+        config.server.host = host.to_string();
+        config.auth.token_hash = token_hash.map(|s| s.to_string());
+        config
+    }
+
+    /// Build an app with auth middleware on `/api/conversations` and
+    /// exempt auth endpoints.
+    fn auth_app(host: &str, token_hash: Option<&str>) -> Router {
+        let state = Arc::new(AppState {
+            provider: arc_swap::ArcSwap::from_pointee(MockProvider { tokens: vec![] }),
+            registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
+            store: buddy_core::store::Store::open_in_memory().unwrap(),
+            embedder: arc_swap::ArcSwap::from_pointee(None),
+            vector_store: arc_swap::ArcSwap::from_pointee(None),
+            working_memory: buddy_core::skill::working_memory::new_working_memory_map(),
+            memory_config: arc_swap::ArcSwap::from_pointee(
+                buddy_core::config::MemoryConfig::default(),
+            ),
+            warnings: buddy_core::warning::new_shared_warnings(),
+            pending_approvals: new_pending_approvals(),
+            conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
+            approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
+            approval_timeout: std::time::Duration::from_secs(1),
+            config: std::sync::RwLock::new(auth_config(host, token_hash)),
+            config_path: std::path::PathBuf::from("/tmp/buddy-test-auth.toml"),
+            on_config_change: None,
+        });
+
+        let protected = Router::new()
+            .route(
+                "/api/conversations",
+                get(list_conversations::<MockProvider>),
+            )
+            .route_layer(middleware::from_fn_with_state(
+                state.clone(),
+                auth_middleware::<MockProvider>,
+            ))
+            .with_state(state.clone());
+
+        let public = Router::new()
+            .route("/api/auth/verify", post(verify_token::<MockProvider>))
+            .route("/api/auth/status", get(auth_status::<MockProvider>))
+            .with_state(state);
+
+        Router::new()
+            .merge(protected)
+            .merge(public)
+    }
+
+    const TEST_TOKEN: &str = "my-secret-token";
+
+    fn test_token_hash() -> String {
+        hash_token(TEST_TOKEN)
+    }
+
+    #[tokio::test]
+    async fn no_token_with_auth_enabled_returns_401() {
+        let app = auth_app("0.0.0.0", Some(&test_token_hash()));
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/conversations")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["error"], "Unauthorized");
+    }
+
+    #[tokio::test]
+    async fn valid_bearer_token_passes_through() {
+        let app = auth_app("0.0.0.0", Some(&test_token_hash()));
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/conversations")
+                    .header("Authorization", format!("Bearer {TEST_TOKEN}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn invalid_bearer_token_returns_401() {
+        let app = auth_app("0.0.0.0", Some(&test_token_hash()));
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/conversations")
+                    .header("Authorization", "Bearer wrong-token")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn localhost_skips_auth() {
+        let app = auth_app("127.0.0.1", Some(&test_token_hash()));
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/conversations")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn no_token_hash_disables_auth() {
+        let app = auth_app("0.0.0.0", None);
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/conversations")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn verify_correct_token_returns_valid_true() {
+        let app = auth_app("0.0.0.0", Some(&test_token_hash()));
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/auth/verify")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "token": TEST_TOKEN }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["valid"], true);
+    }
+
+    #[tokio::test]
+    async fn verify_wrong_token_returns_valid_false() {
+        let app = auth_app("0.0.0.0", Some(&test_token_hash()));
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/auth/verify")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "token": "wrong-token" }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["valid"], false);
+    }
+
+    #[tokio::test]
+    async fn auth_status_enabled_non_localhost() {
+        let app = auth_app("0.0.0.0", Some(&test_token_hash()));
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/auth/status")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["required"], true);
+    }
+
+    #[tokio::test]
+    async fn auth_status_enabled_but_localhost() {
+        let app = auth_app("127.0.0.1", Some(&test_token_hash()));
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/auth/status")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["required"], false);
+    }
+
+    #[tokio::test]
+    async fn auth_status_not_configured() {
+        let app = auth_app("0.0.0.0", None);
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/auth/status")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["required"], false);
+    }
+}

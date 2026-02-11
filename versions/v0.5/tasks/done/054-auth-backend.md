@@ -47,30 +47,30 @@ When buddy is configured to bind to a non-localhost address, all API requests re
 
 ## Acceptance Criteria
 
-- [ ] `AuthConfig` struct exists in config with optional `token_hash` field
-- [ ] Config with `[auth]` section and `token_hash` parses correctly
-- [ ] Config without `[auth]` section parses correctly (auth disabled)
-- [ ] Auth middleware checks Bearer token on `/api/*` routes when auth is required
-- [ ] Auth middleware skips authentication when server binds to localhost
-- [ ] Auth middleware skips authentication when `token_hash` is not configured
-- [ ] Invalid or missing token returns 401 with `{ "error": "Unauthorized" }`
-- [ ] Valid token passes through to the handler
-- [ ] `POST /api/auth/verify` validates a plaintext token against the hash
-- [ ] `GET /api/auth/status` returns whether auth is required
-- [ ] Static file serving (frontend) is not affected by auth middleware
-- [ ] All existing tests pass (they use localhost, so auth is skipped)
+- [x] `AuthConfig` struct exists in config with optional `token_hash` field
+- [x] Config with `[auth]` section and `token_hash` parses correctly
+- [x] Config without `[auth]` section parses correctly (auth disabled)
+- [x] Auth middleware checks Bearer token on `/api/*` routes when auth is required
+- [x] Auth middleware skips authentication when server binds to localhost
+- [x] Auth middleware skips authentication when `token_hash` is not configured
+- [x] Invalid or missing token returns 401 with `{ "error": "Unauthorized" }`
+- [x] Valid token passes through to the handler
+- [x] `POST /api/auth/verify` validates a plaintext token against the hash
+- [x] `GET /api/auth/status` returns whether auth is required
+- [x] Static file serving (frontend) is not affected by auth middleware
+- [x] All existing tests pass (they use localhost, so auth is skipped)
 
 ## Test Cases
 
-- [ ] Parse a config with `[auth]` and `token_hash = "sha256:abc123..."`; assert `AuthConfig` has `Some("sha256:abc123...")`
-- [ ] Parse a config without `[auth]` section; assert `AuthConfig` has `token_hash: None`
-- [ ] Send a request to `/api/conversations` without a token, with auth enabled on a non-localhost bind; assert 401
-- [ ] Send a request to `/api/conversations` with a valid Bearer token, auth enabled; assert 200
-- [ ] Send a request to `/api/conversations` with an invalid Bearer token, auth enabled; assert 401
-- [ ] Send a request to `/api/conversations` without a token, server bound to `127.0.0.1`; assert 200 (auth skipped)
-- [ ] Send a request to `/api/conversations` without a token, auth not configured (`token_hash` absent); assert 200 (auth disabled)
-- [ ] POST to `/api/auth/verify` with `{ "token": "correct-token" }` where hash matches; assert `{ "valid": true }`
-- [ ] POST to `/api/auth/verify` with `{ "token": "wrong-token" }`; assert `{ "valid": false }`
-- [ ] GET `/api/auth/status` with auth enabled and non-localhost; assert `{ "required": true }`
-- [ ] GET `/api/auth/status` with auth enabled but localhost bind; assert `{ "required": false }`
-- [ ] GET `/api/auth/status` with auth not configured; assert `{ "required": false }`
+- [x] Parse a config with `[auth]` and `token_hash = "sha256:abc123..."`; assert `AuthConfig` has `Some("sha256:abc123...")`
+- [x] Parse a config without `[auth]` section; assert `AuthConfig` has `token_hash: None`
+- [x] Send a request to `/api/conversations` without a token, with auth enabled on a non-localhost bind; assert 401
+- [x] Send a request to `/api/conversations` with a valid Bearer token, auth enabled; assert 200
+- [x] Send a request to `/api/conversations` with an invalid Bearer token, auth enabled; assert 401
+- [x] Send a request to `/api/conversations` without a token, server bound to `127.0.0.1`; assert 200 (auth skipped)
+- [x] Send a request to `/api/conversations` without a token, auth not configured (`token_hash` absent); assert 200 (auth disabled)
+- [x] POST to `/api/auth/verify` with `{ "token": "correct-token" }` where hash matches; assert `{ "valid": true }`
+- [x] POST to `/api/auth/verify` with `{ "token": "wrong-token" }`; assert `{ "valid": false }`
+- [x] GET `/api/auth/status` with auth enabled and non-localhost; assert `{ "required": true }`
+- [x] GET `/api/auth/status` with auth enabled but localhost bind; assert `{ "required": false }`
+- [x] GET `/api/auth/status` with auth not configured; assert `{ "required": false }`
