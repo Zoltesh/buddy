@@ -2,7 +2,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::time::Duration;
 
-use buddy_core::config::FetchUrlConfig;
+use crate::config::FetchUrlConfig;
 
 use super::{PermissionLevel, Skill, SkillError};
 

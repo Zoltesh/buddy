@@ -7,7 +7,7 @@ use axum::http::StatusCode;
 use axum::Json;
 
 use super::{ApiError, AppState, internal_error, not_found_error};
-use crate::provider::Provider;
+use buddy_core::provider::Provider;
 
 /// `GET /api/conversations` — list all conversation summaries.
 pub async fn list_conversations<P: Provider + 'static>(

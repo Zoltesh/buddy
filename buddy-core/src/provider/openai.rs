@@ -1,4 +1,4 @@
-use buddy_core::types::{Message, MessageContent, Role};
+use crate::types::{Message, MessageContent, Role};
 use futures_util::StreamExt;
 use reqwest::Client;
 use serde::Deserialize;
@@ -302,7 +302,7 @@ impl ToolCallAccumulator {
 }
 
 /// Map an HTTP error status code and body to a `ProviderError`.
-pub(crate) fn map_error_status(status: u16, body: &str) -> ProviderError {
+pub fn map_error_status(status: u16, body: &str) -> ProviderError {
     let message = serde_json::from_str::<ErrorResponse>(body)
         .map(|r| r.error.message)
         .unwrap_or_else(|_| body.to_string());

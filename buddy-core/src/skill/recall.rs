@@ -2,8 +2,8 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use buddy_core::embedding::Embedder;
-use buddy_core::memory::VectorStore;
+use crate::embedding::Embedder;
+use crate::memory::VectorStore;
 
 use super::{Skill, SkillError};
 
@@ -117,8 +117,8 @@ impl Skill for RecallSkill {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use buddy_core::memory::sqlite::SqliteVectorStore;
-    use buddy_core::memory::{VectorEntry, VectorStore};
+    use crate::memory::sqlite::SqliteVectorStore;
+    use crate::memory::{VectorEntry, VectorStore};
     use crate::skill::Skill;
     use crate::testutil::MockEmbedder;
 

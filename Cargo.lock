@@ -333,12 +333,19 @@ dependencies = [
 name = "buddy-core"
 version = "0.5.0"
 dependencies = [
+ "arc-swap",
+ "async-stream",
  "chrono",
  "fastembed",
+ "futures-core",
+ "futures-util",
+ "reqwest",
  "rusqlite",
  "serde",
  "serde_json",
+ "tokio",
  "toml",
+ "url",
  "uuid",
 ]
 

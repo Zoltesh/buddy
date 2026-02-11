@@ -8,7 +8,7 @@ use axum::Json;
 use serde::Serialize;
 
 use super::{ApiError, AppState, internal_error};
-use crate::provider::Provider;
+use buddy_core::provider::Provider;
 
 /// `POST /api/memory/migrate` — re-embed all stored memories using the current model.
 pub async fn migrate_memory<P: Provider + 'static>(

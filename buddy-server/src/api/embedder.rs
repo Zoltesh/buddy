@@ -5,7 +5,7 @@ use axum::extract::State;
 use axum::Json;
 use serde::Serialize;
 
-use crate::provider::Provider;
+use buddy_core::provider::Provider;
 
 use super::AppState;
 
@@ -116,9 +116,9 @@ mod tests {
     use buddy_core::config::{Config, MemoryConfig};
     use crate::api::new_pending_approvals;
     use buddy_core::embedding::Embedder;
-    use crate::skill::SkillRegistry;
+    use buddy_core::skill::SkillRegistry;
     use buddy_core::store::Store;
-    use crate::testutil::{FailingEmbedder, MockEmbedder, MockProvider, WrongDimensionEmbedder};
+    use buddy_core::testutil::{FailingEmbedder, MockEmbedder, MockProvider, WrongDimensionEmbedder};
     use axum::http::Request;
     use axum::Router;
     use axum::{body::Body, routing::get};
@@ -150,9 +150,9 @@ endpoint = "http://localhost:1234/v1"
             store,
             embedder: arc_swap::ArcSwap::from_pointee(embedder),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
-            working_memory: crate::skill::working_memory::new_working_memory_map(),
+            working_memory: buddy_core::skill::working_memory::new_working_memory_map(),
             memory_config: arc_swap::ArcSwap::from_pointee(MemoryConfig::default()),
-            warnings: crate::warning::new_shared_warnings(),
+            warnings: buddy_core::warning::new_shared_warnings(),
             pending_approvals: new_pending_approvals(),
             conversation_approvals: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),

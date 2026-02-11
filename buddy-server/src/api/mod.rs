@@ -29,7 +29,7 @@ use axum::Json;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{oneshot, Mutex};
 
-use crate::provider::Provider;
+use buddy_core::provider::Provider;
 
 // Re-export handler functions for use in main.rs router setup.
 pub use chat::{approve_handler, chat_handler};
@@ -69,7 +69,7 @@ pub struct MemorySnippet {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ChatEvent {
     ConversationMeta { conversation_id: String },
-    Warnings { warnings: Vec<crate::warning::Warning> },
+    Warnings { warnings: Vec<buddy_core::warning::Warning> },
     Warning { message: String },
     MemoryContext { memories: Vec<MemorySnippet> },
     TokenDelta { content: String },
@@ -113,13 +113,13 @@ pub struct ApproveRequest {
 /// the request.
 pub struct AppState<P> {
     pub provider: arc_swap::ArcSwap<P>,
-    pub registry: arc_swap::ArcSwap<crate::skill::SkillRegistry>,
+    pub registry: arc_swap::ArcSwap<buddy_core::skill::SkillRegistry>,
     pub store: buddy_core::store::Store,
     pub embedder: arc_swap::ArcSwap<Option<std::sync::Arc<dyn buddy_core::embedding::Embedder>>>,
     pub vector_store: arc_swap::ArcSwap<Option<std::sync::Arc<dyn buddy_core::memory::VectorStore>>>,
-    pub working_memory: crate::skill::working_memory::WorkingMemoryMap,
+    pub working_memory: buddy_core::skill::working_memory::WorkingMemoryMap,
     pub memory_config: arc_swap::ArcSwap<buddy_core::config::MemoryConfig>,
-    pub warnings: crate::warning::SharedWarnings,
+    pub warnings: buddy_core::warning::SharedWarnings,
     pub pending_approvals: PendingApprovals,
     pub conversation_approvals: ConversationApprovals,
     pub approval_overrides: arc_swap::ArcSwap<HashMap<String, buddy_core::config::ApprovalPolicy>>,
@@ -159,7 +159,7 @@ pub(crate) fn not_found_error(message: String) -> (StatusCode, Json<ApiError>) {
 /// `GET /api/warnings` — return current system warnings.
 pub async fn get_warnings<P: Provider + 'static>(
     State(state): State<Arc<AppState<P>>>,
-) -> Json<Vec<crate::warning::Warning>> {
+) -> Json<Vec<buddy_core::warning::Warning>> {
     let collector = state.warnings.read().unwrap();
     Json(collector.list().to_vec())
 }

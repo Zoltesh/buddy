@@ -1,4 +1,4 @@
-use buddy_core::types::{Message, MessageContent, Role};
+use crate::types::{Message, MessageContent, Role};
 use futures_util::StreamExt;
 use reqwest::Client;
 use serde::Deserialize;
@@ -279,7 +279,7 @@ fn parse_gemini_stream(response: reqwest::Response) -> TokenStream {
 }
 
 /// Map HTTP error status to ProviderError.
-pub(crate) fn map_gemini_error(status: u16, body: &str) -> ProviderError {
+pub fn map_gemini_error(status: u16, body: &str) -> ProviderError {
     let message = serde_json::from_str::<GeminiErrorResponse>(body)
         .map(|r| r.error.message)
         .unwrap_or_else(|_| body.to_string());
@@ -337,7 +337,7 @@ impl Provider for GeminiProvider {
 mod tests {
     use super::*;
     use chrono::Utc;
-    use buddy_core::config::Config;
+    use crate::config::Config;
 
     fn make_user_message(text: &str) -> Message {
         Message {

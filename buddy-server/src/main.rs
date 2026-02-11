@@ -8,12 +8,10 @@ use tokio::signal;
 use tower_http::services::{ServeDir, ServeFile};
 
 mod api;
-mod provider;
 mod reload;
-mod skill;
+
 #[cfg(test)]
 mod testutil;
-mod warning;
 
 const DEFAULT_CONFIG_PATH: &str = "buddy.toml";
 
@@ -33,7 +31,7 @@ fn load_config() -> Result<(buddy_core::config::Config, PathBuf), String> {
 
 use api::{approve_handler, chat_handler, clear_memory, create_conversation, delete_conversation, discover_models, get_config, get_conversation, get_embedder_health, get_memory_status, get_warnings, list_conversations, migrate_memory, new_pending_approvals, put_config_chat, put_config_memory, put_config_models, put_config_server, put_config_skills, test_provider, AppState};
 use buddy_core::store::Store;
-use provider::{AnyProvider, ProviderChain};
+use buddy_core::provider::{AnyProvider, ProviderChain};
 
 type AppProvider = ProviderChain<AnyProvider>;
 
@@ -55,25 +53,25 @@ async fn main() {
     });
 
     // Build initial runtime components from config using the reload module.
-    let working_memory = skill::working_memory::new_working_memory_map();
+    let working_memory = buddy_core::skill::working_memory::new_working_memory_map();
 
-    let provider = reload::build_provider_chain(&config).unwrap_or_else(|e| {
+    let provider = buddy_core::reload::build_provider_chain(&config).unwrap_or_else(|e| {
         eprintln!("Error: {e}");
         std::process::exit(1);
     });
     let provider_count = provider.len();
 
-    let embedder = reload::build_embedder(&config).unwrap_or_else(|e| {
+    let embedder = buddy_core::reload::build_embedder(&config).unwrap_or_else(|e| {
         eprintln!("Error: {e}");
         std::process::exit(1);
     });
 
-    let vector_store = reload::build_vector_store(&embedder).unwrap_or_else(|e| {
+    let vector_store = buddy_core::reload::build_vector_store(&embedder).unwrap_or_else(|e| {
         eprintln!("Error: {e}");
         std::process::exit(1);
     });
 
-    let registry = reload::build_skill_registry(
+    let registry = buddy_core::reload::build_skill_registry(
         &config,
         working_memory.clone(),
         &embedder,
@@ -81,11 +79,11 @@ async fn main() {
     );
     let skill_count = registry.len();
 
-    let approval_overrides = reload::build_approval_overrides(&config);
+    let approval_overrides = buddy_core::reload::build_approval_overrides(&config);
 
     // Collect startup warnings.
-    let warnings = warning::new_shared_warnings();
-    reload::refresh_warnings(&warnings, provider_count, &embedder, &vector_store);
+    let warnings = buddy_core::warning::new_shared_warnings();
+    buddy_core::reload::refresh_warnings(&warnings, provider_count, &embedder, &vector_store);
 
     let state = Arc::new(AppState {
         provider: arc_swap::ArcSwap::from_pointee(provider),

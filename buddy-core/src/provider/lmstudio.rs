@@ -1,19 +1,19 @@
-use buddy_core::types::Message;
+use crate::types::Message;
 use reqwest::Client;
 
 use crate::provider::openai::{build_request_body, map_error_status, parse_sse_stream};
 use crate::provider::{Provider, ProviderError, TokenStream};
 
-/// Ollama provider. Connects to a local Ollama server using its
+/// LM Studio provider. Connects to a local LM Studio server using its
 /// OpenAI-compatible chat completions endpoint. No API key required.
-pub struct OllamaProvider {
+pub struct LmStudioProvider {
     client: Client,
     model: String,
     endpoint: String,
     system_prompt: String,
 }
 
-impl OllamaProvider {
+impl LmStudioProvider {
     pub fn new(model: &str, endpoint: &str, system_prompt: &str) -> Self {
         Self {
             client: Client::builder()
@@ -27,14 +27,14 @@ impl OllamaProvider {
     }
 }
 
-impl Provider for OllamaProvider {
+impl Provider for LmStudioProvider {
     async fn complete(
         &self,
         messages: Vec<Message>,
         tools: Option<Vec<serde_json::Value>>,
     ) -> Result<TokenStream, ProviderError> {
         let url = format!(
-            "{}/v1/chat/completions",
+            "{}/chat/completions",
             self.endpoint.trim_end_matches('/')
         );
         let body = build_request_body(&messages, &self.model, &self.system_prompt, tools.as_ref());
@@ -64,7 +64,7 @@ mod tests {
         build_request_body, map_error_status, parse_sse_line, SseChunk, ToolCallAccumulator,
     };
     use crate::provider::{ProviderError, Token};
-    use buddy_core::types::{Message, MessageContent, Role};
+    use crate::types::{Message, MessageContent, Role};
     use chrono::Utc;
 
     fn make_messages() -> Vec<Message> {
@@ -83,9 +83,9 @@ mod tests {
     #[test]
     fn request_body_matches_openai_compatible_spec() {
         let messages = make_messages();
-        let body = build_request_body(&messages, "llama3", "You are helpful.", None);
+        let body = build_request_body(&messages, "deepseek-coder", "You are helpful.", None);
 
-        assert_eq!(body["model"], "llama3");
+        assert_eq!(body["model"], "deepseek-coder");
         assert_eq!(body["stream"], true);
 
         let msgs = body["messages"].as_array().unwrap();
@@ -99,10 +99,10 @@ mod tests {
     #[test]
     fn parse_streaming_text_tokens() {
         let lines = [
-            r#"data: {"id":"1","object":"chat.completion.chunk","created":0,"model":"llama3","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}"#,
-            r#"data: {"id":"1","object":"chat.completion.chunk","created":0,"model":"llama3","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":null}]}"#,
-            r#"data: {"id":"1","object":"chat.completion.chunk","created":0,"model":"llama3","choices":[{"index":0,"delta":{"content":" there"},"finish_reason":null}]}"#,
-            r#"data: {"id":"1","object":"chat.completion.chunk","created":0,"model":"llama3","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}"#,
+            r#"data: {"id":"1","object":"chat.completion.chunk","created":0,"model":"deepseek-coder","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}"#,
+            r#"data: {"id":"1","object":"chat.completion.chunk","created":0,"model":"deepseek-coder","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":null}]}"#,
+            r#"data: {"id":"1","object":"chat.completion.chunk","created":0,"model":"deepseek-coder","choices":[{"index":0,"delta":{"content":" there"},"finish_reason":null}]}"#,
+            r#"data: {"id":"1","object":"chat.completion.chunk","created":0,"model":"deepseek-coder","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}"#,
             "data: [DONE]",
         ];
 
@@ -178,26 +178,26 @@ mod tests {
 
     #[test]
     fn provider_new_sets_fields() {
-        let provider = OllamaProvider::new(
-            "llama3",
-            "http://localhost:11434",
+        let provider = LmStudioProvider::new(
+            "deepseek-coder",
+            "http://192.168.1.100:1234/v1",
             "You are helpful.",
         );
-        assert_eq!(provider.model, "llama3");
-        assert_eq!(provider.endpoint, "http://localhost:11434");
+        assert_eq!(provider.model, "deepseek-coder");
+        assert_eq!(provider.endpoint, "http://192.168.1.100:1234/v1");
     }
 
     #[tokio::test]
-    #[ignore] // Requires a running Ollama server: OLLAMA_ENDPOINT=... cargo test -- --ignored
+    #[ignore] // Requires a running LM Studio server: LMSTUDIO_ENDPOINT=... cargo test -- --ignored
     async fn integration_live_streaming() {
         use futures_util::StreamExt;
 
-        let endpoint = std::env::var("OLLAMA_ENDPOINT")
-            .unwrap_or_else(|_| "http://localhost:11434".into());
+        let endpoint = std::env::var("LMSTUDIO_ENDPOINT")
+            .unwrap_or_else(|_| "http://localhost:1234/v1".into());
         let model =
-            std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "llama3".into());
+            std::env::var("LMSTUDIO_MODEL").unwrap_or_else(|_| "deepseek-coder".into());
 
-        let provider = OllamaProvider::new(&model, &endpoint, "You are a helpful assistant.");
+        let provider = LmStudioProvider::new(&model, &endpoint, "You are a helpful assistant.");
 
         let messages = vec![Message {
             role: Role::User,

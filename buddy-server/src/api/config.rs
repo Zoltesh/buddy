@@ -9,7 +9,7 @@ use axum::Json;
 use serde::{Deserialize, Serialize};
 
 use super::{ApiError, AppState};
-use crate::provider::Provider;
+use buddy_core::provider::Provider;
 use url::Url;
 
 // ── Validation types and helpers ────────────────────────────────────────
@@ -268,10 +268,10 @@ pub async fn put_config_server<P: Provider + 'static>(
     {
         let mut collector = state.warnings.write().unwrap();
         collector.clear("restart_required");
-        collector.add(crate::warning::Warning {
+        collector.add(buddy_core::warning::Warning {
             code: "restart_required".into(),
             message: "Server config changed — restart required for bind address changes to take effect.".into(),
-            severity: crate::warning::WarningSeverity::Warning,
+            severity: buddy_core::warning::WarningSeverity::Warning,
         });
     }
     let config = state.config.read().unwrap();
@@ -447,12 +447,12 @@ pub async fn test_provider<P: Provider + 'static>(
             } else {
                 let body_text = response.text().await.unwrap_or_default();
                 let error = if entry.provider_type == "gemini" {
-                    crate::provider::gemini::map_gemini_error(
+                    buddy_core::provider::gemini::map_gemini_error(
                         status_code.as_u16(),
                         &body_text,
                     )
                 } else {
-                    crate::provider::openai::map_error_status(
+                    buddy_core::provider::openai::map_error_status(
                         status_code.as_u16(),
                         &body_text,
                     )

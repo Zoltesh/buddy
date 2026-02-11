@@ -9,12 +9,14 @@ use tower::ServiceExt;
 use tower_http::services::ServeDir;
 
 use buddy_core::types::MessageContent;
-use crate::provider::ProviderChain;
-use crate::skill::SkillRegistry;
-use crate::testutil::{
+use buddy_core::provider::ProviderChain;
+use buddy_core::skill::SkillRegistry;
+use buddy_core::testutil::{
     ConfigurableMockProvider, FailingSkill, MockEchoSkill, MockProvider, MockResponse,
-    SequencedProvider, make_chat_body, make_chat_body_with_conversation, post_chat,
-    post_chat_raw,
+    SequencedProvider,
+};
+use crate::testutil::{
+    make_chat_body, make_chat_body_with_conversation, post_chat, post_chat_raw,
 };
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -50,9 +52,9 @@ fn test_app(tokens: Vec<String>) -> Router {
         store: buddy_core::store::Store::open_in_memory().unwrap(),
         embedder: arc_swap::ArcSwap::from_pointee(None),
         vector_store: arc_swap::ArcSwap::from_pointee(None),
-        working_memory: crate::skill::working_memory::new_working_memory_map(),
+        working_memory: buddy_core::skill::working_memory::new_working_memory_map(),
         memory_config: arc_swap::ArcSwap::from_pointee(buddy_core::config::MemoryConfig::default()),
-        warnings: crate::warning::new_shared_warnings(),
+        warnings: buddy_core::warning::new_shared_warnings(),
         pending_approvals: new_pending_approvals(),
         conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
         approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
@@ -73,9 +75,9 @@ fn test_app_with_static(tokens: Vec<String>, static_dir: &str) -> Router {
         store: buddy_core::store::Store::open_in_memory().unwrap(),
         embedder: arc_swap::ArcSwap::from_pointee(None),
         vector_store: arc_swap::ArcSwap::from_pointee(None),
-        working_memory: crate::skill::working_memory::new_working_memory_map(),
+        working_memory: buddy_core::skill::working_memory::new_working_memory_map(),
         memory_config: arc_swap::ArcSwap::from_pointee(buddy_core::config::MemoryConfig::default()),
-        warnings: crate::warning::new_shared_warnings(),
+        warnings: buddy_core::warning::new_shared_warnings(),
         pending_approvals: new_pending_approvals(),
         conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
         approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
@@ -97,9 +99,9 @@ fn sequenced_app(responses: Vec<MockResponse>, registry: SkillRegistry) -> Route
         store: buddy_core::store::Store::open_in_memory().unwrap(),
         embedder: arc_swap::ArcSwap::from_pointee(None),
         vector_store: arc_swap::ArcSwap::from_pointee(None),
-        working_memory: crate::skill::working_memory::new_working_memory_map(),
+        working_memory: buddy_core::skill::working_memory::new_working_memory_map(),
         memory_config: arc_swap::ArcSwap::from_pointee(buddy_core::config::MemoryConfig::default()),
-        warnings: crate::warning::new_shared_warnings(),
+        warnings: buddy_core::warning::new_shared_warnings(),
         pending_approvals: new_pending_approvals(),
         conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
         approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
@@ -120,9 +122,9 @@ fn conversation_app(tokens: Vec<String>) -> (Arc<AppState<MockProvider>>, Router
         store: buddy_core::store::Store::open_in_memory().unwrap(),
         embedder: arc_swap::ArcSwap::from_pointee(None),
         vector_store: arc_swap::ArcSwap::from_pointee(None),
-        working_memory: crate::skill::working_memory::new_working_memory_map(),
+        working_memory: buddy_core::skill::working_memory::new_working_memory_map(),
         memory_config: arc_swap::ArcSwap::from_pointee(buddy_core::config::MemoryConfig::default()),
-        warnings: crate::warning::new_shared_warnings(),
+        warnings: buddy_core::warning::new_shared_warnings(),
         pending_approvals: new_pending_approvals(),
         conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
         approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
@@ -482,9 +484,9 @@ mod tool_loop {
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
-            working_memory: crate::skill::working_memory::new_working_memory_map(),
+            working_memory: buddy_core::skill::working_memory::new_working_memory_map(),
             memory_config: arc_swap::ArcSwap::from_pointee(buddy_core::config::MemoryConfig::default()),
-            warnings: crate::warning::new_shared_warnings(),
+            warnings: buddy_core::warning::new_shared_warnings(),
             pending_approvals: new_pending_approvals(),
             conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
             approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
@@ -702,9 +704,9 @@ mod conversations {
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
-            working_memory: crate::skill::working_memory::new_working_memory_map(),
+            working_memory: buddy_core::skill::working_memory::new_working_memory_map(),
             memory_config: arc_swap::ArcSwap::from_pointee(buddy_core::config::MemoryConfig::default()),
-            warnings: crate::warning::new_shared_warnings(),
+            warnings: buddy_core::warning::new_shared_warnings(),
             pending_approvals: new_pending_approvals(),
             conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
             approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
@@ -762,11 +764,11 @@ mod conversations {
 
 mod warnings {
     use super::*;
-    use crate::warning::{new_shared_warnings, Warning, WarningSeverity};
+    use buddy_core::warning::{new_shared_warnings, Warning, WarningSeverity};
 
     fn warnings_app(
         tokens: Vec<String>,
-        setup: impl FnOnce(&mut crate::warning::WarningCollector),
+        setup: impl FnOnce(&mut buddy_core::warning::WarningCollector),
     ) -> Router {
         let warnings = new_shared_warnings();
         {
@@ -779,7 +781,7 @@ mod warnings {
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
-            working_memory: crate::skill::working_memory::new_working_memory_map(),
+            working_memory: buddy_core::skill::working_memory::new_working_memory_map(),
             memory_config: arc_swap::ArcSwap::from_pointee(buddy_core::config::MemoryConfig::default()),
             warnings,
             pending_approvals: new_pending_approvals(),
@@ -840,7 +842,7 @@ mod warnings {
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
-            working_memory: crate::skill::working_memory::new_working_memory_map(),
+            working_memory: buddy_core::skill::working_memory::new_working_memory_map(),
             memory_config: arc_swap::ArcSwap::from_pointee(buddy_core::config::MemoryConfig::default()),
             warnings: warnings.clone(),
             pending_approvals: new_pending_approvals(),
@@ -897,7 +899,7 @@ mod warnings {
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
-            working_memory: crate::skill::working_memory::new_working_memory_map(),
+            working_memory: buddy_core::skill::working_memory::new_working_memory_map(),
             memory_config: arc_swap::ArcSwap::from_pointee(buddy_core::config::MemoryConfig::default()),
             warnings: warnings.clone(),
             pending_approvals: new_pending_approvals(),
@@ -1028,7 +1030,7 @@ mod warnings {
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
-            working_memory: crate::skill::working_memory::new_working_memory_map(),
+            working_memory: buddy_core::skill::working_memory::new_working_memory_map(),
             memory_config: arc_swap::ArcSwap::from_pointee(buddy_core::config::MemoryConfig::default()),
             warnings,
             pending_approvals: new_pending_approvals(),
@@ -1156,7 +1158,7 @@ mod warnings {
 mod approval {
     use super::*;
     use buddy_core::config::ApprovalPolicy;
-    use crate::testutil::{MockMutatingSkill, MockNetworkSkill};
+    use buddy_core::testutil::{MockMutatingSkill, MockNetworkSkill};
 
     fn registry_with_mutating() -> SkillRegistry {
         let mut r = SkillRegistry::new();
@@ -1182,9 +1184,9 @@ mod approval {
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
-            working_memory: crate::skill::working_memory::new_working_memory_map(),
+            working_memory: buddy_core::skill::working_memory::new_working_memory_map(),
             memory_config: arc_swap::ArcSwap::from_pointee(buddy_core::config::MemoryConfig::default()),
-            warnings: crate::warning::new_shared_warnings(),
+            warnings: buddy_core::warning::new_shared_warnings(),
             pending_approvals: new_pending_approvals(),
             conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
             approval_overrides: arc_swap::ArcSwap::from_pointee(overrides),
@@ -1566,9 +1568,9 @@ mod config_api {
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
-            working_memory: crate::skill::working_memory::new_working_memory_map(),
+            working_memory: buddy_core::skill::working_memory::new_working_memory_map(),
             memory_config: arc_swap::ArcSwap::from_pointee(buddy_core::config::MemoryConfig::default()),
-            warnings: crate::warning::new_shared_warnings(),
+            warnings: buddy_core::warning::new_shared_warnings(),
             pending_approvals: new_pending_approvals(),
             conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
             approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
@@ -1827,9 +1829,9 @@ endpoint = "http://localhost:1234/v1"
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
-            working_memory: crate::skill::working_memory::new_working_memory_map(),
+            working_memory: buddy_core::skill::working_memory::new_working_memory_map(),
             memory_config: arc_swap::ArcSwap::from_pointee(buddy_core::config::MemoryConfig::default()),
-            warnings: crate::warning::new_shared_warnings(),
+            warnings: buddy_core::warning::new_shared_warnings(),
             pending_approvals: new_pending_approvals(),
             conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
             approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
@@ -2075,11 +2077,11 @@ approval = "once"
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
-            working_memory: crate::skill::working_memory::new_working_memory_map(),
+            working_memory: buddy_core::skill::working_memory::new_working_memory_map(),
             memory_config: arc_swap::ArcSwap::from_pointee(
                 buddy_core::config::MemoryConfig::default(),
             ),
-            warnings: crate::warning::new_shared_warnings(),
+            warnings: buddy_core::warning::new_shared_warnings(),
             pending_approvals: new_pending_approvals(),
             conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
             approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
@@ -2506,11 +2508,11 @@ approval = "once"
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
-            working_memory: crate::skill::working_memory::new_working_memory_map(),
+            working_memory: buddy_core::skill::working_memory::new_working_memory_map(),
             memory_config: arc_swap::ArcSwap::from_pointee(
                 buddy_core::config::MemoryConfig::default(),
             ),
-            warnings: crate::warning::new_shared_warnings(),
+            warnings: buddy_core::warning::new_shared_warnings(),
             pending_approvals: new_pending_approvals(),
             conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
             approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
@@ -2880,11 +2882,11 @@ mod discover_models {
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
-            working_memory: crate::skill::working_memory::new_working_memory_map(),
+            working_memory: buddy_core::skill::working_memory::new_working_memory_map(),
             memory_config: arc_swap::ArcSwap::from_pointee(
                 buddy_core::config::MemoryConfig::default(),
             ),
-            warnings: crate::warning::new_shared_warnings(),
+            warnings: buddy_core::warning::new_shared_warnings(),
             pending_approvals: new_pending_approvals(),
             conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
             approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
@@ -3116,11 +3118,11 @@ mod settings_page {
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
-            working_memory: crate::skill::working_memory::new_working_memory_map(),
+            working_memory: buddy_core::skill::working_memory::new_working_memory_map(),
             memory_config: arc_swap::ArcSwap::from_pointee(
                 buddy_core::config::MemoryConfig::default(),
             ),
-            warnings: crate::warning::new_shared_warnings(),
+            warnings: buddy_core::warning::new_shared_warnings(),
             pending_approvals: new_pending_approvals(),
             conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
             approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
@@ -3162,11 +3164,11 @@ similarity_threshold = 0.5
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
-            working_memory: crate::skill::working_memory::new_working_memory_map(),
+            working_memory: buddy_core::skill::working_memory::new_working_memory_map(),
             memory_config: arc_swap::ArcSwap::from_pointee(
                 buddy_core::config::MemoryConfig::default(),
             ),
-            warnings: crate::warning::new_shared_warnings(),
+            warnings: buddy_core::warning::new_shared_warnings(),
             pending_approvals: new_pending_approvals(),
             conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
             approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
@@ -3440,7 +3442,7 @@ endpoint = "http://localhost:1234/v1"
 mod hot_reload {
     use super::*;
     use axum::routing::put;
-    use crate::warning::{new_shared_warnings, Warning, WarningSeverity};
+    use buddy_core::warning::{new_shared_warnings, Warning, WarningSeverity};
 
     /// Build an app with a hot-reload callback that updates warnings and
     /// memory_config from the in-memory Config after every PUT.
@@ -3483,7 +3485,7 @@ endpoint = "http://localhost:1234/v1"
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
-            working_memory: crate::skill::working_memory::new_working_memory_map(),
+            working_memory: buddy_core::skill::working_memory::new_working_memory_map(),
             memory_config: arc_swap::ArcSwap::from_pointee(
                 buddy_core::config::MemoryConfig::default(),
             ),
@@ -3498,7 +3500,7 @@ endpoint = "http://localhost:1234/v1"
                 let config = state.config.read().unwrap();
 
                 // Rebuild skill registry from config.
-                let registry = crate::skill::build_registry(&config.skills);
+                let registry = buddy_core::skill::build_registry(&config.skills);
                 state.registry.store(Arc::new(registry));
 
                 // Update memory config.
@@ -3781,11 +3783,11 @@ model = "all-minilm"
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
-            working_memory: crate::skill::working_memory::new_working_memory_map(),
+            working_memory: buddy_core::skill::working_memory::new_working_memory_map(),
             memory_config: arc_swap::ArcSwap::from_pointee(
                 buddy_core::config::MemoryConfig::default(),
             ),
-            warnings: crate::warning::new_shared_warnings(),
+            warnings: buddy_core::warning::new_shared_warnings(),
             pending_approvals: new_pending_approvals(),
             conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
             approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
@@ -3950,11 +3952,11 @@ endpoint = "http://localhost:1234/v1"
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
-            working_memory: crate::skill::working_memory::new_working_memory_map(),
+            working_memory: buddy_core::skill::working_memory::new_working_memory_map(),
             memory_config: arc_swap::ArcSwap::from_pointee(
                 buddy_core::config::MemoryConfig::default(),
             ),
-            warnings: crate::warning::new_shared_warnings(),
+            warnings: buddy_core::warning::new_shared_warnings(),
             pending_approvals: new_pending_approvals(),
             conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
             approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
@@ -4060,11 +4062,11 @@ endpoint = "https://api.openai.com/v1"
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
-            working_memory: crate::skill::working_memory::new_working_memory_map(),
+            working_memory: buddy_core::skill::working_memory::new_working_memory_map(),
             memory_config: arc_swap::ArcSwap::from_pointee(
                 buddy_core::config::MemoryConfig::default(),
             ),
-            warnings: crate::warning::new_shared_warnings(),
+            warnings: buddy_core::warning::new_shared_warnings(),
             pending_approvals: new_pending_approvals(),
             conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
             approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
@@ -4348,7 +4350,7 @@ mod app_shell_navigation {
 // ── Task 044: Embedding migration detection ────────────────────────────
 
 use axum::routing::put;
-use crate::testutil::MockEmbedder;
+use buddy_core::testutil::MockEmbedder;
 use buddy_core::memory::sqlite::SqliteVectorStore;
 use buddy_core::memory::{VectorEntry, VectorStore};
 use crate::api::config::put_config_models;
@@ -4364,9 +4366,9 @@ fn test_app_with_vector_store(
         store: buddy_core::store::Store::open_in_memory().unwrap(),
         embedder: arc_swap::ArcSwap::from_pointee(embedder),
         vector_store: arc_swap::ArcSwap::from_pointee(vector_store),
-        working_memory: crate::skill::working_memory::new_working_memory_map(),
+        working_memory: buddy_core::skill::working_memory::new_working_memory_map(),
         memory_config: arc_swap::ArcSwap::from_pointee(buddy_core::config::MemoryConfig::default()),
-        warnings: crate::warning::new_shared_warnings(),
+        warnings: buddy_core::warning::new_shared_warnings(),
         pending_approvals: new_pending_approvals(),
         conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
         approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),

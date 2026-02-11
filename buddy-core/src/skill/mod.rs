@@ -10,7 +10,7 @@ use std::future::Future;
 use std::path::{Component, Path, PathBuf};
 use std::pin::Pin;
 
-use buddy_core::config::SkillsConfig;
+use crate::config::SkillsConfig;
 use serde::{Deserialize, Serialize};
 
 /// Normalize a path by making it absolute and resolving `.` and `..` without
@@ -281,7 +281,7 @@ mod tests {
 
     #[test]
     fn build_registry_with_read_file_only() {
-        use buddy_core::config::ReadFileConfig;
+        use crate::config::ReadFileConfig;
 
         let config = SkillsConfig {
             read_file: Some(ReadFileConfig {
@@ -300,7 +300,7 @@ mod tests {
 
     #[test]
     fn build_registry_with_all_skills() {
-        use buddy_core::config::{FetchUrlConfig, ReadFileConfig, WriteFileConfig};
+        use crate::config::{FetchUrlConfig, ReadFileConfig, WriteFileConfig};
 
         let config = SkillsConfig {
             read_file: Some(ReadFileConfig {

@@ -17,8 +17,8 @@ use tokio::sync::oneshot;
 use super::{ApiError, AppState, ApproveRequest, ChatEvent, ChatRequest, MemorySnippet};
 use buddy_core::config::ApprovalPolicy;
 use buddy_core::types::{Message, MessageContent, Role};
-use crate::provider::{Provider, Token};
-use crate::skill::PermissionLevel;
+use buddy_core::provider::{Provider, Token};
+use buddy_core::skill::PermissionLevel;
 use buddy_core::store::title_from_message;
 
 /// Maximum number of tool-call loop iterations before aborting.

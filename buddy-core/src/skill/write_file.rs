@@ -2,7 +2,7 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 
-use buddy_core::config::WriteFileConfig;
+use crate::config::WriteFileConfig;
 
 use super::{PermissionLevel, Skill, SkillError, normalize_path};
 

@@ -5,3 +5,10 @@ pub mod config;
 pub mod store;
 pub mod embedding;
 pub mod memory;
+pub mod provider;
+pub mod skill;
+pub mod reload;
+pub mod warning;
+
+// Test utilities - always available for use by buddy-server and tests
+pub mod testutil;

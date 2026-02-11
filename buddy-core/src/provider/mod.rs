@@ -8,7 +8,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use buddy_core::types::Message;
+use crate::types::Message;
 use futures_core::Stream;
 use futures_util::StreamExt;
 
