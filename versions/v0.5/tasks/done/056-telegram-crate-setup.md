@@ -42,23 +42,23 @@ A `buddy-telegram` binary connects to the Telegram Bot API, receives text messag
 
 ## Acceptance Criteria
 
-- [ ] `buddy-telegram/` exists as a workspace member
-- [ ] `buddy-telegram/Cargo.toml` depends on `buddy-core` and `teloxide`
-- [ ] `[interfaces.telegram]` config section parses correctly with `enabled` and `bot_token_env` fields
-- [ ] Config without `[interfaces.telegram]` parses correctly (defaults to disabled)
-- [ ] `buddy-telegram/src/main.rs` loads config and connects to Telegram when enabled
-- [ ] `buddy-telegram/src/adapter.rs` converts Telegram messages to buddy-core `Message` type
-- [ ] `buddy-telegram/src/adapter.rs` converts buddy-core `Message` to Telegram-compatible text
-- [ ] `cargo build -p buddy-telegram` succeeds
-- [ ] The binary exits gracefully when the bot token env var is not set
-- [ ] All existing tests pass (`cargo test` from workspace root)
+- [x] `buddy-telegram/` exists as a workspace member
+- [x] `buddy-telegram/Cargo.toml` depends on `buddy-core` and `teloxide`
+- [x] `[interfaces.telegram]` config section parses correctly with `enabled` and `bot_token_env` fields
+- [x] Config without `[interfaces.telegram]` parses correctly (defaults to disabled)
+- [x] `buddy-telegram/src/main.rs` loads config and connects to Telegram when enabled
+- [x] `buddy-telegram/src/adapter.rs` converts Telegram messages to buddy-core `Message` type
+- [x] `buddy-telegram/src/adapter.rs` converts buddy-core `Message` to Telegram-compatible text
+- [x] `cargo build -p buddy-telegram` succeeds
+- [x] The binary exits gracefully when the bot token env var is not set
+- [x] All existing tests pass (`cargo test` from workspace root)
 
 ## Test Cases
 
-- [ ] Parse a config with `[interfaces.telegram]` enabled and `bot_token_env = "TELEGRAM_BOT_TOKEN"`; assert `TelegramConfig` has correct values
-- [ ] Parse a config without `[interfaces.telegram]`; assert `TelegramConfig` defaults to `enabled: false`
-- [ ] Call `telegram_to_buddy()` with a mock Telegram text message "Hello"; assert it returns a buddy-core `Message` with `Role::User` and text "Hello"
-- [ ] Call `telegram_to_buddy()` with a mock Telegram message that has no text (e.g., a photo); assert it returns `None`
-- [ ] Call `buddy_to_telegram()` with a buddy-core `Message` containing `MessageContent::Text`; assert it returns the text string
-- [ ] Call `buddy_to_telegram()` with a buddy-core `Message` containing `MessageContent::ToolCall`; assert it returns a formatted string (e.g., "Using tool: {name}...")
-- [ ] Run `cargo build -p buddy-telegram`; assert exit code 0
+- [x] Parse a config with `[interfaces.telegram]` enabled and `bot_token_env = "TELEGRAM_BOT_TOKEN"`; assert `TelegramConfig` has correct values
+- [x] Parse a config without `[interfaces.telegram]`; assert `TelegramConfig` defaults to `enabled: false`
+- [x] Call `telegram_to_buddy()` with a mock Telegram text message "Hello"; assert it returns a buddy-core `Message` with `Role::User` and text "Hello"
+- [x] Call `telegram_to_buddy()` with a mock Telegram message that has no text (e.g., a photo); assert it returns `None`
+- [x] Call `buddy_to_telegram()` with a buddy-core `Message` containing `MessageContent::Text`; assert it returns the text string
+- [x] Call `buddy_to_telegram()` with a buddy-core `Message` containing `MessageContent::ToolCall`; assert it returns a formatted string (e.g., "Using tool: {name}...")
+- [x] Run `cargo build -p buddy-telegram`; assert exit code 0

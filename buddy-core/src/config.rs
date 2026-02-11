@@ -20,6 +20,8 @@ pub struct Config {
     pub memory: MemoryConfig,
     #[serde(default)]
     pub auth: AuthConfig,
+    #[serde(default)]
+    pub interfaces: InterfacesConfig,
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
@@ -194,6 +196,35 @@ impl Default for MemoryConfig {
 #[derive(Debug, Deserialize, Serialize, PartialEq, Clone, Default)]
 pub struct AuthConfig {
     pub token_hash: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone, Default)]
+pub struct InterfacesConfig {
+    #[serde(default)]
+    pub telegram: TelegramConfig,
+}
+
+const DEFAULT_BOT_TOKEN_ENV: &str = "TELEGRAM_BOT_TOKEN";
+
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
+pub struct TelegramConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_bot_token_env")]
+    pub bot_token_env: String,
+}
+
+impl Default for TelegramConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            bot_token_env: default_bot_token_env(),
+        }
+    }
+}
+
+fn default_bot_token_env() -> String {
+    DEFAULT_BOT_TOKEN_ENV.to_string()
 }
 
 fn default_auto_retrieve() -> bool {
@@ -722,5 +753,37 @@ token_hash = "sha256:abc123def456"
     fn parse_config_without_auth_section() {
         let config = Config::parse(minimal_chat_toml()).unwrap();
         assert_eq!(config.auth.token_hash, None);
+    }
+
+    // Test cases for task 056: Telegram Config
+
+    #[test]
+    fn parse_config_with_telegram_enabled() {
+        let toml = r#"
+[[models.chat.providers]]
+type = "lmstudio"
+model = "deepseek-coder"
+endpoint = "http://localhost:1234/v1"
+
+[interfaces.telegram]
+enabled = true
+bot_token_env = "TELEGRAM_BOT_TOKEN"
+"#;
+        let config = Config::parse(toml).unwrap();
+        assert!(config.interfaces.telegram.enabled);
+        assert_eq!(
+            config.interfaces.telegram.bot_token_env,
+            "TELEGRAM_BOT_TOKEN"
+        );
+    }
+
+    #[test]
+    fn parse_config_without_telegram_defaults_to_disabled() {
+        let config = Config::parse(minimal_chat_toml()).unwrap();
+        assert!(!config.interfaces.telegram.enabled);
+        assert_eq!(
+            config.interfaces.telegram.bot_token_env,
+            "TELEGRAM_BOT_TOKEN"
+        );
     }
 }

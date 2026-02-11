@@ -15,7 +15,7 @@ run: build
 
 # Dev mode: build frontend then run debug server
 dev: build-frontend
-	cargo run
+	cargo run --bin buddy-server
 
 clean:
 	cargo clean
