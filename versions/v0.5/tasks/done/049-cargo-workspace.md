@@ -44,22 +44,22 @@ The project is a Cargo workspace with `buddy-server` and `buddy-core` as members
 
 ## Acceptance Criteria
 
-- [ ] Root `Cargo.toml` is a workspace manifest with members `buddy-server` and `buddy-core`
-- [ ] `buddy-core/Cargo.toml` exists with correct package metadata
-- [ ] `buddy-core/src/lib.rs` exists
-- [ ] `buddy-server/Cargo.toml` depends on `buddy-core`
-- [ ] `cargo build` succeeds from the workspace root
-- [ ] `cargo test` passes all existing tests from the workspace root
-- [ ] `cargo build -p buddy-core` succeeds
-- [ ] `cargo build -p buddy-server` succeeds
-- [ ] The `Makefile` works with the workspace structure
-- [ ] No source code has been moved or modified (only Cargo.toml files and Makefile)
+- [x] Root `Cargo.toml` is a workspace manifest with members `buddy-server` and `buddy-core`
+- [x] `buddy-core/Cargo.toml` exists with correct package metadata
+- [x] `buddy-core/src/lib.rs` exists
+- [x] `buddy-server/Cargo.toml` depends on `buddy-core`
+- [x] `cargo build` succeeds from the workspace root
+- [x] `cargo test` passes all existing tests from the workspace root
+- [x] `cargo build -p buddy-core` succeeds
+- [x] `cargo build -p buddy-server` succeeds
+- [x] The `Makefile` works with the workspace structure
+- [x] No source code has been moved or modified (only Cargo.toml files and Makefile)
 
 ## Test Cases
 
-- [ ] Run `cargo build` from the workspace root; assert exit code 0
-- [ ] Run `cargo test` from the workspace root; assert all existing tests pass with exit code 0
-- [ ] Run `cargo build -p buddy-core` from the workspace root; assert exit code 0
-- [ ] Run `cargo build -p buddy-server` from the workspace root; assert exit code 0
-- [ ] Run `make build` from the project root; assert it succeeds
-- [ ] Verify `buddy-core/src/lib.rs` exists and `buddy-core/Cargo.toml` lists `buddy-core` as the package name
+- [x] Run `cargo build` from the workspace root; assert exit code 0
+- [x] Run `cargo test` from the workspace root; assert all existing tests pass with exit code 0
+- [x] Run `cargo build -p buddy-core` from the workspace root; assert exit code 0
+- [x] Run `cargo build -p buddy-server` from the workspace root; assert exit code 0
+- [x] Run `make build` from the project root; assert it succeeds
+- [x] Verify `buddy-core/src/lib.rs` exists and `buddy-core/Cargo.toml` lists `buddy-core` as the package name

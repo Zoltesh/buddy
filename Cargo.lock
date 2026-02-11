@@ -330,12 +330,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "buddy-core"
+version = "0.5.0"
+
+[[package]]
 name = "buddy-server"
 version = "0.1.0"
 dependencies = [
  "arc-swap",
  "async-stream",
  "axum",
+ "buddy-core",
  "chrono",
  "clap",
  "fastembed",
