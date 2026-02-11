@@ -5,6 +5,7 @@
     fetchConversation,
     fetchWarnings,
     toDisplayItems,
+    authFetch,
   } from './api.js';
   import ToolCallBlock from './ToolCallBlock.svelte';
 
@@ -117,7 +118,7 @@
     let currentAssistantIdx = displayItems.length - 1;
 
     try {
-      const response = await fetch('/api/chat', {
+      const response = await authFetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),

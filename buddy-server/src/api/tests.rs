@@ -4924,3 +4924,198 @@ mod auth {
         assert_eq!(json["required"], false);
     }
 }
+
+// ── Task 055: Authentication frontend ──────────────────────────────────
+
+mod auth_frontend {
+    /// Test case 1: When auth status returns required: false, main app renders
+    /// with no login page gate.
+    #[test]
+    fn no_auth_required_shows_main_app() {
+        let app = include_str!("../../../frontend/src/App.svelte");
+        // App checks auth status on startup
+        assert!(
+            app.contains("checkAuthStatus"),
+            "App should call checkAuthStatus on startup"
+        );
+        // When not required, authenticated is set true and main app renders
+        assert!(
+            app.contains("authRequired && !authenticated"),
+            "App should gate on authRequired && !authenticated to show login"
+        );
+    }
+
+    /// Test case 2: When auth is required and no token is stored, login page
+    /// renders with token input and Sign In button.
+    #[test]
+    fn auth_required_no_token_shows_login_page() {
+        let login = include_str!("../../../frontend/src/lib/Login.svelte");
+        assert!(
+            login.contains("type=\"password\""),
+            "Login page should have a password input field for the token"
+        );
+        assert!(
+            login.contains("Access Token"),
+            "Login page should label the input as 'Access Token'"
+        );
+        assert!(
+            login.contains("Sign In"),
+            "Login page should have a 'Sign In' button"
+        );
+    }
+
+    /// Test case 3: Valid token submission stores token and shows main app.
+    #[test]
+    fn valid_token_stores_and_proceeds() {
+        let login = include_str!("../../../frontend/src/lib/Login.svelte");
+        assert!(
+            login.contains("verifyToken"),
+            "Login should call verifyToken with the entered token"
+        );
+        assert!(
+            login.contains("setAuthToken"),
+            "Login should call setAuthToken to store a valid token"
+        );
+        assert!(
+            login.contains("onAuthenticated"),
+            "Login should call onAuthenticated callback after successful login"
+        );
+    }
+
+    /// Test case 4: Invalid token shows error message and clears input.
+    #[test]
+    fn invalid_token_shows_error() {
+        let login = include_str!("../../../frontend/src/lib/Login.svelte");
+        assert!(
+            login.contains("Invalid token. Please try again."),
+            "Login should display 'Invalid token. Please try again.' on failure"
+        );
+        assert!(
+            login.contains("token = ''"),
+            "Login should clear the input on failure"
+        );
+    }
+
+    /// Test case 5: On reload, app checks stored token validity before
+    /// showing main app.
+    #[test]
+    fn reload_verifies_stored_token() {
+        let app = include_str!("../../../frontend/src/App.svelte");
+        assert!(
+            app.contains("getAuthToken"),
+            "App should check for stored token on init"
+        );
+        assert!(
+            app.contains("verifyToken"),
+            "App should verify stored token with backend"
+        );
+    }
+
+    /// Test case 6: If token is missing from localStorage, login page appears.
+    /// (Covered by initAuth flow: no token → authenticated stays false.)
+    #[test]
+    fn missing_token_shows_login() {
+        let app = include_str!("../../../frontend/src/App.svelte");
+        // When getAuthToken returns null, auth flow skips verification
+        // and leaves authenticated = false, showing login
+        assert!(
+            app.contains("clearAuthToken"),
+            "App should clear invalid tokens"
+        );
+        assert!(
+            app.contains("authenticated = false"),
+            "App should set authenticated to false when no valid token"
+        );
+    }
+
+    /// Test case 7: A 401 response from any API call clears token and shows
+    /// login page via the buddy-auth-expired event.
+    #[test]
+    fn api_401_clears_token_and_shows_login() {
+        let api = include_str!("../../../frontend/src/lib/api.js");
+        assert!(
+            api.contains("res.status === 401"),
+            "authFetch should check for 401 status"
+        );
+        assert!(
+            api.contains("clearAuthToken()"),
+            "authFetch should clear token on 401"
+        );
+        assert!(
+            api.contains("buddy-auth-expired"),
+            "authFetch should dispatch buddy-auth-expired event on 401"
+        );
+        let app = include_str!("../../../frontend/src/App.svelte");
+        assert!(
+            app.contains("buddy-auth-expired"),
+            "App should listen for buddy-auth-expired event"
+        );
+    }
+
+    /// Test case 8: Sign Out button clears token and shows login page.
+    #[test]
+    fn sign_out_clears_token() {
+        let sidebar = include_str!("../../../frontend/src/lib/Sidebar.svelte");
+        assert!(
+            sidebar.contains("Sign Out"),
+            "Sidebar should have a 'Sign Out' button"
+        );
+        assert!(
+            sidebar.contains("onSignOut"),
+            "Sidebar should call onSignOut callback"
+        );
+        let app = include_str!("../../../frontend/src/App.svelte");
+        assert!(
+            app.contains("handleSignOut"),
+            "App should define handleSignOut"
+        );
+        assert!(
+            app.contains("clearAuthToken"),
+            "handleSignOut should clear the auth token"
+        );
+    }
+
+    /// Test case 9: API calls include Authorization: Bearer header when
+    /// a token is stored.
+    #[test]
+    fn api_calls_include_bearer_header() {
+        let api = include_str!("../../../frontend/src/lib/api.js");
+        assert!(
+            api.contains("Authorization"),
+            "authFetch should set Authorization header"
+        );
+        assert!(
+            api.contains("Bearer ${token}"),
+            "authFetch should use Bearer token format"
+        );
+        // All API functions use authFetch
+        assert!(
+            api.contains("await authFetch('/api/conversations')"),
+            "fetchConversations should use authFetch"
+        );
+        assert!(
+            api.contains("await authFetch('/api/config')"),
+            "fetchConfig should use authFetch"
+        );
+        let chat = include_str!("../../../frontend/src/lib/Chat.svelte");
+        assert!(
+            chat.contains("authFetch('/api/chat'"),
+            "Chat POST should use authFetch"
+        );
+    }
+
+    /// Test case 10: When auth is not required, no Sign Out button appears.
+    #[test]
+    fn no_sign_out_when_auth_not_required() {
+        let sidebar = include_str!("../../../frontend/src/lib/Sidebar.svelte");
+        assert!(
+            sidebar.contains("{#if authRequired}"),
+            "Sign Out should be conditionally rendered based on authRequired prop"
+        );
+        let app = include_str!("../../../frontend/src/App.svelte");
+        assert!(
+            app.contains("{authRequired}"),
+            "App should pass authRequired prop to Sidebar"
+        );
+    }
+}

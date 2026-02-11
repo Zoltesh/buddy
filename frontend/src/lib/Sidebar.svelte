@@ -6,10 +6,12 @@
     activeId = null,
     currentRoute = '/',
     collapsed = false,
+    authRequired = false,
     onSelect,
     onNewChat,
     onDelete,
     onToggleCollapse,
+    onSignOut,
   } = $props();
 </script>
 
@@ -157,29 +159,54 @@
     {/if}
   </div>
 
-  <!-- Collapse toggle (desktop only) -->
-  <div class="hidden md:block border-t border-gray-200 dark:border-gray-800 p-2">
-    <button
-      onclick={onToggleCollapse}
-      class="w-full flex items-center justify-center p-2 rounded-lg text-gray-500 dark:text-gray-400
-             hover:bg-gray-100 dark:hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500
-             transition-colors cursor-pointer"
-      title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-      aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-    >
-      <svg
-        class="w-4 h-4 transition-transform duration-200 {collapsed ? 'rotate-180' : ''}"
-        fill="none"
-        stroke="currentColor"
-        viewBox="0 0 24 24"
+  <!-- Bottom actions -->
+  <div class="border-t border-gray-200 dark:border-gray-800 p-2 space-y-1">
+    {#if authRequired}
+      <button
+        onclick={onSignOut}
+        class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-gray-600 dark:text-gray-400
+               hover:bg-gray-100 dark:hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500
+               transition-colors cursor-pointer
+               {collapsed ? 'justify-center' : ''}"
+        title={collapsed ? 'Sign Out' : undefined}
+        aria-label="Sign Out"
       >
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="2"
-          d="M11 19l-7-7 7-7m8 14l-7-7 7-7"
-        />
-      </svg>
-    </button>
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+          />
+        </svg>
+        <span class="{collapsed ? 'md:hidden' : ''}">Sign Out</span>
+      </button>
+    {/if}
+
+    <!-- Collapse toggle (desktop only) -->
+    <div class="hidden md:block">
+      <button
+        onclick={onToggleCollapse}
+        class="w-full flex items-center justify-center p-2 rounded-lg text-gray-500 dark:text-gray-400
+               hover:bg-gray-100 dark:hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500
+               transition-colors cursor-pointer"
+        title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+      >
+        <svg
+          class="w-4 h-4 transition-transform duration-200 {collapsed ? 'rotate-180' : ''}"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M11 19l-7-7 7-7m8 14l-7-7 7-7"
+          />
+        </svg>
+      </button>
+    </div>
   </div>
 </div>

@@ -2,36 +2,106 @@
  * API helpers and data conversion utilities.
  */
 
+const AUTH_TOKEN_KEY = 'buddy_auth_token';
+
+/** Get the stored auth token, or null. */
+export function getAuthToken() {
+  return localStorage.getItem(AUTH_TOKEN_KEY);
+}
+
+/**
+ * Store an auth token.
+ * @param {string} token
+ */
+export function setAuthToken(token) {
+  localStorage.setItem(AUTH_TOKEN_KEY, token);
+}
+
+/** Clear the stored auth token. */
+export function clearAuthToken() {
+  localStorage.removeItem(AUTH_TOKEN_KEY);
+}
+
+/** Check whether the server requires authentication. */
+export async function checkAuthStatus() {
+  const res = await fetch('/api/auth/status');
+  if (!res.ok) throw new Error('Failed to check auth status');
+  return res.json();
+}
+
+/**
+ * Verify a token with the server. Returns { valid: true } or { valid: false }.
+ * @param {string} token
+ */
+export async function verifyToken(token) {
+  const res = await fetch('/api/auth/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token }),
+  });
+  if (!res.ok) throw new Error('Failed to verify token');
+  return res.json();
+}
+
+/**
+ * Wrapper around fetch that injects the Authorization header when a token
+ * is stored, and handles 401 responses by clearing the token and dispatching
+ * a 'buddy-auth-expired' event on window.
+ * @param {string} url
+ * @param {RequestInit} [options]
+ */
+export async function authFetch(url, options = {}) {
+  const token = getAuthToken();
+  if (token) {
+    options.headers = {
+      ...options.headers,
+      'Authorization': `Bearer ${token}`,
+    };
+  }
+  const res = await fetch(url, options);
+  if (res.status === 401) {
+    clearAuthToken();
+    window.dispatchEvent(new CustomEvent('buddy-auth-expired'));
+  }
+  return res;
+}
+
 /** Fetch all conversation summaries. */
 export async function fetchConversations() {
-  const res = await fetch('/api/conversations');
+  const res = await authFetch('/api/conversations');
   if (!res.ok) throw new Error('Failed to load conversations');
   return res.json();
 }
 
-/** Fetch a single conversation with full message history. */
+/**
+ * Fetch a single conversation with full message history.
+ * @param {string} id
+ */
 export async function fetchConversation(id) {
-  const res = await fetch(`/api/conversations/${id}`);
+  const res = await authFetch(`/api/conversations/${id}`);
   if (!res.ok) throw new Error('Failed to load conversation');
   return res.json();
 }
 
-/** Delete a conversation. */
+/**
+ * Delete a conversation.
+ * @param {string} id
+ */
 export async function deleteConversation(id) {
-  const res = await fetch(`/api/conversations/${id}`, { method: 'DELETE' });
+  const res = await authFetch(`/api/conversations/${id}`, { method: 'DELETE' });
   if (!res.ok) throw new Error('Failed to delete conversation');
 }
 
 /** Fetch current system warnings. */
 export async function fetchWarnings() {
-  const res = await fetch('/api/warnings');
+  const res = await authFetch('/api/warnings');
   if (!res.ok) throw new Error('Failed to load warnings');
   return res.json();
 }
 
 /** Fetch the current server configuration. */
 export async function fetchConfig() {
-  const res = await fetch('/api/config');
+  const res = await authFetch('/api/config');
   if (!res.ok) throw new Error('Failed to load config');
   return res.json();
 }
@@ -39,70 +109,84 @@ export async function fetchConfig() {
 /**
  * Update a config section via PUT.
  * Returns the updated config on success; throws with error details on failure.
+ * @param {string} section
+ * @param {object} body
  */
 async function putConfigSection(section, body) {
-  const res = await fetch(`/api/config/${section}`, {
+  const res = await authFetch(`/api/config/${section}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
   const data = await res.json();
   if (!res.ok) {
-    const err = new Error('Config update failed');
-    err.details = data;
-    throw err;
+    throw Object.assign(new Error('Config update failed'), { details: data });
   }
   return data;
 }
 
-/** Update the chat config (system_prompt). */
+/**
+ * Update the chat config (system_prompt).
+ * @param {object} chat
+ */
 export function putConfigChat(chat) {
   return putConfigSection('chat', chat);
 }
 
-/** Update the memory config (auto_retrieve, similarity_threshold, auto_retrieve_limit). */
+/**
+ * Update the memory config (auto_retrieve, similarity_threshold, auto_retrieve_limit).
+ * @param {object} memory
+ */
 export function putConfigMemory(memory) {
   return putConfigSection('memory', memory);
 }
 
-/** Update the models config (chat and embedding provider lists). */
+/**
+ * Update the models config (chat and embedding provider lists).
+ * @param {object} models
+ */
 export function putConfigModels(models) {
   return putConfigSection('models', models);
 }
 
-/** Update the skills config (read_file, write_file, fetch_url). */
+/**
+ * Update the skills config (read_file, write_file, fetch_url).
+ * @param {object} skills
+ */
 export function putConfigSkills(skills) {
   return putConfigSection('skills', skills);
 }
 
-/** Discover available models from an LM Studio endpoint. */
+/**
+ * Discover available models from an LM Studio endpoint.
+ * @param {string} endpoint
+ */
 export async function discoverModels(endpoint) {
-  const res = await fetch('/api/config/discover-models', {
+  const res = await authFetch('/api/config/discover-models', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ endpoint }),
   });
   const data = await res.json();
   if (!res.ok) {
-    const err = new Error('Discovery failed');
-    err.details = data;
-    throw err;
+    throw Object.assign(new Error('Discovery failed'), { details: data });
   }
   return data;
 }
 
-/** Test a provider's connectivity without saving. */
+/**
+ * Test a provider's connectivity without saving.
+ * @param {object} entry
+ */
 export async function testProvider(entry) {
-  const res = await fetch('/api/config/test-provider', {
+  const res = await authFetch('/api/config/test-provider', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(entry),
   });
   const data = await res.json();
   if (!res.ok) {
-    const err = new Error('Validation failed');
-    err.details = data;
-    throw err;
+    throw Object.assign(new Error('Validation failed'), { details: data });
   }
   return data;
 }
@@ -110,6 +194,8 @@ export async function testProvider(entry) {
 /**
  * Format an API error into a user-facing message string.
  * Supports validation error responses (with field/message pairs) and plain errors.
+ * @param {Error & {details?: any, errors?: Array<{field?: string, message: string}>}} e
+ * @param {{includeField?: boolean}} [options]
  */
 export function formatApiError(e, { includeField = true } = {}) {
   const errors = e.details?.errors || e.errors;
@@ -128,6 +214,7 @@ export function formatApiError(e, { includeField = true } = {}) {
  * Display item shapes:
  *   { kind: 'text', role, content, timestamp }
  *   { kind: 'tool_call', id, name, arguments, result }
+ * @param {Array<{role: string, content: {type: string, [key: string]: any}, timestamp?: string}>} messages
  */
 export function toDisplayItems(messages) {
   const items = [];
@@ -166,37 +253,36 @@ export function toDisplayItems(messages) {
 
 /** Get the current embedder health status. */
 export async function getEmbedderHealth() {
-  const res = await fetch('/api/embedder/health');
+  const res = await authFetch('/api/embedder/health');
   if (!res.ok) throw new Error('Failed to get embedder health');
   return res.json();
 }
 
 /** Get memory status including count and migration requirement. */
 export async function getMemoryStatus() {
-  const res = await fetch('/api/memory/status');
+  const res = await authFetch('/api/memory/status');
   if (!res.ok) throw new Error('Failed to get memory status');
   return res.json();
 }
 
 /** Trigger memory migration (re-embedding with new model). */
 export async function migrateMemory() {
-  const res = await fetch('/api/memory/migrate', { method: 'POST' });
+  const res = await authFetch('/api/memory/migrate', { method: 'POST' });
   if (!res.ok) {
     const data = await res.json();
-    const err = new Error('Migration failed');
-    err.details = data;
-    throw err;
+    throw Object.assign(new Error('Migration failed'), { details: data });
   }
   return res.json();
 }
 
 /**
  * Format a timestamp as a relative time string.
+ * @param {string} dateStr
  */
 export function timeAgo(dateStr) {
   const date = new Date(dateStr);
   const now = new Date();
-  const seconds = Math.floor((now - date) / 1000);
+  const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
 
   if (seconds < 60) return 'just now';
   const minutes = Math.floor(seconds / 60);

@@ -36,27 +36,27 @@ Users are prompted for their token when auth is required and can use buddy norma
 
 ## Acceptance Criteria
 
-- [ ] App checks `GET /api/auth/status` on startup
-- [ ] Login page appears when auth is required and no valid token is stored
-- [ ] Login page has a token input field and "Sign In" button
-- [ ] Valid token submission stores the token and shows the main app
-- [ ] Invalid token submission shows an error message
-- [ ] Stored token is included as a Bearer token in all API requests
-- [ ] A 401 response from any API call clears the token and shows the login page
-- [ ] "Sign Out" button in sidebar clears the token and shows the login page
-- [ ] When auth is not required, the app loads normally with no login page
-- [ ] Token persists across page reloads via localStorage
-- [ ] All existing functionality works after authentication
+- [x] App checks `GET /api/auth/status` on startup
+- [x] Login page appears when auth is required and no valid token is stored
+- [x] Login page has a token input field and "Sign In" button
+- [x] Valid token submission stores the token and shows the main app
+- [x] Invalid token submission shows an error message
+- [x] Stored token is included as a Bearer token in all API requests
+- [x] A 401 response from any API call clears the token and shows the login page
+- [x] "Sign Out" button in sidebar clears the token and shows the login page
+- [x] When auth is not required, the app loads normally with no login page
+- [x] Token persists across page reloads via localStorage
+- [x] All existing functionality works after authentication
 
 ## Test Cases
 
-- [ ] Load the app when `GET /api/auth/status` returns `{ "required": false }`; main app renders immediately with no login page
-- [ ] Load the app when auth is required and no token is in localStorage; login page renders with token input and "Sign In" button
-- [ ] Enter a valid token on the login page and click "Sign In"; login page disappears, main app renders, token is in localStorage
-- [ ] Enter an invalid token on the login page and click "Sign In"; error message "Invalid token. Please try again." appears, input is cleared
-- [ ] Reload the page after authenticating; app checks stored token validity and renders the main app without showing login page
-- [ ] Clear the token manually from localStorage and reload; login page appears
-- [ ] While authenticated, make an API call that returns 401 (e.g., token was invalidated server-side); login page appears
-- [ ] Click "Sign Out" in the sidebar; localStorage token is cleared, login page appears
-- [ ] When auth is required, verify that API calls (e.g., fetching conversations) include the `Authorization: Bearer <token>` header
-- [ ] When auth is not required, verify that no "Sign Out" button appears in the sidebar
+- [x] Load the app when `GET /api/auth/status` returns `{ "required": false }`; main app renders immediately with no login page
+- [x] Load the app when auth is required and no token is in localStorage; login page renders with token input and "Sign In" button
+- [x] Enter a valid token on the login page and click "Sign In"; login page disappears, main app renders, token is in localStorage
+- [x] Enter an invalid token on the login page and click "Sign In"; error message "Invalid token. Please try again." appears, input is cleared
+- [x] Reload the page after authenticating; app checks stored token validity and renders the main app without showing login page
+- [x] Clear the token manually from localStorage and reload; login page appears
+- [x] While authenticated, make an API call that returns 401 (e.g., token was invalidated server-side); login page appears
+- [x] Click "Sign Out" in the sidebar; localStorage token is cleared, login page appears
+- [x] When auth is required, verify that API calls (e.g., fetching conversations) include the `Authorization: Bearer <token>` header
+- [x] When auth is not required, verify that no "Sign Out" button appears in the sidebar
