@@ -21,6 +21,6 @@ buddy.toml
 *.claude/
 
 # Database
-buddy.db*
+*.db*
 
 .fastembed_cache/
