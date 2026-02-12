@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { fetchConfig, fetchInterfacesStatus, putConfigInterfaces } from './api.js';
+  import { fetchConfig, fetchInterfacesStatus, putConfigInterfaces, checkInterfaceConnection } from './api.js';
 
   let config = $state(null);
   let status = $state(null);
@@ -12,6 +12,10 @@
 
   // Edit form state
   let editForm = $state({});
+
+  // Health check state per interface
+  let healthChecking = $state({});  // { telegram: true, whatsapp: false }
+  let healthResult = $state({});    // { telegram: { status, detail }, whatsapp: { status, detail } }
 
   onMount(() => {
     loadData();
@@ -27,10 +31,30 @@
       ]);
       config = cfg;
       status = sts;
+      // Auto-check enabled interfaces after a small delay to avoid blocking render.
+      setTimeout(() => {
+        for (const name of ['telegram', 'whatsapp']) {
+          if (sts[name]?.enabled) {
+            runHealthCheck(name);
+          }
+        }
+      }, 300);
     } catch (e) {
       error = e.message;
     } finally {
       loading = false;
+    }
+  }
+
+  async function runHealthCheck(name) {
+    healthChecking = { ...healthChecking, [name]: true };
+    try {
+      const result = await checkInterfaceConnection(name);
+      healthResult = { ...healthResult, [name]: result };
+    } catch (e) {
+      healthResult = { ...healthResult, [name]: { status: 'error', detail: e.details?.message || e.message } };
+    } finally {
+      healthChecking = { ...healthChecking, [name]: false };
     }
   }
 
@@ -45,19 +69,37 @@
   function statusLabel(name) {
     if (!isConfigured(name)) return 'Not configured';
     if (!isEnabled(name)) return 'Disabled';
-    return 'Connected';
+    if (healthChecking[name]) return 'Checking...';
+    const hr = healthResult[name];
+    if (hr) {
+      if (hr.status === 'connected') return `Connected — ${hr.detail}`;
+      return hr.detail;
+    }
+    return 'Enabled';
   }
 
   function statusColor(name) {
     if (!isConfigured(name)) return 'bg-gray-400';
     if (!isEnabled(name)) return 'bg-gray-400';
-    return 'bg-green-500';
+    if (healthChecking[name]) return 'bg-yellow-400 animate-pulse';
+    const hr = healthResult[name];
+    if (hr) {
+      return hr.status === 'connected' ? 'bg-green-500' : 'bg-red-500';
+    }
+    return 'bg-gray-400';
   }
 
   function statusTextColor(name) {
     if (!isConfigured(name)) return 'text-gray-500 dark:text-gray-400';
     if (!isEnabled(name)) return 'text-gray-500 dark:text-gray-400';
-    return 'text-green-600 dark:text-green-400';
+    if (healthChecking[name]) return 'text-yellow-600 dark:text-yellow-400';
+    const hr = healthResult[name];
+    if (hr) {
+      return hr.status === 'connected'
+        ? 'text-green-600 dark:text-green-400'
+        : 'text-red-600 dark:text-red-400';
+    }
+    return 'text-gray-500 dark:text-gray-400';
   }
 
   async function toggleEnabled(name) {
@@ -310,6 +352,14 @@
                   </div>
                   <div class="flex items-center gap-2">
                     <button
+                      onclick={() => runHealthCheck('telegram')}
+                      disabled={healthChecking.telegram}
+                      class="text-xs text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400
+                             disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                    >
+                      {healthChecking.telegram ? 'Checking...' : 'Check'}
+                    </button>
+                    <button
                       onclick={() => toggleEnabled('telegram')}
                       disabled={saving}
                       class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors cursor-pointer
@@ -449,6 +499,14 @@
                     </div>
                   </div>
                   <div class="flex items-center gap-2">
+                    <button
+                      onclick={() => runHealthCheck('whatsapp')}
+                      disabled={healthChecking.whatsapp}
+                      class="text-xs text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400
+                             disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                    >
+                      {healthChecking.whatsapp ? 'Checking...' : 'Check'}
+                    </button>
                     <button
                       onclick={() => toggleEnabled('whatsapp')}
                       disabled={saving}

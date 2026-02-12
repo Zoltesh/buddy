@@ -170,6 +170,24 @@ export function putConfigInterfaces(interfaces) {
 }
 
 /**
+ * Check an interface's connection by validating credentials against the external API.
+ * @param {string} name - 'telegram' or 'whatsapp'
+ * @returns {Promise<{status: string, detail: string}>}
+ */
+export async function checkInterfaceConnection(name) {
+  const res = await authFetch('/api/interfaces/check', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ interface: name }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw Object.assign(new Error('Connection check failed'), { details: data });
+  }
+  return data;
+}
+
+/**
  * Discover available models from an LM Studio endpoint.
  * @param {string} endpoint
  */

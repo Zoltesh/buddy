@@ -42,25 +42,25 @@ Users can see whether their configured interface credentials are actually valid 
 
 ## Acceptance Criteria
 
-- [ ] `POST /api/interfaces/check` with `"telegram"` validates the bot token against Telegram's API
-- [ ] `POST /api/interfaces/check` with `"whatsapp"` validates the API token against WhatsApp's Graph API
-- [ ] Valid Telegram token returns `status: "connected"` with bot username
-- [ ] Invalid Telegram token returns `status: "error"` with descriptive message
-- [ ] Network failure returns `status: "error"` with connectivity message
-- [ ] Unconfigured interface returns `status: "error"` with "Not configured"
-- [ ] Frontend shows "Check Connection" button on configured cards
-- [ ] Frontend shows spinner during check and result afterward
-- [ ] Enabled interfaces are auto-checked on page load
-- [ ] Disabled interfaces show "Disabled" without performing a check
-- [ ] Health check has a 5-second timeout
-- [ ] All existing tests pass
+- [x] `POST /api/interfaces/check` with `"telegram"` validates the bot token against Telegram's API
+- [x] `POST /api/interfaces/check` with `"whatsapp"` validates the API token against WhatsApp's Graph API
+- [x] Valid Telegram token returns `status: "connected"` with bot username
+- [x] Invalid Telegram token returns `status: "error"` with descriptive message
+- [x] Network failure returns `status: "error"` with connectivity message
+- [x] Unconfigured interface returns `status: "error"` with "Not configured"
+- [x] Frontend shows "Check Connection" button on configured cards
+- [x] Frontend shows spinner during check and result afterward
+- [x] Enabled interfaces are auto-checked on page load
+- [x] Disabled interfaces show "Disabled" without performing a check
+- [x] Health check has a 5-second timeout
+- [x] All existing tests pass
 
 ## Test Cases
 
-- [ ] Call `POST /api/interfaces/check` with `{"interface": "telegram"}` when Telegram is not configured; assert response is `{ "status": "error", "detail": "Not configured" }`
-- [ ] Call `POST /api/interfaces/check` with `{"interface": "whatsapp"}` when WhatsApp is not configured; assert response is `{ "status": "error", "detail": "Not configured" }`
-- [ ] Call `POST /api/interfaces/check` with `{"interface": "telegram"}` when Telegram is configured but token resolution fails (env var not set, no direct token); assert response is `{ "status": "error" }` with detail mentioning the missing token
-- [ ] Call `POST /api/interfaces/check` with `{"interface": "unknown"}`; assert 400 error response
-- [ ] Call `POST /api/interfaces/check` with valid Telegram token (integration test, `#[ignore]`); assert response is `{ "status": "connected" }` with bot username in detail
-- [ ] Call `POST /api/interfaces/check` with invalid Telegram token (integration test, `#[ignore]`); assert response is `{ "status": "error" }` with "Invalid bot token" in detail
+- [x] Call `POST /api/interfaces/check` with `{"interface": "telegram"}` when Telegram is not configured; assert response is `{ "status": "error", "detail": "Not configured" }`
+- [x] Call `POST /api/interfaces/check` with `{"interface": "whatsapp"}` when WhatsApp is not configured; assert response is `{ "status": "error", "detail": "Not configured" }`
+- [x] Call `POST /api/interfaces/check` with `{"interface": "telegram"}` when Telegram is configured but token resolution fails (env var not set, no direct token); assert response is `{ "status": "error" }` with detail mentioning the missing token
+- [x] Call `POST /api/interfaces/check` with `{"interface": "unknown"}`; assert 400 error response
+- [x] Call `POST /api/interfaces/check` with valid Telegram token (integration test, `#[ignore]`); assert response is `{ "status": "connected" }` with bot username in detail
+- [x] Call `POST /api/interfaces/check` with invalid Telegram token (integration test, `#[ignore]`); assert response is `{ "status": "error" }` with "Invalid bot token" in detail
 - [ ] Verify the check endpoint has a timeout: mock a slow-responding server; assert the endpoint returns within 6 seconds with an error

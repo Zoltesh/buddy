@@ -5488,3 +5488,139 @@ bot_token_env = "MY_TG_TOKEN"
         std::fs::remove_dir_all(&dir).ok();
     }
 }
+
+// ── Health check tests (task 069) ───────────────────────────────────
+
+fn health_check_app(config: buddy_core::config::Config) -> Router {
+    let state = Arc::new(AppState {
+        provider: arc_swap::ArcSwap::from_pointee(MockProvider {
+            tokens: vec!["ok".into()],
+        }),
+        registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
+        store: buddy_core::store::Store::open_in_memory().unwrap(),
+        embedder: arc_swap::ArcSwap::from_pointee(None),
+        vector_store: arc_swap::ArcSwap::from_pointee(None),
+        working_memory: buddy_core::skill::working_memory::new_working_memory_map(),
+        memory_config: arc_swap::ArcSwap::from_pointee(buddy_core::config::MemoryConfig::default()),
+        warnings: buddy_core::warning::new_shared_warnings(),
+        pending_approvals: new_pending_approvals(),
+        conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
+        approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
+        approval_timeout: std::time::Duration::from_secs(1),
+        config: std::sync::RwLock::new(config),
+        config_path: std::path::PathBuf::from("/tmp/buddy-test-069.toml"),
+        on_config_change: None,
+    });
+    Router::new()
+        .route(
+            "/api/interfaces/check",
+            post(check_interface_connection::<MockProvider>),
+        )
+        .with_state(state)
+}
+
+async fn post_check(app: Router, body: &str) -> (StatusCode, serde_json::Value) {
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/interfaces/check")
+        .header("Content-Type", "application/json")
+        .body(Body::from(body.to_string()))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    let status = resp.status();
+    let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+    let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    (status, json)
+}
+
+#[tokio::test]
+async fn check_telegram_not_configured_returns_error() {
+    // Default config has no bot_token and the default env var is unlikely to be set.
+    unsafe { std::env::remove_var("TELEGRAM_BOT_TOKEN") };
+    let app = health_check_app(test_config());
+    let (status, json) = post_check(app, r#"{"interface":"telegram"}"#).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["status"], "error");
+    assert_eq!(json["detail"], "Not configured");
+}
+
+#[tokio::test]
+async fn check_whatsapp_not_configured_returns_error() {
+    // Default config has empty phone_number_id.
+    let app = health_check_app(test_config());
+    let (status, json) = post_check(app, r#"{"interface":"whatsapp"}"#).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["status"], "error");
+    assert_eq!(json["detail"], "Not configured");
+}
+
+#[tokio::test]
+async fn check_telegram_token_resolution_fails_returns_error() {
+    let toml = r#"
+[[models.chat.providers]]
+type = "lmstudio"
+model = "test-model"
+endpoint = "http://localhost:1234/v1"
+
+[interfaces.telegram]
+bot_token_env = "BUDDY_TEST_TG_MISSING_069"
+"#;
+    unsafe { std::env::remove_var("BUDDY_TEST_TG_MISSING_069") };
+    let config = buddy_core::config::Config::parse(toml).unwrap();
+    let app = health_check_app(config);
+    let (status, json) = post_check(app, r#"{"interface":"telegram"}"#).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["status"], "error");
+    // Missing token should indicate not configured.
+    assert_eq!(json["detail"], "Not configured");
+}
+
+#[tokio::test]
+async fn check_unknown_interface_returns_400() {
+    let app = health_check_app(test_config());
+    let (status, json) = post_check(app, r#"{"interface":"unknown"}"#).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(json["message"].as_str().unwrap().contains("Unknown interface"));
+}
+
+#[tokio::test]
+#[ignore]
+async fn check_telegram_valid_token_returns_connected() {
+    // Requires TELEGRAM_BOT_TOKEN env var with a valid token.
+    let toml = r#"
+[[models.chat.providers]]
+type = "lmstudio"
+model = "test-model"
+endpoint = "http://localhost:1234/v1"
+
+[interfaces.telegram]
+enabled = true
+"#;
+    let config = buddy_core::config::Config::parse(toml).unwrap();
+    let app = health_check_app(config);
+    let (status, json) = post_check(app, r#"{"interface":"telegram"}"#).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["status"], "connected");
+    assert!(json["detail"].as_str().unwrap().starts_with("Bot: @"));
+}
+
+#[tokio::test]
+#[ignore]
+async fn check_telegram_invalid_token_returns_error() {
+    let toml = r#"
+[[models.chat.providers]]
+type = "lmstudio"
+model = "test-model"
+endpoint = "http://localhost:1234/v1"
+
+[interfaces.telegram]
+enabled = true
+bot_token = "000000:INVALID_TOKEN"
+"#;
+    let config = buddy_core::config::Config::parse(toml).unwrap();
+    let app = health_check_app(config);
+    let (status, json) = post_check(app, r#"{"interface":"telegram"}"#).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["status"], "error");
+    assert_eq!(json["detail"], "Invalid bot token");
+}

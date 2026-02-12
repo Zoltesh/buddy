@@ -42,7 +42,7 @@ pub use conversation::{
     create_conversation, delete_conversation, get_conversation, list_conversations,
 };
 pub use embedder::get_embedder_health;
-pub use interfaces::{get_interfaces_status, put_config_interfaces};
+pub use interfaces::{check_interface_connection, get_interfaces_status, put_config_interfaces};
 pub use memory::{clear_memory, get_memory_status, migrate_memory};
 
 // ── Shared types ────────────────────────────────────────────────────────
