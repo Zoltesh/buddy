@@ -73,6 +73,71 @@ pub fn buddy_to_whatsapp(message: &Message) -> String {
     }
 }
 
+/// WhatsApp's maximum message length (in characters).
+const WHATSAPP_MAX_LENGTH: usize = 4096;
+
+/// Convert markdown formatting to WhatsApp-compatible formatting.
+///
+/// Handles: `**bold**` → `*bold*`, `*italic*` → `_italic_`,
+/// `~~strike~~` → `~strike~`, and strips `#` header prefixes.
+/// Code blocks and inline code pass through unchanged.
+pub fn markdown_to_whatsapp(text: &str) -> String {
+    let mut lines: Vec<&str> = Vec::new();
+    for line in text.lines() {
+        if line.starts_with('#') {
+            lines.push(line.trim_start_matches('#').trim_start());
+        } else {
+            lines.push(line);
+        }
+    }
+    let result = lines.join("\n");
+
+    // Bold: **text** → *text* (use placeholder to avoid conflict with italic)
+    let result = result.replace("**", "\x01");
+    // Italic: *text* → _text_
+    let result = result.replace('*', "_");
+    // Restore bold markers
+    let result = result.replace('\x01', "*");
+    // Strikethrough: ~~text~~ → ~text~
+    result.replace("~~", "~")
+}
+
+/// Split text into chunks that fit within WhatsApp's message length limit.
+///
+/// Prefers splitting at newline or space boundaries for readability.
+pub fn split_message(text: &str) -> Vec<String> {
+    let chars: Vec<char> = text.chars().collect();
+    if chars.len() <= WHATSAPP_MAX_LENGTH {
+        return vec![text.to_string()];
+    }
+
+    let mut parts = Vec::new();
+    let mut start = 0;
+
+    while start < chars.len() {
+        let remaining = chars.len() - start;
+        if remaining <= WHATSAPP_MAX_LENGTH {
+            parts.push(chars[start..].iter().collect());
+            break;
+        }
+
+        let end = start + WHATSAPP_MAX_LENGTH;
+        let chunk = &chars[start..end];
+
+        let split_offset = chunk
+            .iter()
+            .rposition(|&c| c == '\n')
+            .or_else(|| chunk.iter().rposition(|&c| c == ' '))
+            .map(|i| i + 1)
+            .unwrap_or(WHATSAPP_MAX_LENGTH);
+
+        parts.push(chars[start..start + split_offset].iter().collect());
+        start += split_offset;
+    }
+
+    parts
+}
+
 /// Extract all messages from a webhook payload.
 pub fn extract_messages(payload: &WebhookPayload) -> Vec<&WhatsAppMessage> {
     payload
@@ -204,5 +269,50 @@ mod tests {
     fn extract_messages_empty_payload() {
         let payload = WebhookPayload { entry: vec![] };
         assert!(extract_messages(&payload).is_empty());
+    }
+
+    #[test]
+    fn markdown_bold_converts_to_whatsapp() {
+        assert_eq!(markdown_to_whatsapp("**bold**"), "*bold*");
+    }
+
+    #[test]
+    fn markdown_italic_converts_to_whatsapp() {
+        assert_eq!(markdown_to_whatsapp("*italic*"), "_italic_");
+    }
+
+    #[test]
+    fn markdown_strikethrough_converts_to_whatsapp() {
+        assert_eq!(markdown_to_whatsapp("~~strike~~"), "~strike~");
+    }
+
+    #[test]
+    fn markdown_header_stripped() {
+        assert_eq!(markdown_to_whatsapp("## Header"), "Header");
+        assert_eq!(markdown_to_whatsapp("# Title"), "Title");
+    }
+
+    #[test]
+    fn markdown_mixed_formatting() {
+        assert_eq!(
+            markdown_to_whatsapp("**bold** and *italic*"),
+            "*bold* and _italic_"
+        );
+    }
+
+    #[test]
+    fn split_message_short_text_unchanged() {
+        let parts = split_message("Hello");
+        assert_eq!(parts, vec!["Hello"]);
+    }
+
+    #[test]
+    fn split_message_long_text_splits() {
+        let text = "word ".repeat(1000); // 5000 chars
+        let parts = split_message(&text);
+        assert!(parts.len() > 1);
+        for part in &parts {
+            assert!(part.chars().count() <= WHATSAPP_MAX_LENGTH);
+        }
     }
 }

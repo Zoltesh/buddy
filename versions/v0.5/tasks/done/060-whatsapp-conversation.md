@@ -40,24 +40,24 @@ Users can have full text conversations with buddy through WhatsApp. Messages and
 
 ## Acceptance Criteria
 
-- [ ] Text messages from WhatsApp are processed through the provider chain
-- [ ] Responses are sent back via the WhatsApp Business API
-- [ ] Each sender phone number maps to a persistent buddy conversation
-- [ ] Messages are stored in the SQLite database
-- [ ] Conversations created from WhatsApp have source `"whatsapp"`
-- [ ] Webhook handler returns 200 immediately (processing is async)
-- [ ] Duplicate messages (same message_id) are ignored
-- [ ] Responses exceeding 4096 characters are split into multiple messages
-- [ ] Provider errors result in user-friendly WhatsApp messages
-- [ ] Tool calls are gracefully declined with an informational message
-- [ ] All existing tests pass
+- [x] Text messages from WhatsApp are processed through the provider chain
+- [x] Responses are sent back via the WhatsApp Business API
+- [x] Each sender phone number maps to a persistent buddy conversation
+- [x] Messages are stored in the SQLite database
+- [x] Conversations created from WhatsApp have source `"whatsapp"`
+- [x] Webhook handler returns 200 immediately (processing is async)
+- [x] Duplicate messages (same message_id) are ignored
+- [x] Responses exceeding 4096 characters are split into multiple messages
+- [x] Provider errors result in user-friendly WhatsApp messages
+- [x] Tool calls are gracefully declined with an informational message
+- [x] All existing tests pass
 
 ## Test Cases
 
-- [ ] Receive a text message from a new sender; assert a conversation is created with source `"whatsapp"` and the message is stored
-- [ ] Receive a text message; assert the provider chain is called and a response is sent via `WhatsAppClient`
-- [ ] Receive two messages from the same sender; assert both are in the same conversation
-- [ ] Receive the same message_id twice; assert only the first is processed
-- [ ] Receive a message that triggers a tool call; assert the response is an informational message about tool unavailability
-- [ ] Trigger a provider error; assert the WhatsApp reply is a user-friendly error message
-- [ ] Assert the `POST /webhook` handler returns 200 within 100ms (processing happens asynchronously)
+- [x] Receive a text message from a new sender; assert a conversation is created with source `"whatsapp"` and the message is stored
+- [x] Receive a text message; assert the provider chain is called and a response is sent via `WhatsAppClient`
+- [x] Receive two messages from the same sender; assert both are in the same conversation
+- [x] Receive the same message_id twice; assert only the first is processed
+- [x] Receive a message that triggers a tool call; assert the response is an informational message about tool unavailability
+- [x] Trigger a provider error; assert the WhatsApp reply is a user-friendly error message
+- [x] Assert the `POST /webhook` handler returns 200 within 100ms (processing happens asynchronously)

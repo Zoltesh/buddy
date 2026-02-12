@@ -92,6 +92,11 @@ impl Store {
                 chat_id INTEGER PRIMARY KEY,
                 conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE
             );
+
+            CREATE TABLE IF NOT EXISTS whatsapp_chats (
+                phone TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE
+            );
             ",
         )
         .map_err(|e| format!("migration failed: {e}"))?;
@@ -338,6 +343,38 @@ impl Store {
             params![chat_id, conversation_id],
         )
         .map_err(|e| format!("failed to set telegram chat mapping: {e}"))?;
+        Ok(())
+    }
+
+    /// Look up the conversation ID for a WhatsApp phone number.
+    pub fn get_conversation_id_for_whatsapp_phone(
+        &self,
+        phone: &str,
+    ) -> Result<Option<String>, String> {
+        let conn = self.conn.lock().unwrap();
+        let result = conn
+            .query_row(
+                "SELECT conversation_id FROM whatsapp_chats WHERE phone = ?1",
+                params![phone],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| format!("failed to look up whatsapp chat: {e}"))?;
+        Ok(result)
+    }
+
+    /// Map a WhatsApp phone number to a buddy conversation.
+    pub fn set_whatsapp_chat_mapping(
+        &self,
+        phone: &str,
+        conversation_id: &str,
+    ) -> Result<(), String> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO whatsapp_chats (phone, conversation_id) VALUES (?1, ?2)",
+            params![phone, conversation_id],
+        )
+        .map_err(|e| format!("failed to set whatsapp chat mapping: {e}"))?;
         Ok(())
     }
 
@@ -731,6 +768,29 @@ mod tests {
 
         let convs = store.list_conversations().unwrap();
         assert_eq!(convs[0].source, "web");
+    }
+
+    // ── Test: whatsapp chat mapping ────────────────────────────────────
+
+    #[test]
+    fn whatsapp_chat_mapping_round_trip() {
+        let store = Store::open_in_memory().unwrap();
+        let conv = store.create_conversation("Test").unwrap();
+
+        // No mapping initially.
+        assert!(store
+            .get_conversation_id_for_whatsapp_phone("15559876543")
+            .unwrap()
+            .is_none());
+
+        // Set mapping.
+        store
+            .set_whatsapp_chat_mapping("15559876543", &conv.id)
+            .unwrap();
+        let found = store
+            .get_conversation_id_for_whatsapp_phone("15559876543")
+            .unwrap();
+        assert_eq!(found, Some(conv.id));
     }
 
     // ── Test: telegram chat mapping ─────────────────────────────────────
