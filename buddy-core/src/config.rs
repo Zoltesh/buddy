@@ -230,6 +230,7 @@ fn default_bot_token_env() -> String {
 }
 
 const DEFAULT_WHATSAPP_API_TOKEN_ENV: &str = "WHATSAPP_API_TOKEN";
+const DEFAULT_WHATSAPP_APP_SECRET_ENV: &str = "WHATSAPP_APP_SECRET";
 const DEFAULT_WHATSAPP_WEBHOOK_PORT: u16 = 8444;
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
@@ -238,6 +239,8 @@ pub struct WhatsAppConfig {
     pub enabled: bool,
     #[serde(default = "default_whatsapp_api_token_env")]
     pub api_token_env: String,
+    #[serde(default = "default_whatsapp_app_secret_env")]
+    pub app_secret_env: String,
     #[serde(default)]
     pub phone_number_id: String,
     #[serde(default)]
@@ -251,6 +254,7 @@ impl Default for WhatsAppConfig {
         Self {
             enabled: false,
             api_token_env: default_whatsapp_api_token_env(),
+            app_secret_env: default_whatsapp_app_secret_env(),
             phone_number_id: String::new(),
             verify_token: String::new(),
             webhook_port: DEFAULT_WHATSAPP_WEBHOOK_PORT,
@@ -260,6 +264,10 @@ impl Default for WhatsAppConfig {
 
 fn default_whatsapp_api_token_env() -> String {
     DEFAULT_WHATSAPP_API_TOKEN_ENV.to_string()
+}
+
+fn default_whatsapp_app_secret_env() -> String {
+    DEFAULT_WHATSAPP_APP_SECRET_ENV.to_string()
 }
 
 fn default_whatsapp_webhook_port() -> u16 {

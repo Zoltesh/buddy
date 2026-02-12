@@ -3,12 +3,15 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use axum::body::Bytes;
 use axum::extract::{Query, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::Router;
+use hmac::{Hmac, Mac};
 use serde::Deserialize;
+use sha2::Sha256;
 use tokio::signal;
 
 use buddy_core::provider::{AnyProvider, ProviderChain};
@@ -60,6 +63,7 @@ struct AppState {
     core: CoreState<ProviderChain<AnyProvider>>,
     client: client::WhatsAppClient,
     verify_token: String,
+    app_secret: Option<String>,
     dedup: MessageDedup,
     pending_approvals: approval::WhatsAppPendingApprovals,
 }
@@ -92,6 +96,18 @@ async fn main() {
         }
     };
 
+    let app_secret_env = &config.interfaces.whatsapp.app_secret_env;
+    let app_secret = match std::env::var(app_secret_env) {
+        Ok(s) if !s.is_empty() => Some(s),
+        _ => {
+            log::warn!(
+                "Environment variable '{app_secret_env}' is not set; \
+                 webhook signature verification is disabled"
+            );
+            None
+        }
+    };
+
     let wa_client = client::WhatsAppClient::new(api_token, phone_number_id);
 
     let core = CoreState::new(config, Path::new(DEFAULT_CONFIG_PATH)).unwrap_or_else(|e| {
@@ -103,6 +119,7 @@ async fn main() {
         core,
         client: wa_client,
         verify_token,
+        app_secret,
         dedup: MessageDedup::new(),
         pending_approvals: approval::new_whatsapp_pending_approvals(),
     });
@@ -160,10 +177,47 @@ async fn verify_webhook(
     }
 }
 
+/// Verify the HMAC-SHA256 signature from the `X-Hub-Signature-256` header.
+///
+/// Returns `true` if the signature is valid, `false` otherwise.
+fn verify_signature(secret: &str, body: &[u8], header_value: &str) -> bool {
+    let hex_digest = match header_value.strip_prefix("sha256=") {
+        Some(h) => h,
+        None => return false,
+    };
+    let expected = match hex::decode(hex_digest) {
+        Ok(b) => b,
+        Err(_) => return false,
+    };
+    let mut mac =
+        Hmac::<Sha256>::new_from_slice(secret.as_bytes()).expect("HMAC accepts any key size");
+    mac.update(body);
+    mac.verify_slice(&expected).is_ok()
+}
+
 async fn receive_webhook(
     State(state): State<Arc<AppState>>,
-    axum::Json(payload): axum::Json<adapter::WebhookPayload>,
+    headers: HeaderMap,
+    body: Bytes,
 ) -> StatusCode {
+    if let Some(secret) = &state.app_secret {
+        let signature = match headers.get("x-hub-signature-256").and_then(|v| v.to_str().ok()) {
+            Some(s) => s,
+            None => return StatusCode::FORBIDDEN,
+        };
+        if !verify_signature(secret, &body, signature) {
+            return StatusCode::FORBIDDEN;
+        }
+    }
+
+    let payload: adapter::WebhookPayload = match serde_json::from_slice(&body) {
+        Ok(p) => p,
+        Err(e) => {
+            log::warn!("Failed to deserialize webhook payload: {e}");
+            return StatusCode::BAD_REQUEST;
+        }
+    };
+
     let messages = adapter::extract_messages(&payload);
     for msg in messages {
         // Handle button replies for skill approval.
@@ -333,6 +387,40 @@ database = ":memory:"
                 "fake-phone-id".to_string(),
             ),
             verify_token: "test-verify-token".to_string(),
+            app_secret: None,
+            dedup: MessageDedup::new(),
+            pending_approvals: approval::new_whatsapp_pending_approvals(),
+        })
+    }
+
+    fn test_state_with_secret(secret: &str) -> Arc<AppState> {
+        let config = buddy_core::config::Config::parse(
+            r#"
+[[models.chat.providers]]
+type = "lmstudio"
+model = "test"
+endpoint = "http://127.0.0.1:1"
+
+[[models.embedding.providers]]
+type = "openai"
+model = "text-embedding-3-small"
+
+[storage]
+database = ":memory:"
+"#,
+        )
+        .unwrap();
+
+        let core = CoreState::new(config, Path::new("/tmp/buddy-whatsapp-test.toml")).unwrap();
+
+        Arc::new(AppState {
+            core,
+            client: client::WhatsAppClient::new(
+                "fake-token".to_string(),
+                "fake-phone-id".to_string(),
+            ),
+            verify_token: "test-verify-token".to_string(),
+            app_secret: Some(secret.to_string()),
             dedup: MessageDedup::new(),
             pending_approvals: approval::new_whatsapp_pending_approvals(),
         })
@@ -461,6 +549,129 @@ database = ":memory:"
         assert!(dedup.check_and_insert("wamid.test789"));
         assert!(!dedup.check_and_insert("wamid.test789"));
         assert!(dedup.check_and_insert("wamid.test790"));
+    }
+
+    /// Compute `sha256=<hex>` signature for a payload, matching Meta's format.
+    fn sign_payload(secret: &str, body: &[u8]) -> String {
+        use hmac::{Hmac, Mac};
+        use sha2::Sha256;
+        let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).unwrap();
+        mac.update(body);
+        format!("sha256={}", hex::encode(mac.finalize().into_bytes()))
+    }
+
+    fn sample_webhook_body() -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({
+            "object": "whatsapp_business_account",
+            "entry": [{
+                "id": "BIZ_ID",
+                "changes": [{
+                    "value": {
+                        "messaging_product": "whatsapp",
+                        "metadata": {
+                            "display_phone_number": "15551234567",
+                            "phone_number_id": "PHONE_ID"
+                        },
+                        "messages": [{
+                            "id": "wamid.sig_test",
+                            "from": "15559876543",
+                            "timestamp": "1700000000",
+                            "type": "text",
+                            "text": { "body": "Signed message" }
+                        }]
+                    },
+                    "field": "messages"
+                }]
+            }]
+        }))
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn valid_signature_passes_verification() {
+        let secret = "test-app-secret";
+        let app = create_router(test_state_with_secret(secret));
+        let body = sample_webhook_body();
+        let signature = sign_payload(secret, &body);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/webhook")
+                    .header("content-type", "application/json")
+                    .header("x-hub-signature-256", signature)
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn invalid_signature_returns_403() {
+        let secret = "test-app-secret";
+        let app = create_router(test_state_with_secret(secret));
+        let body = sample_webhook_body();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/webhook")
+                    .header("content-type", "application/json")
+                    .header("x-hub-signature-256", "sha256=deadbeef")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn missing_signature_header_returns_403() {
+        let secret = "test-app-secret";
+        let app = create_router(test_state_with_secret(secret));
+        let body = sample_webhook_body();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/webhook")
+                    .header("content-type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn no_secret_configured_accepts_unsigned_requests() {
+        // test_state() has app_secret: None, simulating no secret configured.
+        let app = create_router(test_state());
+        let body = sample_webhook_body();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/webhook")
+                    .header("content-type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
     }
 
     #[tokio::test]

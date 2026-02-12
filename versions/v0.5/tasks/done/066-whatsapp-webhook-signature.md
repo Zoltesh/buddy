@@ -26,16 +26,16 @@ The WhatsApp webhook rejects requests with missing or invalid `X-Hub-Signature-2
 
 ## Acceptance Criteria
 
-- [ ] `WhatsAppConfig` includes `app_secret_env` field with default
-- [ ] Valid signatures pass verification and messages are processed
-- [ ] Invalid signatures are rejected with 403
-- [ ] Missing `X-Hub-Signature-256` header is rejected with 403
-- [ ] When app secret is not configured, verification is skipped with a startup warning
-- [ ] All existing tests pass
+- [x] `WhatsAppConfig` includes `app_secret_env` field with default
+- [x] Valid signatures pass verification and messages are processed
+- [x] Invalid signatures are rejected with 403
+- [x] Missing `X-Hub-Signature-256` header is rejected with 403
+- [x] When app secret is not configured, verification is skipped with a startup warning
+- [x] All existing tests pass
 
 ## Test Cases
 
-- [ ] Send `POST /webhook` with a valid HMAC signature; assert 200
-- [ ] Send `POST /webhook` with an invalid signature; assert 403
-- [ ] Send `POST /webhook` with no `X-Hub-Signature-256` header; assert 403
-- [ ] Configure without app secret; assert webhook accepts unsigned requests (backward compatible)
+- [x] Send `POST /webhook` with a valid HMAC signature; assert 200
+- [x] Send `POST /webhook` with an invalid signature; assert 403
+- [x] Send `POST /webhook` with no `X-Hub-Signature-256` header; assert 403
+- [x] Configure without app secret; assert webhook accepts unsigned requests (backward compatible)
