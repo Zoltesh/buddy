@@ -30,22 +30,22 @@ The navigation rail has three items (Chat, Interfaces, Settings) and the Interfa
 
 ## Acceptance Criteria
 
-- [ ] Navigation rail has three items: Chat, Interfaces, Settings
-- [ ] "Interfaces" nav item has an icon, label, and links to `#/interfaces`
-- [ ] Clicking "Interfaces" navigates to the route and highlights the nav item
-- [ ] The `#/interfaces` route renders the Interfaces component
-- [ ] Interfaces page has a header and subtitle
-- [ ] When no interfaces are configured, an empty state message is shown
-- [ ] Sidebar context panel is empty when Interfaces route is active
-- [ ] Collapsed sidebar shows the Interfaces icon with tooltip
-- [ ] All existing navigation functionality works (Chat, Settings, conversation switching)
+- [x] Navigation rail has three items: Chat, Interfaces, Settings
+- [x] "Interfaces" nav item has an icon, label, and links to `#/interfaces`
+- [x] Clicking "Interfaces" navigates to the route and highlights the nav item
+- [x] The `#/interfaces` route renders the Interfaces component
+- [x] Interfaces page has a header and subtitle
+- [x] When no interfaces are configured, an empty state message is shown
+- [x] Sidebar context panel is empty when Interfaces route is active
+- [x] Collapsed sidebar shows the Interfaces icon with tooltip
+- [x] All existing navigation functionality works (Chat, Settings, conversation switching)
 
 ## Test Cases
 
-- [ ] Load the app; sidebar shows three nav items: Chat, Interfaces, Settings (in that order)
-- [ ] Click "Interfaces" nav item; URL changes to `#/interfaces`, Interfaces page renders, nav item is highlighted
-- [ ] Click "Chat" from Interfaces page; URL changes to `#/`, Chat renders, conversation list appears in sidebar
-- [ ] Click "Settings" from Interfaces page; URL changes to `#/settings`, Settings renders
-- [ ] Collapse the sidebar; Interfaces icon is visible with hover tooltip "Interfaces"
-- [ ] Load `#/interfaces` with no interfaces configured in config; empty state message is displayed
-- [ ] On mobile, open sidebar and tap "Interfaces"; sidebar closes, Interfaces page renders
+- [x] Load the app; sidebar shows three nav items: Chat, Interfaces, Settings (in that order)
+- [x] Click "Interfaces" nav item; URL changes to `#/interfaces`, Interfaces page renders, nav item is highlighted
+- [x] Click "Chat" from Interfaces page; URL changes to `#/`, Chat renders, conversation list appears in sidebar
+- [x] Click "Settings" from Interfaces page; URL changes to `#/settings`, Settings renders
+- [x] Collapse the sidebar; Interfaces icon is visible with hover tooltip "Interfaces"
+- [x] Load `#/interfaces` with no interfaces configured in config; empty state message is displayed
+- [x] On mobile, open sidebar and tap "Interfaces"; sidebar closes, Interfaces page renders

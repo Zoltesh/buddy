@@ -157,6 +157,18 @@ export function putConfigSkills(skills) {
   return putConfigSection('skills', skills);
 }
 
+/** Fetch interface connection status. */
+export async function fetchInterfacesStatus() {
+  const res = await authFetch('/api/interfaces/status');
+  if (!res.ok) throw new Error('Failed to load interfaces status');
+  return res.json();
+}
+
+/** Update the interfaces config section. */
+export function putConfigInterfaces(interfaces) {
+  return putConfigSection('interfaces', interfaces);
+}
+
 /**
  * Discover available models from an LM Studio endpoint.
  * @param {string} endpoint

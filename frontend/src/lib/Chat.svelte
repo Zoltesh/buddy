@@ -18,6 +18,7 @@
   } = $props();
 
   let conversationId = $state(null);
+  let conversationSource = $state(null);
   let displayItems = $state([]);
   let inputText = $state('');
   let isStreaming = $state(false);
@@ -56,6 +57,7 @@
     loadedId = id;
     if (id === null) {
       conversationId = null;
+      conversationSource = null;
       displayItems = [];
       inputText = '';
     } else {
@@ -76,6 +78,7 @@
     try {
       const conv = await fetchConversation(id);
       conversationId = id;
+      conversationSource = conv.source || 'web';
       displayItems = toDisplayItems(conv.messages);
     } catch (e) {
       console.error('Failed to load conversation:', e);
@@ -285,6 +288,14 @@
     bind:this={messagesContainer}
     class="flex-1 overflow-y-auto px-4 py-6 space-y-4"
   >
+    {#if conversationSource && conversationSource !== 'web'}
+      <div class="flex justify-center mb-4">
+        <span class="text-xs text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800/50 px-3 py-1 rounded-full">
+          This conversation started on {conversationSource === 'telegram' ? 'Telegram' : conversationSource === 'whatsapp' ? 'WhatsApp' : conversationSource}
+        </span>
+      </div>
+    {/if}
+
     {#if displayItems.length === 0 && !isStreaming}
       <div
         class="flex items-center justify-center h-full text-gray-400 dark:text-gray-500"

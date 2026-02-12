@@ -55,6 +55,27 @@
     </a>
 
     <a
+      href="#/interfaces"
+      class="flex items-center gap-3 px-4 py-2.5 text-sm transition-colors border-l-2
+             focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset
+             {currentRoute === '/interfaces'
+        ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border-l-blue-500'
+        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-900 border-l-transparent'}
+             {collapsed ? 'md:justify-center md:px-2' : ''}"
+      title={collapsed ? 'Interfaces' : undefined}
+    >
+      <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
+        />
+      </svg>
+      <span class="{collapsed ? 'md:hidden' : ''}">Interfaces</span>
+    </a>
+
+    <a
       href="#/settings"
       class="flex items-center gap-3 px-4 py-2.5 text-sm transition-colors border-l-2
              focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset
@@ -120,8 +141,13 @@
               onkeydown={(e) => e.key === 'Enter' && onSelect(conv.id)}
             >
               <div class="flex-1 min-w-0">
-                <p class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-                  {conv.title}
+                <p class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate flex items-center gap-1.5">
+                  <span class="truncate">{conv.title}</span>
+                  {#if conv.source === 'telegram'}
+                    <span class="flex-shrink-0 text-[10px] font-semibold px-1 py-0.5 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400">TG</span>
+                  {:else if conv.source === 'whatsapp'}
+                    <span class="flex-shrink-0 text-[10px] font-semibold px-1 py-0.5 rounded bg-green-100 dark:bg-green-900/40 text-green-600 dark:text-green-400">WA</span>
+                  {/if}
                 </p>
                 <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                   {timeAgo(conv.updated_at)}

@@ -362,6 +362,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "buddy-cli"
+version = "0.5.0"
+dependencies = [
+ "buddy-core",
+ "clap",
+ "hex",
+ "serde_json",
+ "sha2",
+ "toml",
+]
+
+[[package]]
 name = "buddy-core"
 version = "0.5.0"
 dependencies = [

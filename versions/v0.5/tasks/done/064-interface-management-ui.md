@@ -34,24 +34,24 @@ Users can see the status of all configured interfaces, view their configuration,
 
 ## Acceptance Criteria
 
-- [ ] Telegram card displays when Telegram is configured in config
-- [ ] WhatsApp card displays when WhatsApp is configured in config
-- [ ] Each card shows the correct status indicator (connected/disconnected/disabled)
-- [ ] Enable/disable toggle updates the config via `PUT /api/config/interfaces`
-- [ ] Inline editing allows changing interface config fields
-- [ ] Save persists changes to `buddy.toml` via the API
-- [ ] Unconfigured interfaces show a "Not configured" card with help text
-- [ ] `PUT /api/config/interfaces` endpoint validates and saves interface config
-- [ ] `GET /api/interfaces/status` returns configuration and enabled status
-- [ ] All existing functionality works
+- [x] Telegram card displays when Telegram is configured in config
+- [x] WhatsApp card displays when WhatsApp is configured in config
+- [x] Each card shows the correct status indicator (connected/disconnected/disabled)
+- [x] Enable/disable toggle updates the config via `PUT /api/config/interfaces`
+- [x] Inline editing allows changing interface config fields
+- [x] Save persists changes to `buddy.toml` via the API
+- [x] Unconfigured interfaces show a "Not configured" card with help text
+- [x] `PUT /api/config/interfaces` endpoint validates and saves interface config
+- [x] `GET /api/interfaces/status` returns configuration and enabled status
+- [x] All existing functionality works
 
 ## Test Cases
 
-- [ ] Load Interfaces page with Telegram configured and enabled; card shows "Telegram" with green "Connected" indicator (if enabled) or status
-- [ ] Load Interfaces page with WhatsApp not configured; card shows "Not configured" with help text
-- [ ] Toggle Telegram from enabled to disabled; assert `PUT /api/config/interfaces` is called and the toggle reflects the new state
-- [ ] Edit the Telegram `bot_token_env` field and click Save; assert the config is updated
-- [ ] Load Interfaces page with both interfaces configured; both cards are visible
-- [ ] Call `GET /api/interfaces/status` with Telegram configured and enabled; assert `{ "telegram": { "configured": true, "enabled": true } }`
-- [ ] Call `GET /api/interfaces/status` with nothing configured; assert both interfaces show `configured: false`
-- [ ] Call `PUT /api/config/interfaces` with invalid data; assert validation error
+- [x] Load Interfaces page with Telegram configured and enabled; card shows "Telegram" with green "Connected" indicator (if enabled) or status
+- [x] Load Interfaces page with WhatsApp not configured; card shows "Not configured" with help text
+- [x] Toggle Telegram from enabled to disabled; assert `PUT /api/config/interfaces` is called and the toggle reflects the new state
+- [x] Edit the Telegram `bot_token_env` field and click Save; assert the config is updated
+- [x] Load Interfaces page with both interfaces configured; both cards are visible
+- [x] Call `GET /api/interfaces/status` with Telegram configured and enabled; assert `{ "telegram": { "configured": true, "enabled": true } }`
+- [x] Call `GET /api/interfaces/status` with nothing configured; assert both interfaces show `configured: false`
+- [x] Call `PUT /api/config/interfaces` with invalid data; assert validation error

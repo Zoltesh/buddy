@@ -29,7 +29,7 @@ fn load_config() -> Result<(buddy_core::config::Config, PathBuf), String> {
     Ok((config, cli.config))
 }
 
-use api::{approve_handler, chat_handler, clear_memory, create_conversation, delete_conversation, discover_models, get_config, get_conversation, get_embedder_health, get_memory_status, get_warnings, list_conversations, migrate_memory, put_config_chat, put_config_memory, put_config_models, put_config_server, put_config_skills, test_provider};
+use api::{approve_handler, chat_handler, clear_memory, create_conversation, delete_conversation, discover_models, get_config, get_conversation, get_embedder_health, get_interfaces_status, get_memory_status, get_warnings, list_conversations, migrate_memory, put_config_chat, put_config_interfaces, put_config_memory, put_config_models, put_config_server, put_config_skills, test_provider};
 use api::auth::{auth_middleware, auth_status, verify_token};
 use buddy_core::provider::{AnyProvider, ProviderChain};
 use buddy_core::state::AppState;
@@ -81,6 +81,8 @@ async fn main() {
         .route("/api/config/chat", put(put_config_chat::<AppProvider>))
         .route("/api/config/server", put(put_config_server::<AppProvider>))
         .route("/api/config/memory", put(put_config_memory::<AppProvider>))
+        .route("/api/config/interfaces", put(put_config_interfaces::<AppProvider>))
+        .route("/api/interfaces/status", get(get_interfaces_status::<AppProvider>))
         .route("/api/config/test-provider", post(test_provider::<AppProvider>))
         .route("/api/config/discover-models", post(discover_models::<AppProvider>))
         .route_layer(axum::middleware::from_fn_with_state(state.clone(), auth_middleware::<AppProvider>))

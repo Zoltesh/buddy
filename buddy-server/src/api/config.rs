@@ -128,7 +128,7 @@ fn atomic_write(path: &std::path::Path, content: &str) -> Result<(), String> {
 }
 
 /// Apply a mutation to the config, persist to disk, and trigger hot-reload.
-fn apply_config_update<P: Provider + 'static>(
+pub(crate) fn apply_config_update<P: Provider + 'static>(
     state: &Arc<AppState<P>>,
     mutate: impl FnOnce(&mut buddy_core::config::Config),
 ) -> Result<buddy_core::config::Config, axum::response::Response> {

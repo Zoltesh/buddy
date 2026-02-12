@@ -11,6 +11,7 @@
   import Sidebar from './lib/Sidebar.svelte';
   import Chat from './lib/Chat.svelte';
   import Settings from './lib/Settings.svelte';
+  import Interfaces from './lib/Interfaces.svelte';
   import Login from './lib/Login.svelte';
 
   let authChecking = $state(true);
@@ -217,7 +218,7 @@
     </button>
 
     <!-- Routed content -->
-    <div class="flex-1 flex flex-col min-w-0 min-h-0" class:hidden={currentRoute === '/settings'}>
+    <div class="flex-1 flex flex-col min-w-0 min-h-0" class:hidden={currentRoute === '/settings' || currentRoute === '/interfaces'}>
       <Chat
         {activeConversationId}
         onConversationCreated={handleConversationCreated}
@@ -227,6 +228,10 @@
 
     {#if currentRoute === '/settings'}
       <Settings initialTab={hashParams.get('tab')} />
+    {/if}
+
+    {#if currentRoute === '/interfaces'}
+      <Interfaces />
     {/if}
   </div>
 {/if}

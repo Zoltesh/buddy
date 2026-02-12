@@ -40,28 +40,28 @@ Users can view and modify their buddy configuration from the terminal using intu
 
 ## Acceptance Criteria
 
-- [ ] `buddy-cli/` exists as a workspace member
-- [ ] `buddy-cli config show` prints the full config as formatted TOML
-- [ ] `buddy-cli config show <section>` prints only the specified section
-- [ ] `buddy-cli config get <key>` prints the value for dot-notation keys
-- [ ] `buddy-cli config set <key> <value>` updates the config file after validation
-- [ ] `buddy-cli config set` does NOT write if validation fails
-- [ ] `buddy-cli config validate` reports config validity
-- [ ] `buddy-cli hash-token <token>` prints the SHA-256 hash
-- [ ] `--config <path>` overrides the default config file location
-- [ ] `cargo build -p buddy-cli` succeeds
-- [ ] All existing tests pass
+- [x] `buddy-cli/` exists as a workspace member
+- [x] `buddy-cli config show` prints the full config as formatted TOML
+- [x] `buddy-cli config show <section>` prints only the specified section
+- [x] `buddy-cli config get <key>` prints the value for dot-notation keys
+- [x] `buddy-cli config set <key> <value>` updates the config file after validation
+- [x] `buddy-cli config set` does NOT write if validation fails
+- [x] `buddy-cli config validate` reports config validity
+- [x] `buddy-cli hash-token <token>` prints the SHA-256 hash
+- [x] `--config <path>` overrides the default config file location
+- [x] `cargo build -p buddy-cli` succeeds
+- [x] All existing tests pass
 
 ## Test Cases
 
-- [ ] Run `buddy-cli config show` with a valid config; assert the output is valid TOML that round-trips through `Config::parse()`
-- [ ] Run `buddy-cli config show models` with a valid config; assert only the models section is printed
-- [ ] Run `buddy-cli config show nonexistent`; assert an error message about unknown section
-- [ ] Run `buddy-cli config get chat.system_prompt`; assert it prints the system prompt string
-- [ ] Run `buddy-cli config get server.port`; assert it prints the port number
-- [ ] Run `buddy-cli config set chat.system_prompt "New prompt"` with a valid config; assert the file is updated and the new value persists
-- [ ] Run `buddy-cli config set server.port abc` (invalid type); assert validation error and file is not modified
-- [ ] Run `buddy-cli config validate` with a valid config; assert "Configuration is valid."
-- [ ] Run `buddy-cli config validate` with an invalid config (e.g., empty chat providers); assert error message
-- [ ] Run `buddy-cli hash-token "my-secret"`; assert output matches `sha256:{expected_hex}`
-- [ ] Run `buddy-cli config show --config /nonexistent/path.toml`; assert "Config file not found" error
+- [x] Run `buddy-cli config show` with a valid config; assert the output is valid TOML that round-trips through `Config::parse()`
+- [x] Run `buddy-cli config show models` with a valid config; assert only the models section is printed
+- [x] Run `buddy-cli config show nonexistent`; assert an error message about unknown section
+- [x] Run `buddy-cli config get chat.system_prompt`; assert it prints the system prompt string
+- [x] Run `buddy-cli config get server.port`; assert it prints the port number
+- [x] Run `buddy-cli config set chat.system_prompt "New prompt"` with a valid config; assert the file is updated and the new value persists
+- [x] Run `buddy-cli config set server.port abc` (invalid type); assert validation error and file is not modified
+- [x] Run `buddy-cli config validate` with a valid config; assert "Configuration is valid."
+- [x] Run `buddy-cli config validate` with an invalid config (e.g., empty chat providers); assert error message
+- [x] Run `buddy-cli hash-token "my-secret"`; assert output matches `sha256:{expected_hex}`
+- [x] Run `buddy-cli config show --config /nonexistent/path.toml`; assert "Config file not found" error

@@ -760,6 +760,65 @@ mod conversations {
             "SSE stream must start with ConversationMeta"
         );
     }
+
+    #[tokio::test]
+    async fn list_conversations_includes_source_for_multiple_sources() {
+        let (state, app) = conversation_app(vec![]);
+
+        // Create a web conversation and a telegram conversation via the store.
+        state.store.create_conversation("Web chat").unwrap();
+        state
+            .store
+            .create_conversation_with_source("TG chat", "telegram")
+            .unwrap();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/conversations")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let list: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+        assert_eq!(list.len(), 2);
+
+        // Find each by title and verify source.
+        let web = list.iter().find(|c| c["title"] == "Web chat").unwrap();
+        let tg = list.iter().find(|c| c["title"] == "TG chat").unwrap();
+        assert_eq!(web["source"], "web");
+        assert_eq!(tg["source"], "telegram");
+    }
+
+    #[tokio::test]
+    async fn get_conversation_includes_source_field() {
+        let (state, app) = conversation_app(vec![]);
+
+        let conv = state
+            .store
+            .create_conversation_with_source("Telegram convo", "telegram")
+            .unwrap();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/conversations/{}", conv.id))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(result["source"], "telegram");
+        assert_eq!(result["title"], "Telegram convo");
+    }
 }
 
 // ── Warning system tests ──────────────────────────────────────────────
@@ -5117,5 +5176,229 @@ mod auth_frontend {
             app.contains("{authRequired}"),
             "App should pass authRequired prop to Sidebar"
         );
+    }
+}
+
+mod interfaces_api {
+    use super::*;
+    use crate::api::interfaces::{get_interfaces_status, put_config_interfaces};
+
+    fn interfaces_app(config: buddy_core::config::Config) -> Router {
+        let state = Arc::new(AppState {
+            provider: arc_swap::ArcSwap::from_pointee(MockProvider {
+                tokens: vec!["hi".into()],
+            }),
+            registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
+            store: buddy_core::store::Store::open_in_memory().unwrap(),
+            embedder: arc_swap::ArcSwap::from_pointee(None),
+            vector_store: arc_swap::ArcSwap::from_pointee(None),
+            working_memory: buddy_core::skill::working_memory::new_working_memory_map(),
+            memory_config: arc_swap::ArcSwap::from_pointee(buddy_core::config::MemoryConfig::default()),
+            warnings: buddy_core::warning::new_shared_warnings(),
+            pending_approvals: new_pending_approvals(),
+            conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
+            approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
+            approval_timeout: std::time::Duration::from_secs(1),
+            config: std::sync::RwLock::new(config),
+            config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
+            on_config_change: None,
+        });
+        Router::new()
+            .route("/api/interfaces/status", get(get_interfaces_status::<MockProvider>))
+            .with_state(state)
+    }
+
+    fn interfaces_write_app() -> (std::path::PathBuf, Router) {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!(
+            "buddy-interfaces-write-{}-{}",
+            std::process::id(),
+            id
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let config_path = dir.join("buddy.toml");
+        let initial_toml = r#"
+[[models.chat.providers]]
+type = "lmstudio"
+model = "test-model"
+endpoint = "http://localhost:1234/v1"
+"#;
+        std::fs::write(&config_path, initial_toml).unwrap();
+        let config = buddy_core::config::Config::parse(initial_toml).unwrap();
+        let state = Arc::new(AppState {
+            provider: arc_swap::ArcSwap::from_pointee(MockProvider {
+                tokens: vec!["hi".into()],
+            }),
+            registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
+            store: buddy_core::store::Store::open_in_memory().unwrap(),
+            embedder: arc_swap::ArcSwap::from_pointee(None),
+            vector_store: arc_swap::ArcSwap::from_pointee(None),
+            working_memory: buddy_core::skill::working_memory::new_working_memory_map(),
+            memory_config: arc_swap::ArcSwap::from_pointee(buddy_core::config::MemoryConfig::default()),
+            warnings: buddy_core::warning::new_shared_warnings(),
+            pending_approvals: new_pending_approvals(),
+            conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
+            approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
+            approval_timeout: std::time::Duration::from_secs(1),
+            config: std::sync::RwLock::new(config),
+            config_path,
+            on_config_change: None,
+        });
+        let router = Router::new()
+            .route(
+                "/api/interfaces/status",
+                get(get_interfaces_status::<MockProvider>),
+            )
+            .route(
+                "/api/config/interfaces",
+                axum::routing::put(put_config_interfaces::<MockProvider>),
+            )
+            .with_state(state);
+        (dir, router)
+    }
+
+    /// Test: GET /api/interfaces/status with default config returns both unconfigured.
+    #[tokio::test]
+    async fn get_interfaces_status_default_config() {
+        let config = buddy_core::config::Config::parse(
+            r#"
+[[models.chat.providers]]
+type = "lmstudio"
+model = "test-model"
+endpoint = "http://localhost:1234/v1"
+"#,
+        )
+        .unwrap();
+
+        let app = interfaces_app(config);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/interfaces/status")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+
+        assert_eq!(json["telegram"]["configured"], false);
+        assert_eq!(json["telegram"]["enabled"], false);
+        assert_eq!(json["whatsapp"]["configured"], false);
+        assert_eq!(json["whatsapp"]["enabled"], false);
+    }
+
+    /// Test: GET /api/interfaces/status with Telegram enabled returns configured+enabled.
+    #[tokio::test]
+    async fn get_interfaces_status_telegram_enabled() {
+        let config = buddy_core::config::Config::parse(
+            r#"
+[[models.chat.providers]]
+type = "lmstudio"
+model = "test-model"
+endpoint = "http://localhost:1234/v1"
+
+[interfaces.telegram]
+enabled = true
+bot_token_env = "MY_TG_TOKEN"
+"#,
+        )
+        .unwrap();
+
+        let app = interfaces_app(config);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/interfaces/status")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+
+        assert_eq!(json["telegram"]["configured"], true);
+        assert_eq!(json["telegram"]["enabled"], true);
+        assert_eq!(json["whatsapp"]["configured"], false);
+        assert_eq!(json["whatsapp"]["enabled"], false);
+    }
+
+    /// Test: PUT /api/config/interfaces updates the config and persists.
+    #[tokio::test]
+    async fn put_config_interfaces_updates_config() {
+        let (dir, app) = interfaces_write_app();
+        let body = serde_json::json!({
+            "telegram": {
+                "enabled": true,
+                "bot_token_env": "MY_BOT_TOKEN"
+            },
+            "whatsapp": {
+                "enabled": false,
+                "api_token_env": "WHATSAPP_API_TOKEN",
+                "phone_number_id": "",
+                "verify_token": "",
+                "webhook_port": 8444
+            }
+        });
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri("/api/config/interfaces")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+
+        assert_eq!(json["interfaces"]["telegram"]["enabled"], true);
+        assert_eq!(json["interfaces"]["telegram"]["bot_token_env"], "MY_BOT_TOKEN");
+
+        // Verify persisted to disk.
+        let disk = std::fs::read_to_string(dir.join("buddy.toml")).unwrap();
+        let reparsed = buddy_core::config::Config::parse(&disk).unwrap();
+        assert!(reparsed.interfaces.telegram.enabled);
+        assert_eq!(reparsed.interfaces.telegram.bot_token_env, "MY_BOT_TOKEN");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Test: PUT /api/config/interfaces with invalid JSON returns 422.
+    #[tokio::test]
+    async fn put_config_interfaces_with_invalid_data() {
+        let (dir, app) = interfaces_write_app();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri("/api/config/interfaces")
+                    .header("content-type", "application/json")
+                    .body(Body::from("not valid json"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // Axum returns 400 for unparseable JSON bodies.
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

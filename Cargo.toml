@@ -1,3 +1,3 @@
 [workspace]
-members = ["buddy-server", "buddy-core", "buddy-telegram", "buddy-whatsapp"]
+members = ["buddy-server", "buddy-core", "buddy-telegram", "buddy-whatsapp", "buddy-cli"]
 resolver = "3"

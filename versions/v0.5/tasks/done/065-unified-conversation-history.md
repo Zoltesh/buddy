@@ -35,25 +35,25 @@ The web UI's conversation list shows conversations from all interfaces with sour
 
 ## Acceptance Criteria
 
-- [ ] Conversation list shows conversations from all sources (web, telegram, whatsapp)
-- [ ] Telegram conversations show a "TG" badge in the sidebar
-- [ ] WhatsApp conversations show a "WA" badge in the sidebar
-- [ ] Web conversations show no badge
-- [ ] Opening a non-web conversation shows the full message history
-- [ ] A header note indicates the conversation's original source for non-web conversations
-- [ ] Users can send new messages in conversations from any source
-- [ ] New messages are processed by the provider chain as usual
-- [ ] `GET /api/conversations` response includes the `source` field
-- [ ] `GET /api/conversations/{id}` response includes the `source` field
-- [ ] All existing conversation functionality works (create, delete, send messages)
+- [x] Conversation list shows conversations from all sources (web, telegram, whatsapp)
+- [x] Telegram conversations show a "TG" badge in the sidebar
+- [x] WhatsApp conversations show a "WA" badge in the sidebar
+- [x] Web conversations show no badge
+- [x] Opening a non-web conversation shows the full message history
+- [x] A header note indicates the conversation's original source for non-web conversations
+- [x] Users can send new messages in conversations from any source
+- [x] New messages are processed by the provider chain as usual
+- [x] `GET /api/conversations` response includes the `source` field
+- [x] `GET /api/conversations/{id}` response includes the `source` field
+- [x] All existing conversation functionality works (create, delete, send messages)
 
 ## Test Cases
 
-- [ ] Create a conversation with source "web" and one with source "telegram"; call `GET /api/conversations`; assert both appear in the list with correct `source` field
-- [ ] Load the web UI with a Telegram conversation in the database; sidebar shows the conversation with a "TG" badge
-- [ ] Load the web UI with a WhatsApp conversation in the database; sidebar shows the conversation with a "WA" badge
-- [ ] Load the web UI with only web conversations; no badges are shown
-- [ ] Click on a Telegram conversation in the sidebar; chat view loads with full message history and a "This conversation started on Telegram" header note
-- [ ] Send a message in a Telegram-originated conversation via the web UI; message is processed by the provider and response appears in the chat
-- [ ] After sending a message in a Telegram-originated conversation, the conversation's `updated_at` is refreshed and it moves to the top of the list
-- [ ] Create a new conversation via the web UI; it has source "web" and no badge
+- [x] Create a conversation with source "web" and one with source "telegram"; call `GET /api/conversations`; assert both appear in the list with correct `source` field
+- [x] Load the web UI with a Telegram conversation in the database; sidebar shows the conversation with a "TG" badge
+- [x] Load the web UI with a WhatsApp conversation in the database; sidebar shows the conversation with a "WA" badge
+- [x] Load the web UI with only web conversations; no badges are shown
+- [x] Click on a Telegram conversation in the sidebar; chat view loads with full message history and a "This conversation started on Telegram" header note
+- [x] Send a message in a Telegram-originated conversation via the web UI; message is processed by the provider and response appears in the chat
+- [x] After sending a message in a Telegram-originated conversation, the conversation's `updated_at` is refreshed and it moves to the top of the list
+- [x] Create a new conversation via the web UI; it has source "web" and no badge
