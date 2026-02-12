@@ -30,26 +30,26 @@ Users can enter their Telegram bot token directly in the Interfaces UI. The toke
 
 ## Acceptance Criteria
 
-- [ ] `TelegramConfig` has a `bot_token` field (optional)
-- [ ] `resolve_bot_token()` returns the direct token when set
-- [ ] `resolve_bot_token()` falls back to the env var when no direct token is set
-- [ ] `resolve_bot_token()` returns an error when neither is available
-- [ ] `buddy-telegram` uses `resolve_bot_token()` to obtain the token
-- [ ] Frontend edit form shows both the direct token field and the env var name field
-- [ ] Direct token field is a password input (masked)
-- [ ] Saving with a direct token persists it in the config
-- [ ] Configured card shows masked token or env var name appropriately
-- [ ] Empty direct token is omitted from the saved config (not stored as empty string)
-- [ ] All existing tests pass
+- [x] `TelegramConfig` has a `bot_token` field (optional)
+- [x] `resolve_bot_token()` returns the direct token when set
+- [x] `resolve_bot_token()` falls back to the env var when no direct token is set
+- [x] `resolve_bot_token()` returns an error when neither is available
+- [x] `buddy-telegram` uses `resolve_bot_token()` to obtain the token
+- [x] Frontend edit form shows both the direct token field and the env var name field
+- [x] Direct token field is a password input (masked)
+- [x] Saving with a direct token persists it in the config
+- [x] Configured card shows masked token or env var name appropriately
+- [x] Empty direct token is omitted from the saved config (not stored as empty string)
+- [x] All existing tests pass
 
 ## Test Cases
 
-- [ ] Parse config with `bot_token = "123:ABC"` set; call `resolve_bot_token()`; assert returns `"123:ABC"`
-- [ ] Parse config with no `bot_token` and `bot_token_env = "MY_TG_TOKEN"`; set env var `MY_TG_TOKEN=secret`; call `resolve_bot_token()`; assert returns `"secret"`
-- [ ] Parse config with `bot_token = "direct"` and `bot_token_env = "MY_TG_TOKEN"` (env var also set); call `resolve_bot_token()`; assert returns `"direct"` (direct takes priority)
-- [ ] Parse config with no `bot_token` and env var not set; call `resolve_bot_token()`; assert returns error mentioning the env var name
-- [ ] Parse config with `bot_token = ""` (empty string); assert it behaves the same as `None` (falls through to env var)
-- [ ] Serialize config with `bot_token = None`; assert the TOML output does not contain a `bot_token` key
-- [ ] Round-trip: parse config with `bot_token = "tok123"`, serialize to TOML, re-parse; assert `bot_token` is preserved
-- [ ] `PUT /api/config/interfaces` with `bot_token: "tok"` in payload; assert config file contains `bot_token = "tok"` in `[interfaces.telegram]`
-- [ ] `PUT /api/config/interfaces` with `bot_token: null` in payload; assert config file does not contain `bot_token` in `[interfaces.telegram]`
+- [x] Parse config with `bot_token = "123:ABC"` set; call `resolve_bot_token()`; assert returns `"123:ABC"`
+- [x] Parse config with no `bot_token` and `bot_token_env = "MY_TG_TOKEN"`; set env var `MY_TG_TOKEN=secret`; call `resolve_bot_token()`; assert returns `"secret"`
+- [x] Parse config with `bot_token = "direct"` and `bot_token_env = "MY_TG_TOKEN"` (env var also set); call `resolve_bot_token()`; assert returns `"direct"` (direct takes priority)
+- [x] Parse config with no `bot_token` and env var not set; call `resolve_bot_token()`; assert returns error mentioning the env var name
+- [x] Parse config with `bot_token = ""` (empty string); assert it behaves the same as `None` (falls through to env var)
+- [x] Serialize config with `bot_token = None`; assert the TOML output does not contain a `bot_token` key
+- [x] Round-trip: parse config with `bot_token = "tok123"`, serialize to TOML, re-parse; assert `bot_token` is preserved
+- [x] `PUT /api/config/interfaces` with `bot_token: "tok"` in payload; assert config file contains `bot_token = "tok"` in `[interfaces.telegram]`
+- [x] `PUT /api/config/interfaces` with `bot_token: null` in payload; assert config file does not contain `bot_token` in `[interfaces.telegram]`

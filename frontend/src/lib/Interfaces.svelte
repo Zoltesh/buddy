@@ -82,6 +82,7 @@
     saveError = null;
     if (name === 'telegram') {
       editForm = {
+        bot_token: '',
         bot_token_env: config.interfaces.telegram.bot_token_env,
         enabled: config.interfaces.telegram.enabled,
       };
@@ -101,6 +102,7 @@
     saveError = null;
     if (name === 'telegram') {
       editForm = {
+        bot_token: '',
         bot_token_env: 'TELEGRAM_BOT_TOKEN',
         enabled: false,
       };
@@ -127,6 +129,7 @@
     try {
       const updated = structuredClone(config.interfaces);
       if (editing === 'telegram') {
+        updated.telegram.bot_token = editForm.bot_token || null;
         updated.telegram.bot_token_env = editForm.bot_token_env;
         updated.telegram.enabled = editForm.enabled;
       } else {
@@ -242,6 +245,19 @@
             {:else if editing === 'telegram'}
               <div class="space-y-3">
                 <div>
+                  <label for="tg-bot-token" class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Bot Token</label>
+                  <input
+                    type="password"
+                    id="tg-bot-token"
+                    bind:value={editForm.bot_token}
+                    placeholder={config.interfaces.telegram.bot_token ? '••••••••' : ''}
+                    class="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded
+                           bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100
+                           focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">Stored in buddy.toml on disk.</p>
+                </div>
+                <div>
                   <label for="tg-bot-token-env" class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Bot Token Env Var</label>
                   <input
                     type="text"
@@ -252,6 +268,7 @@
                            focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+                <p class="text-xs text-gray-400 dark:text-gray-500">Enter the token directly, or specify an environment variable name. Direct token takes priority.</p>
                 <div class="flex items-center gap-2">
                   <input type="checkbox" bind:checked={editForm.enabled} id="tg-enabled"
                     class="rounded border-gray-300 dark:border-gray-600" />
@@ -278,9 +295,18 @@
             {:else}
               <div class="space-y-2">
                 <div class="flex items-center justify-between">
-                  <div class="text-sm text-gray-600 dark:text-gray-400">
-                    <span class="text-gray-400 dark:text-gray-500">Token env:</span>
-                    <code class="text-xs bg-gray-100 dark:bg-gray-700 px-1 py-0.5 rounded ml-1">{config.interfaces.telegram.bot_token_env}</code>
+                  <div class="text-sm text-gray-600 dark:text-gray-400 space-y-1">
+                    {#if config.interfaces.telegram.bot_token}
+                      <div>
+                        <span class="text-gray-400 dark:text-gray-500">Token:</span>
+                        <span class="ml-1">••••••</span>
+                      </div>
+                    {:else}
+                      <div>
+                        <span class="text-gray-400 dark:text-gray-500">Token env:</span>
+                        <code class="text-xs bg-gray-100 dark:bg-gray-700 px-1 py-0.5 rounded ml-1">{config.interfaces.telegram.bot_token_env}</code>
+                      </div>
+                    {/if}
                   </div>
                   <div class="flex items-center gap-2">
                     <button

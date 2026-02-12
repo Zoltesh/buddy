@@ -30,7 +30,9 @@ pub async fn get_interfaces_status<P: Provider + 'static>(
     let config = state.config.read().unwrap();
 
     let tg = &config.interfaces.telegram;
-    let tg_configured = tg.enabled || tg.bot_token_env != "TELEGRAM_BOT_TOKEN";
+    let tg_configured = tg.enabled
+        || tg.bot_token.as_ref().is_some_and(|t| !t.is_empty())
+        || tg.bot_token_env != "TELEGRAM_BOT_TOKEN";
 
     let wa = &config.interfaces.whatsapp;
     let wa_configured = wa.enabled || !wa.phone_number_id.is_empty();

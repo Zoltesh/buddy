@@ -212,14 +212,33 @@ const DEFAULT_BOT_TOKEN_ENV: &str = "TELEGRAM_BOT_TOKEN";
 pub struct TelegramConfig {
     #[serde(default)]
     pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bot_token: Option<String>,
     #[serde(default = "default_bot_token_env")]
     pub bot_token_env: String,
+}
+
+impl TelegramConfig {
+    pub fn resolve_bot_token(&self) -> Result<String, String> {
+        if let Some(ref token) = self.bot_token {
+            if !token.is_empty() {
+                return Ok(token.clone());
+            }
+        }
+        std::env::var(&self.bot_token_env).map_err(|_| {
+            format!(
+                "environment variable '{}' is not set (required by bot_token_env)",
+                self.bot_token_env
+            )
+        })
+    }
 }
 
 impl Default for TelegramConfig {
     fn default() -> Self {
         Self {
             enabled: false,
+            bot_token: None,
             bot_token_env: default_bot_token_env(),
         }
     }
@@ -870,5 +889,130 @@ webhook_port = 9000
         assert_eq!(config.interfaces.whatsapp.phone_number_id, "");
         assert_eq!(config.interfaces.whatsapp.verify_token, "");
         assert_eq!(config.interfaces.whatsapp.webhook_port, 8444);
+    }
+
+    // Test cases for task 068: Telegram Direct Token Config
+
+    #[test]
+    fn resolve_bot_token_returns_direct_token() {
+        let toml = r#"
+[[models.chat.providers]]
+type = "lmstudio"
+model = "deepseek-coder"
+endpoint = "http://localhost:1234/v1"
+
+[interfaces.telegram]
+bot_token = "123:ABC"
+"#;
+        let config = Config::parse(toml).unwrap();
+        assert_eq!(
+            config.interfaces.telegram.resolve_bot_token().unwrap(),
+            "123:ABC"
+        );
+    }
+
+    #[test]
+    fn resolve_bot_token_falls_back_to_env_var() {
+        let toml = r#"
+[[models.chat.providers]]
+type = "lmstudio"
+model = "deepseek-coder"
+endpoint = "http://localhost:1234/v1"
+
+[interfaces.telegram]
+bot_token_env = "BUDDY_TEST_TG_TOKEN_068"
+"#;
+        unsafe { std::env::set_var("BUDDY_TEST_TG_TOKEN_068", "secret") };
+        let config = Config::parse(toml).unwrap();
+        let token = config.interfaces.telegram.resolve_bot_token().unwrap();
+        unsafe { std::env::remove_var("BUDDY_TEST_TG_TOKEN_068") };
+        assert_eq!(token, "secret");
+    }
+
+    #[test]
+    fn resolve_bot_token_direct_takes_priority_over_env() {
+        let toml = r#"
+[[models.chat.providers]]
+type = "lmstudio"
+model = "deepseek-coder"
+endpoint = "http://localhost:1234/v1"
+
+[interfaces.telegram]
+bot_token = "direct"
+bot_token_env = "BUDDY_TEST_TG_PRIORITY_068"
+"#;
+        unsafe { std::env::set_var("BUDDY_TEST_TG_PRIORITY_068", "from-env") };
+        let config = Config::parse(toml).unwrap();
+        let token = config.interfaces.telegram.resolve_bot_token().unwrap();
+        unsafe { std::env::remove_var("BUDDY_TEST_TG_PRIORITY_068") };
+        assert_eq!(token, "direct");
+    }
+
+    #[test]
+    fn resolve_bot_token_error_when_neither_set() {
+        let toml = r#"
+[[models.chat.providers]]
+type = "lmstudio"
+model = "deepseek-coder"
+endpoint = "http://localhost:1234/v1"
+
+[interfaces.telegram]
+bot_token_env = "BUDDY_TEST_TG_MISSING_068"
+"#;
+        unsafe { std::env::remove_var("BUDDY_TEST_TG_MISSING_068") };
+        let config = Config::parse(toml).unwrap();
+        let err = config.interfaces.telegram.resolve_bot_token().unwrap_err();
+        assert!(
+            err.contains("BUDDY_TEST_TG_MISSING_068"),
+            "error should mention the env var name: {err}"
+        );
+    }
+
+    #[test]
+    fn resolve_bot_token_empty_string_falls_through() {
+        let toml = r#"
+[[models.chat.providers]]
+type = "lmstudio"
+model = "deepseek-coder"
+endpoint = "http://localhost:1234/v1"
+
+[interfaces.telegram]
+bot_token = ""
+bot_token_env = "BUDDY_TEST_TG_EMPTY_068"
+"#;
+        unsafe { std::env::set_var("BUDDY_TEST_TG_EMPTY_068", "env-value") };
+        let config = Config::parse(toml).unwrap();
+        let token = config.interfaces.telegram.resolve_bot_token().unwrap();
+        unsafe { std::env::remove_var("BUDDY_TEST_TG_EMPTY_068") };
+        assert_eq!(token, "env-value");
+    }
+
+    #[test]
+    fn serialize_bot_token_none_omits_key() {
+        let config = Config::parse(minimal_chat_toml()).unwrap();
+        assert!(config.interfaces.telegram.bot_token.is_none());
+        let serialized = config.to_toml_string();
+        assert!(
+            !serialized.contains("bot_token ="),
+            "serialized TOML should not contain bot_token key: {serialized}"
+        );
+    }
+
+    #[test]
+    fn bot_token_round_trip() {
+        let toml = r#"
+[[models.chat.providers]]
+type = "lmstudio"
+model = "deepseek-coder"
+endpoint = "http://localhost:1234/v1"
+
+[interfaces.telegram]
+bot_token = "tok123"
+"#;
+        let config = Config::parse(toml).unwrap();
+        assert_eq!(config.interfaces.telegram.bot_token.as_deref(), Some("tok123"));
+        let serialized = config.to_toml_string();
+        let reparsed = Config::parse(&serialized).unwrap();
+        assert_eq!(reparsed.interfaces.telegram.bot_token.as_deref(), Some("tok123"));
     }
 }

@@ -29,16 +29,10 @@ async fn main() {
         return;
     }
 
-    let token = match std::env::var(&telegram.bot_token_env) {
-        Ok(t) if !t.is_empty() => t,
-        _ => {
-            eprintln!(
-                "Error: environment variable '{}' is not set",
-                telegram.bot_token_env
-            );
-            std::process::exit(1);
-        }
-    };
+    let token = telegram.resolve_bot_token().unwrap_or_else(|e| {
+        eprintln!("Error: {e}");
+        std::process::exit(1);
+    });
 
     let state = Arc::new(
         AppState::new(config, Path::new(DEFAULT_CONFIG_PATH)).unwrap_or_else(|e| {

@@ -5379,6 +5379,92 @@ bot_token_env = "MY_TG_TOKEN"
         std::fs::remove_dir_all(&dir).ok();
     }
 
+    /// Test: PUT /api/config/interfaces with bot_token persists direct token.
+    #[tokio::test]
+    async fn put_config_interfaces_with_bot_token() {
+        let (dir, app) = interfaces_write_app();
+        let body = serde_json::json!({
+            "telegram": {
+                "enabled": true,
+                "bot_token": "tok",
+                "bot_token_env": "TELEGRAM_BOT_TOKEN"
+            },
+            "whatsapp": {
+                "enabled": false,
+                "api_token_env": "WHATSAPP_API_TOKEN",
+                "phone_number_id": "",
+                "verify_token": "",
+                "webhook_port": 8444
+            }
+        });
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri("/api/config/interfaces")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let disk = std::fs::read_to_string(dir.join("buddy.toml")).unwrap();
+        assert!(
+            disk.contains("bot_token = \"tok\""),
+            "config file should contain bot_token: {disk}"
+        );
+        let reparsed = buddy_core::config::Config::parse(&disk).unwrap();
+        assert_eq!(reparsed.interfaces.telegram.bot_token.as_deref(), Some("tok"));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Test: PUT /api/config/interfaces with bot_token null omits it from config.
+    #[tokio::test]
+    async fn put_config_interfaces_with_bot_token_null() {
+        let (dir, app) = interfaces_write_app();
+        let body = serde_json::json!({
+            "telegram": {
+                "enabled": true,
+                "bot_token": null,
+                "bot_token_env": "TELEGRAM_BOT_TOKEN"
+            },
+            "whatsapp": {
+                "enabled": false,
+                "api_token_env": "WHATSAPP_API_TOKEN",
+                "phone_number_id": "",
+                "verify_token": "",
+                "webhook_port": 8444
+            }
+        });
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri("/api/config/interfaces")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let disk = std::fs::read_to_string(dir.join("buddy.toml")).unwrap();
+        assert!(
+            !disk.contains("bot_token ="),
+            "config file should not contain bot_token key: {disk}"
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
     /// Test: PUT /api/config/interfaces with invalid JSON returns 422.
     #[tokio::test]
     async fn put_config_interfaces_with_invalid_data() {
