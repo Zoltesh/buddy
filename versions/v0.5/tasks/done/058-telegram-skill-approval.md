@@ -40,26 +40,26 @@ Users can approve or deny skill execution during Telegram conversations using in
 
 ## Acceptance Criteria
 
-- [ ] ReadOnly skills execute immediately without asking for approval
-- [ ] Mutating/Network skills with `Always` policy show approval buttons
-- [ ] Mutating/Network skills with `Trust` policy execute immediately
-- [ ] Mutating/Network skills with `Once` policy ask once per conversation, then auto-approve
-- [ ] Inline keyboard with Approve/Deny buttons is sent for skills requiring approval
-- [ ] Tapping Approve executes the skill and shows the result
-- [ ] Tapping Deny sends a denial tool result and continues the conversation
-- [ ] Timeout (60s default) treats the action as denied
-- [ ] Tool call and result messages are stored in the conversation database
-- [ ] Tool loop continues after skill execution (provider called again with updated messages)
-- [ ] Tool loop stops after 10 iterations maximum
-- [ ] All existing tests pass
+- [x] ReadOnly skills execute immediately without asking for approval
+- [x] Mutating/Network skills with `Always` policy show approval buttons
+- [x] Mutating/Network skills with `Trust` policy execute immediately
+- [x] Mutating/Network skills with `Once` policy ask once per conversation, then auto-approve
+- [x] Inline keyboard with Approve/Deny buttons is sent for skills requiring approval
+- [x] Tapping Approve executes the skill and shows the result
+- [x] Tapping Deny sends a denial tool result and continues the conversation
+- [x] Timeout (60s default) treats the action as denied
+- [x] Tool call and result messages are stored in the conversation database
+- [x] Tool loop continues after skill execution (provider called again with updated messages)
+- [x] Tool loop stops after 10 iterations maximum
+- [x] All existing tests pass
 
 ## Test Cases
 
-- [ ] Send a message that triggers a ReadOnly skill (e.g., recall); assert the skill executes without showing approval buttons
-- [ ] Send a message that triggers a Mutating skill with `Always` policy; assert an inline keyboard message is sent with Approve and Deny buttons
-- [ ] Tap "Approve" on a skill approval message; assert the skill executes, the original message is edited to show "Approved", and the result is sent
-- [ ] Tap "Deny" on a skill approval message; assert the original message is edited to show "Denied" and a denial tool result is sent to the provider
-- [ ] Do not respond to a skill approval message within the timeout; assert the message is edited to show "Timed out (denied)" and a denial result is sent
-- [ ] Send a message that triggers multiple consecutive tool calls; assert each one goes through the approval flow and the tool loop continues up to 10 iterations
-- [ ] After a skill approval and execution, assert the ToolCall and ToolResult messages are stored in the conversation database
-- [ ] Send a message that triggers a Network skill with `Trust` policy; assert it executes immediately without approval buttons
+- [x] Send a message that triggers a ReadOnly skill (e.g., recall); assert the skill executes without showing approval buttons
+- [x] Send a message that triggers a Mutating skill with `Always` policy; assert an inline keyboard message is sent with Approve and Deny buttons
+- [x] Tap "Approve" on a skill approval message; assert the skill executes, the original message is edited to show "Approved", and the result is sent
+- [x] Tap "Deny" on a skill approval message; assert the original message is edited to show "Denied" and a denial tool result is sent to the provider
+- [x] Do not respond to a skill approval message within the timeout; assert the message is edited to show "Timed out (denied)" and a denial result is sent
+- [x] Send a message that triggers multiple consecutive tool calls; assert each one goes through the approval flow and the tool loop continues up to 10 iterations
+- [x] After a skill approval and execution, assert the ToolCall and ToolResult messages are stored in the conversation database
+- [x] Send a message that triggers a Network skill with `Trust` policy; assert it executes immediately without approval buttons

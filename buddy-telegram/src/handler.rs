@@ -1,13 +1,36 @@
+//! Message processing and tool-call loop for Telegram.
+//!
+//! Runs the same tool loop as the web chat: provider may return tool calls,
+//! we check permission level and approval policy, request approval when needed
+//! (via Telegram inline buttons), execute skills, persist messages, and loop.
+
+use std::collections::HashMap;
+use std::time::Duration;
+
+use buddy_core::config::ApprovalPolicy;
 use buddy_core::provider::{Provider, ProviderError, Token};
+use buddy_core::skill::{PermissionLevel, SkillRegistry};
+use buddy_core::state::ConversationApprovals;
 use buddy_core::store::Store;
 use buddy_core::types::{Message, MessageContent, Role};
 use chrono::Utc;
 use futures_util::StreamExt;
 
+use crate::approval::TelegramPendingApprovals;
+
+/// Maximum number of tool-call loop iterations (same as web).
+const MAX_TOOL_ITERATIONS: usize = 10;
+
+/// Maximum length for tool result in a Telegram message before truncation.
+const RESULT_MAX_LEN: usize = 2000;
+
 /// Outcome of processing a Telegram message.
 pub enum ProcessResult {
-    /// A text response to send back to the user.
-    Response(String),
+    /// Final text and any tool results to send (in order): tool results first, then final text.
+    Response {
+        final_text: String,
+        tool_results: Vec<String>,
+    },
     /// The provider produced no output (empty stream, no tool calls).
     Empty,
 }
@@ -36,26 +59,30 @@ impl ProcessError {
     }
 }
 
-/// Process a Telegram text message through the conversation flow.
-///
-/// 1. Look up or create a conversation for the given `chat_id`.
-/// 2. Append the user message.
-/// 3. Load conversation history.
-/// 4. Call the provider.
-/// 5. Consume the token stream, collecting text and tool call names.
-/// 6. Decline tool calls with an informational message.
-/// 7. Persist the assistant response.
-/// 8. Return the response text.
+/// Context for requesting skill approval over Telegram (send message, wait for button or timeout).
+pub struct TelegramApprovalContext<'a> {
+    pub bot: &'a teloxide::Bot,
+    pub chat_id: teloxide::types::ChatId,
+    pub pending: &'a TelegramPendingApprovals,
+    pub timeout: Duration,
+}
+
+
+/// Process a Telegram text message: resolve conversation, run provider with tool loop,
+/// apply approval policy (ReadOnly execute; Mutating/Network per Trust/Once/Always),
+/// persist all messages, return final response text.
 pub async fn process_message<P: Provider>(
     store: &Store,
     provider: &P,
+    registry: &SkillRegistry,
+    approval_overrides: &HashMap<String, ApprovalPolicy>,
+    conversation_approvals: &ConversationApprovals,
     chat_id: i64,
     user_text: &str,
+    approval_ctx: Option<TelegramApprovalContext<'_>>,
 ) -> Result<ProcessResult, ProcessError> {
-    // 1. Look up or create conversation.
     let conversation_id = resolve_conversation(store, chat_id, user_text)?;
 
-    // 2. Append user message.
     let user_msg = Message {
         role: Role::User,
         content: MessageContent::Text {
@@ -70,59 +97,177 @@ pub async fn process_message<P: Provider>(
             ProcessError::Store(e)
         })?;
 
-    // 3. Load conversation history.
     let messages = match store.get_conversation(&conversation_id) {
         Ok(Some(conv)) => conv.messages,
-        Ok(None) => vec![user_msg],
+        Ok(None) => vec![user_msg.clone()],
         Err(e) => {
             log::error!("Failed to load conversation: {e}");
-            vec![user_msg]
+            vec![user_msg.clone()]
         }
     };
 
-    // 4. Call the provider (no tools — execution is deferred to a future task).
-    let token_stream = match provider.complete(messages, None).await {
+    let tools = {
+        let defs = registry.tool_definitions();
+        if defs.is_empty() {
+            None
+        } else {
+            Some(defs)
+        }
+    };
+
+    let mut tool_results_to_send: Vec<String> = Vec::new();
+    let mut all_messages = messages;
+    for _iteration in 0..MAX_TOOL_ITERATIONS {
+        let token_stream = match provider
+            .complete(all_messages.clone(), tools.clone())
+            .await
+        {
+            Ok(s) => s,
+            Err(e) => {
+                log::error!("Provider error: {e}");
+                return Err(classify_provider_error(e));
+            }
+        };
+
+        let mut tool_calls: Vec<(String, String, String)> = Vec::new();
+        let mut full_text = String::new();
+
+        tokio::pin!(token_stream);
+        while let Some(result) = token_stream.next().await {
+            match result {
+                Ok(Token::Text { text }) => full_text.push_str(&text),
+                Ok(Token::Warning { message }) => {
+                    log::warn!("Provider warning: {message}");
+                }
+                Ok(Token::ToolCall {
+                    id,
+                    name,
+                    arguments,
+                }) => tool_calls.push((id, name, arguments)),
+                Err(e) => {
+                    log::error!("Stream error: {e}");
+                    return Err(classify_provider_error(e));
+                }
+            }
+        }
+
+        if tool_calls.is_empty() {
+            if full_text.is_empty() {
+                return Ok(ProcessResult::Empty);
+            }
+            let assistant_msg = Message {
+                role: Role::Assistant,
+                content: MessageContent::Text {
+                    text: full_text.clone(),
+                },
+                timestamp: Utc::now(),
+            };
+            if let Err(e) = store.append_message(&conversation_id, &assistant_msg) {
+                log::error!("Failed to append assistant message: {e}");
+            }
+            return Ok(ProcessResult::Response {
+                final_text: full_text,
+                tool_results: tool_results_to_send,
+            });
+        }
+
+        for (id, name, arguments) in &tool_calls {
+            let tool_call_msg = Message {
+                role: Role::Assistant,
+                content: MessageContent::ToolCall {
+                    id: id.clone(),
+                    name: name.clone(),
+                    arguments: arguments.clone(),
+                },
+                timestamp: Utc::now(),
+            };
+            persist_message(store, &conversation_id, &tool_call_msg);
+            all_messages.push(tool_call_msg);
+
+            let result_content = match registry.get(name) {
+                Some(skill) => {
+                    let perm = skill.permission_level();
+                    let approved = if perm == PermissionLevel::ReadOnly {
+                        true
+                    } else {
+                        check_approval_telegram(
+                            approval_overrides,
+                            conversation_approvals,
+                            &conversation_id,
+                            name,
+                            approval_ctx.as_ref(),
+                            &arguments,
+                        )
+                        .await
+                    };
+
+                    if !approved {
+                        format!("User denied execution of {name}")
+                    } else {
+                        let policy = approval_overrides.get(name).copied().unwrap_or(ApprovalPolicy::Always);
+                        if policy == ApprovalPolicy::Once {
+                            let mut approvals = conversation_approvals.lock().await;
+                            approvals
+                                .entry(conversation_id.clone())
+                                .or_default()
+                                .insert(name.clone());
+                        }
+                        let mut input: serde_json::Value =
+                            serde_json::from_str(arguments)
+                                .unwrap_or_else(|_| serde_json::json!({}));
+                        if let Some(obj) = input.as_object_mut() {
+                            obj.insert(
+                                "conversation_id".to_string(),
+                                serde_json::Value::String(conversation_id.clone()),
+                            );
+                        }
+                        match skill.execute(input).await {
+                            Ok(output) => serde_json::to_string(&output)
+                                .unwrap_or_else(|_| "{}".to_string()),
+                            Err(e) => format!("❌ Tool error: {e}"),
+                        }
+                    }
+                }
+                None => "❌ Tool error: unknown tool".to_string(),
+            };
+
+            if approval_ctx.is_some() {
+                tool_results_to_send.push(format_tool_result_for_telegram(&result_content));
+            }
+
+            let tool_result_msg = Message {
+                role: Role::User,
+                content: MessageContent::ToolResult {
+                    id: id.clone(),
+                    content: result_content.clone(),
+                },
+                timestamp: Utc::now(),
+            };
+            persist_message(store, &conversation_id, &tool_result_msg);
+            all_messages.push(tool_result_msg);
+        }
+    }
+
+    let mut full_text = String::new();
+    let token_stream = match provider.complete(all_messages, tools).await {
         Ok(s) => s,
         Err(e) => {
             log::error!("Provider error: {e}");
             return Err(classify_provider_error(e));
         }
     };
-
-    // 5. Consume token stream.
-    let mut full_text = String::new();
-    let mut tool_call_names: Vec<String> = Vec::new();
-
     tokio::pin!(token_stream);
     while let Some(result) = token_stream.next().await {
         match result {
             Ok(Token::Text { text }) => full_text.push_str(&text),
-            Ok(Token::ToolCall { name, .. }) => tool_call_names.push(name),
-            Ok(Token::Warning { message }) => {
-                log::warn!("Provider warning: {message}");
-            }
-            Err(e) => {
-                log::error!("Stream error: {e}");
-                return Err(classify_provider_error(e));
-            }
+            Ok(Token::Warning { message }) => log::warn!("Provider warning: {message}"),
+            Ok(Token::ToolCall { .. }) => {}
+            Err(e) => return Err(classify_provider_error(e)),
         }
     }
-
-    // 6. Decline tool calls with informational messages.
-    for name in &tool_call_names {
-        if !full_text.is_empty() {
-            full_text.push_str("\n\n");
-        }
-        full_text.push_str(&format!(
-            "I wanted to use a tool ({name}), but tool execution is not yet available over Telegram."
-        ));
-    }
-
     if full_text.is_empty() {
-        return Ok(ProcessResult::Empty);
+        full_text = "Tool loop reached maximum iterations.".to_string();
     }
-
-    // 7. Persist assistant response.
     let assistant_msg = Message {
         role: Role::Assistant,
         content: MessageContent::Text {
@@ -133,8 +278,70 @@ pub async fn process_message<P: Provider>(
     if let Err(e) = store.append_message(&conversation_id, &assistant_msg) {
         log::error!("Failed to append assistant message: {e}");
     }
+    Ok(ProcessResult::Response {
+        final_text: full_text,
+        tool_results: tool_results_to_send,
+    })
+}
 
-    Ok(ProcessResult::Response(full_text))
+/// Format tool result for Telegram: code block, truncate at RESULT_MAX_LEN, keep error prefix.
+pub fn format_tool_result_for_telegram(content: &str) -> String {
+    let truncated = if content.len() > RESULT_MAX_LEN {
+        let mut end = RESULT_MAX_LEN;
+        while !content.is_char_boundary(end) {
+            end -= 1;
+        }
+        format!("{}... (truncated)", &content[..end])
+    } else {
+        content.to_string()
+    };
+    format!("```\n{truncated}\n```")
+}
+
+fn persist_message(store: &Store, conversation_id: &str, message: &Message) {
+    if let Err(e) = store.append_message(conversation_id, message) {
+        log::error!("Failed to persist message: {e}");
+    }
+}
+
+async fn check_approval_telegram(
+    approval_overrides: &HashMap<String, ApprovalPolicy>,
+    conversation_approvals: &ConversationApprovals,
+    conversation_id: &str,
+    skill_name: &str,
+    approval_ctx: Option<&TelegramApprovalContext<'_>>,
+    arguments: &str,
+) -> bool {
+    let policy = approval_overrides
+        .get(skill_name)
+        .copied()
+        .unwrap_or(ApprovalPolicy::Always);
+
+    match policy {
+        ApprovalPolicy::Trust => return true,
+        ApprovalPolicy::Once => {
+            let approvals = conversation_approvals.lock().await;
+            if let Some(skills) = approvals.get(conversation_id) {
+                if skills.contains(skill_name) {
+                    return true;
+                }
+            }
+        }
+        ApprovalPolicy::Always => {}
+    }
+
+    let Some(ctx) = approval_ctx else {
+        return false;
+    };
+    crate::approval::request_approval(
+        ctx.bot,
+        ctx.chat_id,
+        ctx.pending,
+        ctx.timeout,
+        skill_name,
+        arguments,
+    )
+    .await
 }
 
 /// Look up or create a buddy conversation for a Telegram chat.
@@ -149,31 +356,54 @@ fn resolve_conversation(
             let title: String = first_message_text.trim().chars().take(50).collect();
             let conv = store
                 .create_conversation_with_source(&title, "telegram")
-                .map_err(|e| ProcessError::Store(e))?;
+                .map_err(ProcessError::Store)?;
             store
                 .set_telegram_chat_mapping(chat_id, &conv.id)
-                .map_err(|e| ProcessError::Store(e))?;
+                .map_err(ProcessError::Store)?;
             Ok(conv.id)
         }
         Err(e) => Err(ProcessError::Store(e)),
     }
 }
 
-/// Map a `ProviderError` to a `ProcessError`.
 fn classify_provider_error(e: ProviderError) -> ProcessError {
     match e {
-        ProviderError::Network(_) | ProviderError::RateLimit(_) => ProcessError::AllUnavailable,
+        ProviderError::Network(_) | ProviderError::RateLimit(_) => {
+            ProcessError::AllUnavailable
+        }
         _ => ProcessError::Provider(e.to_string()),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use buddy_core::provider::ProviderChain;
-    use buddy_core::testutil::{MockProvider, MockResponse, SequencedProvider};
+    use std::sync::Arc;
 
-    // ── Test 1: new chat creates conversation with source "telegram" ────
+    use super::*;
+    use buddy_core::skill::SkillRegistry;
+    use buddy_core::config::ApprovalPolicy;
+    use buddy_core::testutil::{
+        MockEchoSkill, MockMutatingSkill, MockNetworkSkill, MockProvider, MockResponse,
+        SequencedProvider,
+    };
+
+    fn registry_with_echo() -> SkillRegistry {
+        let mut r = SkillRegistry::new();
+        r.register(Box::new(MockEchoSkill));
+        r
+    }
+
+    fn registry_with_mutating() -> SkillRegistry {
+        let mut r = SkillRegistry::new();
+        r.register(Box::new(MockMutatingSkill));
+        r
+    }
+
+    fn registry_with_network() -> SkillRegistry {
+        let mut r = SkillRegistry::new();
+        r.register(Box::new(MockNetworkSkill));
+        r
+    }
 
     #[tokio::test]
     async fn new_chat_creates_telegram_conversation() {
@@ -181,18 +411,29 @@ mod tests {
         let provider = MockProvider {
             tokens: vec!["Hello!".into()],
         };
+        let registry = SkillRegistry::new();
+        let overrides = HashMap::new();
+        let conversation_approvals = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
 
-        let result = process_message(&store, &provider, 12345, "Hi there").await;
-        assert!(matches!(result, Ok(ProcessResult::Response(_))));
+        let result = process_message(
+            &store,
+            &provider,
+            &registry,
+            &overrides,
+            &conversation_approvals,
+            12345,
+            "Hi there",
+            None,
+        )
+        .await;
+        assert!(matches!(result, Ok(ProcessResult::Response { .. })));
 
-        // Verify conversation was created with source "telegram".
         let convs = store.list_conversations().unwrap();
         assert_eq!(convs.len(), 1);
         assert_eq!(convs[0].source, "telegram");
 
-        // Verify the user message was stored.
         let conv = store.get_conversation(&convs[0].id).unwrap().unwrap();
-        assert!(conv.messages.len() >= 2); // user + assistant
+        assert!(conv.messages.len() >= 2);
         assert_eq!(conv.messages[0].role, Role::User);
         assert!(matches!(
             &conv.messages[0].content,
@@ -200,23 +441,33 @@ mod tests {
         ));
     }
 
-    // ── Test 2: provider called with history, response returned ─────────
-
     #[tokio::test]
     async fn provider_called_with_history_and_response_returned() {
         let store = Store::open_in_memory().unwrap();
         let provider = MockProvider {
             tokens: vec!["I can ".into(), "help!".into()],
         };
+        let registry = SkillRegistry::new();
+        let overrides = HashMap::new();
+        let conversation_approvals = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
 
-        let result = process_message(&store, &provider, 100, "Help me").await;
+        let result = process_message(
+            &store,
+            &provider,
+            &registry,
+            &overrides,
+            &conversation_approvals,
+            100,
+            "Help me",
+            None,
+        )
+        .await;
         let response = match result {
-            Ok(ProcessResult::Response(text)) => text,
+            Ok(ProcessResult::Response { final_text, .. }) => final_text,
             other => panic!("expected Response, got {other:?}"),
         };
         assert_eq!(response, "I can help!");
 
-        // Verify assistant message was persisted.
         let convs = store.list_conversations().unwrap();
         let conv = store.get_conversation(&convs[0].id).unwrap().unwrap();
         let last = conv.messages.last().unwrap();
@@ -227,77 +478,319 @@ mod tests {
         ));
     }
 
-    // ── Test 3: same chat_id reuses conversation ────────────────────────
-
     #[tokio::test]
     async fn same_chat_id_reuses_conversation() {
         let store = Store::open_in_memory().unwrap();
         let provider = MockProvider {
             tokens: vec!["ok".into()],
         };
+        let registry = SkillRegistry::new();
+        let overrides = HashMap::new();
+        let conversation_approvals = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
 
-        process_message(&store, &provider, 555, "First message")
-            .await
-            .unwrap();
-        process_message(&store, &provider, 555, "Second message")
-            .await
-            .unwrap();
+        process_message(
+            &store,
+            &provider,
+            &registry,
+            &overrides,
+            &conversation_approvals,
+            555,
+            "First message",
+            None,
+        )
+        .await
+        .unwrap();
+        process_message(
+            &store,
+            &provider,
+            &registry,
+            &overrides,
+            &conversation_approvals,
+            555,
+            "Second message",
+            None,
+        )
+        .await
+        .unwrap();
 
-        // Only one conversation should exist.
         let convs = store.list_conversations().unwrap();
         assert_eq!(convs.len(), 1);
-
-        // Both user messages + both assistant replies should be in the same conversation.
         let conv = store.get_conversation(&convs[0].id).unwrap().unwrap();
-        assert_eq!(conv.messages.len(), 4); // user, assistant, user, assistant
+        assert_eq!(conv.messages.len(), 4);
     }
 
-    // ── Test 4: tool call declined with informational message ───────────
-
+    /// ReadOnly skill (echo) executes without approval; no approval context needed.
     #[tokio::test]
-    async fn tool_call_declined_with_message() {
+    async fn readonly_skill_executes_without_approval() {
         let store = Store::open_in_memory().unwrap();
-        let provider = SequencedProvider::new(vec![MockResponse::ToolCalls(vec![(
-            "call_1".into(),
-            "get_weather".into(),
-            r#"{"city":"NYC"}"#.into(),
-        )])]);
+        let provider = SequencedProvider::new(vec![
+            MockResponse::ToolCalls(vec![(
+                "c1".into(),
+                "echo".into(),
+                r#"{"value":"hello"}"#.into(),
+            )]),
+            MockResponse::Text(vec!["Done.".into()]),
+        ]);
+        let registry = registry_with_echo();
+        let overrides = HashMap::new();
+        let conversation_approvals = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
 
-        let result = process_message(&store, &provider, 200, "What's the weather?").await;
+        let result = process_message(
+            &store,
+            &provider,
+            &registry,
+            &overrides,
+            &conversation_approvals,
+            200,
+            "Use echo",
+            None,
+        )
+        .await;
         let response = match result {
-            Ok(ProcessResult::Response(text)) => text,
+            Ok(ProcessResult::Response { final_text, .. }) => final_text,
             other => panic!("expected Response, got {other:?}"),
         };
-
-        assert!(response.contains("get_weather"));
-        assert!(response.contains("not yet available over Telegram"));
+        assert!(response.contains("Done."));
+        let conv = store.list_conversations().unwrap();
+        let conv = store.get_conversation(&conv[0].id).unwrap().unwrap();
+        let has_tool_result = conv.messages.iter().any(|m| {
+            matches!(
+                &m.content,
+                MessageContent::ToolResult { content, .. } if content.contains("hello")
+            )
+        });
+        assert!(has_tool_result, "ToolCall and ToolResult should be stored");
     }
 
-    // ── Test 5: provider error returns user-friendly message ────────────
-
+    /// Network skill with Trust policy executes without approval (no approval context needed).
     #[tokio::test]
-    async fn provider_error_returns_friendly_message() {
+    async fn network_skill_with_trust_policy_executes_without_approval() {
         let store = Store::open_in_memory().unwrap();
+        let provider = SequencedProvider::new(vec![
+            MockResponse::ToolCalls(vec![(
+                "c1".into(),
+                "network".into(),
+                r#"{"value":"ok"}"#.into(),
+            )]),
+            MockResponse::Text(vec!["Done.".into()]),
+        ]);
+        let registry = registry_with_network();
+        let mut overrides = HashMap::new();
+        overrides.insert("network".to_string(), ApprovalPolicy::Trust);
+        let conversation_approvals = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
 
-        // Use a chain with a single failing provider to simulate "all unavailable".
-        let chain = ProviderChain::new(vec![(
-            buddy_core::testutil::ConfigurableMockProvider::FailNetwork(
-                "connection refused".into(),
-            ),
-            "test-model".into(),
-        )]);
+        let result = process_message(
+            &store,
+            &provider,
+            &registry,
+            &overrides,
+            &conversation_approvals,
+            200,
+            "Use network",
+            None,
+        )
+        .await;
+        let response = match result {
+            Ok(ProcessResult::Response { final_text, .. }) => final_text,
+            other => panic!("expected Response, got {other:?}"),
+        };
+        assert!(response.contains("Done."));
+        let conv = store.list_conversations().unwrap();
+        let conv = store.get_conversation(&conv[0].id).unwrap().unwrap();
+        let has_echo_result = conv.messages.iter().any(|m| {
+            matches!(
+                &m.content,
+                MessageContent::ToolResult { content, .. } if content.contains("echo")
+            )
+        });
+        assert!(has_echo_result, "Trust policy should execute without approval");
+    }
 
-        let result = process_message(&store, &chain, 300, "Hello").await;
-        match result {
-            Err(ProcessError::AllUnavailable) => {}
-            other => panic!("expected AllUnavailable, got {other:?}"),
+    /// Mutating skill with no approval context is denied.
+    #[tokio::test]
+    async fn mutating_skill_without_approval_context_denied() {
+        let store = Store::open_in_memory().unwrap();
+        let provider = SequencedProvider::new(vec![
+            MockResponse::ToolCalls(vec![(
+                "c1".into(),
+                "mutating".into(),
+                r#"{"value":"x"}"#.into(),
+            )]),
+            MockResponse::Text(vec!["Denied.".into()]),
+        ]);
+        let registry = registry_with_mutating();
+        let overrides = HashMap::new();
+        let conversation_approvals = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+
+        let result = process_message(
+            &store,
+            &provider,
+            &registry,
+            &overrides,
+            &conversation_approvals,
+            200,
+            "Do something",
+            None,
+        )
+        .await;
+        let response = match result {
+            Ok(ProcessResult::Response { final_text, .. }) => final_text,
+            other => panic!("expected Response, got {other:?}"),
+        };
+        assert!(response.contains("Denied."));
+        let conv = store.list_conversations().unwrap();
+        let conv = store.get_conversation(&conv[0].id).unwrap().unwrap();
+        let has_denied_result = conv.messages.iter().any(|m| {
+            matches!(
+                &m.content,
+                MessageContent::ToolResult { content, .. }
+                    if content.contains("User denied execution of mutating")
+            )
+        });
+        assert!(has_denied_result);
+    }
+
+    /// Once policy auto-approves when the skill was already approved for this conversation.
+    #[tokio::test]
+    async fn once_policy_auto_approves_after_prior_approval() {
+        let store = Store::open_in_memory().unwrap();
+        let mut overrides = HashMap::new();
+        overrides.insert("mutating".to_string(), ApprovalPolicy::Once);
+        let conversation_approvals = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+
+        // Establish conversation with a plain text response.
+        let setup_provider = MockProvider {
+            tokens: vec!["ok".into()],
+        };
+        let registry = registry_with_mutating();
+        process_message(
+            &store,
+            &setup_provider,
+            &registry,
+            &overrides,
+            &conversation_approvals,
+            300,
+            "hello",
+            None,
+        )
+        .await
+        .unwrap();
+
+        // Pre-populate approval (simulating a prior approved request).
+        let conv_id = store.list_conversations().unwrap()[0].id.clone();
+        {
+            let mut approvals = conversation_approvals.lock().await;
+            approvals
+                .entry(conv_id.clone())
+                .or_default()
+                .insert("mutating".to_string());
         }
+
+        // Tool call should auto-approve via Once (no approval context needed).
+        let provider = SequencedProvider::new(vec![
+            MockResponse::ToolCalls(vec![(
+                "c1".into(),
+                "mutating".into(),
+                r#"{"value":"test"}"#.into(),
+            )]),
+            MockResponse::Text(vec!["Done.".into()]),
+        ]);
+        let result = process_message(
+            &store,
+            &provider,
+            &registry,
+            &overrides,
+            &conversation_approvals,
+            300,
+            "mutate something",
+            None,
+        )
+        .await;
+
+        let response = match result {
+            Ok(ProcessResult::Response { final_text, .. }) => final_text,
+            other => panic!("expected Response, got {other:?}"),
+        };
+        assert!(response.contains("Done."));
+
+        let conv = store.get_conversation(&conv_id).unwrap().unwrap();
+        let executed = conv.messages.iter().any(|m| {
+            matches!(
+                &m.content,
+                MessageContent::ToolResult { content, .. } if content.contains("echo")
+            )
+        });
+        let denied = conv.messages.iter().any(|m| {
+            matches!(
+                &m.content,
+                MessageContent::ToolResult { content, .. } if content.contains("denied")
+            )
+        });
+        assert!(executed, "Once policy should auto-approve when already approved");
+        assert!(!denied);
+    }
+
+    /// Tool loop stops after 10 iterations.
+    #[tokio::test]
+    async fn tool_loop_stops_at_max_iterations() {
+        let store = Store::open_in_memory().unwrap();
+        let mut responses = Vec::new();
+        for _ in 0..MAX_TOOL_ITERATIONS {
+            responses.push(MockResponse::ToolCalls(vec![(
+                "c".into(),
+                "echo".into(),
+                r#"{"value":"x"}"#.into(),
+            )]));
+        }
+        responses.push(MockResponse::Text(vec!["Final.".into()]));
+        let provider = SequencedProvider::new(responses);
+        let registry = registry_with_echo();
+        let overrides = HashMap::new();
+        let conversation_approvals = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+
+        let result = process_message(
+            &store,
+            &provider,
+            &registry,
+            &overrides,
+            &conversation_approvals,
+            200,
+            "Loop",
+            None,
+        )
+        .await;
+        let response = match result {
+            Ok(ProcessResult::Response { final_text, .. }) => final_text,
+            other => panic!("expected Response, got {other:?}"),
+        };
+        assert!(
+            response.contains("maximum iterations") || response.contains("Final."),
+            "expected max iterations message or final text, got {response}"
+        );
+    }
+
+    #[test]
+    fn format_tool_result_truncates() {
+        let long = "x".repeat(RESULT_MAX_LEN + 100);
+        let out = format_tool_result_for_telegram(&long);
+        assert!(out.contains("(truncated)"));
+        assert!(out.starts_with("```"));
+        assert!(out.ends_with("\n```"));
+    }
+
+    #[test]
+    fn format_tool_result_keeps_error_prefix() {
+        let err = "❌ Tool error: something failed";
+        let out = format_tool_result_for_telegram(err);
+        assert!(out.contains("❌ Tool error"));
     }
 
     impl std::fmt::Debug for ProcessResult {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             match self {
-                Self::Response(text) => write!(f, "Response({text:?})"),
+                Self::Response { final_text, tool_results } => {
+                    write!(f, "Response(final_text: {final_text:?}, {} results)", tool_results.len())
+                }
                 Self::Empty => write!(f, "Empty"),
             }
         }
