@@ -428,6 +428,7 @@ dependencies = [
  "arc-swap",
  "buddy-core",
  "chrono",
+ "clap",
  "env_logger",
  "futures-util",
  "log",

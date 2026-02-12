@@ -39,6 +39,14 @@ pub fn new_pending_approvals() -> PendingApprovals {
 /// replaced when the configuration changes without interrupting in-flight
 /// requests. Handlers call `.load()` to get a snapshot for the duration of
 /// the request.
+/// Handle for a managed child process (e.g. buddy-telegram).
+pub type ChildProcessHandle = Arc<std::sync::Mutex<Option<std::process::Child>>>;
+
+/// Create a new empty child process handle.
+pub fn new_child_process_handle() -> ChildProcessHandle {
+    Arc::new(std::sync::Mutex::new(None))
+}
+
 pub struct AppState<P> {
     pub provider: arc_swap::ArcSwap<P>,
     pub registry: arc_swap::ArcSwap<SkillRegistry>,
@@ -58,6 +66,8 @@ pub struct AppState<P> {
     /// runtime components. Set to `Some` in production (via `reload::reload_from_config`),
     /// left as `None` in tests that don't need reload behavior.
     pub on_config_change: Option<Box<dyn Fn(&Self) -> Result<(), String> + Send + Sync>>,
+    /// Managed child process for buddy-telegram.
+    pub telegram_process: ChildProcessHandle,
 }
 
 impl AppState<ProviderChain<AnyProvider>> {
@@ -112,6 +122,7 @@ impl AppState<ProviderChain<AnyProvider>> {
             config: RwLock::new(config),
             config_path: config_path.to_path_buf(),
             on_config_change: None,
+            telegram_process: new_child_process_handle(),
         })
     }
 }

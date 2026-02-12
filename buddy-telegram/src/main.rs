@@ -1,6 +1,7 @@
-use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Arc;
 
+use clap::Parser;
 use teloxide::prelude::*;
 use teloxide::types::ParseMode;
 
@@ -13,12 +14,21 @@ mod handler;
 
 const DEFAULT_CONFIG_PATH: &str = "buddy.toml";
 
+#[derive(Parser)]
+#[command(name = "buddy-telegram")]
+struct Cli {
+    /// Path to the configuration file
+    #[arg(long = "config", default_value = DEFAULT_CONFIG_PATH)]
+    config: PathBuf,
+}
+
 #[tokio::main]
 async fn main() {
     env_logger::init();
 
+    let cli = Cli::parse();
     let config =
-        buddy_core::config::Config::from_file(Path::new(DEFAULT_CONFIG_PATH)).unwrap_or_else(|e| {
+        buddy_core::config::Config::from_file(&cli.config).unwrap_or_else(|e| {
             eprintln!("Error: {e}");
             std::process::exit(1);
         });
@@ -35,7 +45,7 @@ async fn main() {
     });
 
     let state = Arc::new(
-        AppState::new(config, Path::new(DEFAULT_CONFIG_PATH)).unwrap_or_else(|e| {
+        AppState::new(config, &cli.config).unwrap_or_else(|e| {
             eprintln!("Error: {e}");
             std::process::exit(1);
         }),

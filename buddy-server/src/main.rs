@@ -8,6 +8,7 @@ use tokio::signal;
 use tower_http::services::{ServeDir, ServeFile};
 
 mod api;
+mod process;
 mod reload;
 
 #[cfg(test)]
@@ -59,10 +60,16 @@ async fn main() {
 
     app_state.on_config_change = Some(Box::new(|state| {
         let config = state.config.read().unwrap();
-        reload::reload_from_config(&config, state).map_err(|e| e.to_string())
+        reload::reload_from_config(&config, state).map_err(|e| e.to_string())?;
+        drop(config);
+        process::manage_telegram_on_config_change(state);
+        Ok(())
     }));
 
     let state = Arc::new(app_state);
+
+    // Spawn buddy-telegram if enabled.
+    process::manage_telegram(&state);
 
     // Routes protected by auth middleware.
     let protected_api = Router::new()
@@ -93,7 +100,7 @@ async fn main() {
     let public_api = Router::new()
         .route("/api/auth/verify", post(verify_token::<AppProvider>))
         .route("/api/auth/status", get(auth_status::<AppProvider>))
-        .with_state(state);
+        .with_state(state.clone());
 
     let app = Router::new()
         .merge(protected_api)
@@ -128,6 +135,9 @@ async fn main() {
         .with_graceful_shutdown(shutdown_signal())
         .await
         .expect("server error");
+
+    // Clean up child processes on shutdown.
+    process::stop_telegram(&state.telegram_process);
 }
 
 async fn shutdown_signal() {

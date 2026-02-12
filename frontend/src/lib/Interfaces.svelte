@@ -107,7 +107,7 @@
     saving = true;
     saveError = null;
     try {
-      const updated = structuredClone(config.interfaces);
+      const updated = $state.snapshot(config.interfaces);
       updated[name].enabled = !updated[name].enabled;
       const result = await putConfigInterfaces(updated);
       config = result;
@@ -125,7 +125,6 @@
     if (name === 'telegram') {
       editForm = {
         bot_token: '',
-        bot_token_env: config.interfaces.telegram.bot_token_env,
         enabled: config.interfaces.telegram.enabled,
       };
     } else {
@@ -145,8 +144,7 @@
     if (name === 'telegram') {
       editForm = {
         bot_token: '',
-        bot_token_env: 'TELEGRAM_BOT_TOKEN',
-        enabled: false,
+        enabled: true,
       };
     } else {
       editForm = {
@@ -169,10 +167,9 @@
     saving = true;
     saveError = null;
     try {
-      const updated = structuredClone(config.interfaces);
+      const updated = $state.snapshot(config.interfaces);
       if (editing === 'telegram') {
         updated.telegram.bot_token = editForm.bot_token || null;
-        updated.telegram.bot_token_env = editForm.bot_token_env;
         updated.telegram.enabled = editForm.enabled;
       } else {
         updated.whatsapp.api_token_env = editForm.api_token_env;
@@ -181,10 +178,14 @@
         updated.whatsapp.webhook_port = parseInt(editForm.webhook_port, 10) || 8444;
         updated.whatsapp.enabled = editForm.enabled;
       }
+      const savedInterface = editing;
       const result = await putConfigInterfaces(updated);
       config = result;
       status = await fetchInterfacesStatus();
       editing = null;
+      if (savedInterface === 'telegram' && updated.telegram.enabled) {
+        setTimeout(() => runHealthCheck('telegram'), 1500);
+      }
     } catch (e) {
       saveError = e.details?.message || e.message || 'Failed to save';
     } finally {
@@ -299,18 +300,6 @@
                   />
                   <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">Stored in buddy.toml on disk.</p>
                 </div>
-                <div>
-                  <label for="tg-bot-token-env" class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Bot Token Env Var</label>
-                  <input
-                    type="text"
-                    id="tg-bot-token-env"
-                    bind:value={editForm.bot_token_env}
-                    class="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded
-                           bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100
-                           focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <p class="text-xs text-gray-400 dark:text-gray-500">Enter the token directly, or specify an environment variable name. Direct token takes priority.</p>
                 <div class="flex items-center gap-2">
                   <input type="checkbox" bind:checked={editForm.enabled} id="tg-enabled"
                     class="rounded border-gray-300 dark:border-gray-600" />
@@ -338,17 +327,10 @@
               <div class="space-y-2">
                 <div class="flex items-center justify-between">
                   <div class="text-sm text-gray-600 dark:text-gray-400 space-y-1">
-                    {#if config.interfaces.telegram.bot_token}
-                      <div>
-                        <span class="text-gray-400 dark:text-gray-500">Token:</span>
-                        <span class="ml-1">••••••</span>
-                      </div>
-                    {:else}
-                      <div>
-                        <span class="text-gray-400 dark:text-gray-500">Token env:</span>
-                        <code class="text-xs bg-gray-100 dark:bg-gray-700 px-1 py-0.5 rounded ml-1">{config.interfaces.telegram.bot_token_env}</code>
-                      </div>
-                    {/if}
+                    <div>
+                      <span class="text-gray-400 dark:text-gray-500">Token:</span>
+                      <span class="ml-1">{config.interfaces.telegram.bot_token ? '••••••' : 'via environment variable'}</span>
+                    </div>
                   </div>
                   <div class="flex items-center gap-2">
                     <button

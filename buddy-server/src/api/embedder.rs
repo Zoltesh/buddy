@@ -160,6 +160,7 @@ endpoint = "http://localhost:1234/v1"
             config: std::sync::RwLock::new(config),
             config_path: std::path::PathBuf::from("/tmp/test.toml"),
             on_config_change: None,
+            telegram_process: buddy_core::state::new_child_process_handle(),
         });
 
         Router::new()

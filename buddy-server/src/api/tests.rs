@@ -64,6 +64,7 @@ fn test_app(tokens: Vec<String>) -> Router {
         config: std::sync::RwLock::new(test_config()),
         config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
         on_config_change: None,
+            telegram_process: buddy_core::state::new_child_process_handle(),
     });
     Router::new()
         .route("/api/chat", post(chat_handler::<MockProvider>))
@@ -87,6 +88,7 @@ fn test_app_with_static(tokens: Vec<String>, static_dir: &str) -> Router {
         config: std::sync::RwLock::new(test_config()),
         config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
         on_config_change: None,
+            telegram_process: buddy_core::state::new_child_process_handle(),
     });
     Router::new()
         .route("/api/chat", post(chat_handler::<MockProvider>))
@@ -111,6 +113,7 @@ fn sequenced_app(responses: Vec<MockResponse>, registry: SkillRegistry) -> Route
         config: std::sync::RwLock::new(test_config()),
         config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
         on_config_change: None,
+            telegram_process: buddy_core::state::new_child_process_handle(),
     });
     Router::new()
         .route("/api/chat", post(chat_handler::<SequencedProvider>))
@@ -134,6 +137,7 @@ fn conversation_app(tokens: Vec<String>) -> (Arc<AppState<MockProvider>>, Router
         config: std::sync::RwLock::new(test_config()),
         config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
         on_config_change: None,
+            telegram_process: buddy_core::state::new_child_process_handle(),
     });
     let router = Router::new()
         .route("/api/chat", post(chat_handler::<MockProvider>))
@@ -496,6 +500,7 @@ mod tool_loop {
             config: std::sync::RwLock::new(test_config()),
             config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
             on_config_change: None,
+            telegram_process: buddy_core::state::new_child_process_handle(),
         });
         let app = Router::new()
             .route(
@@ -716,6 +721,7 @@ mod conversations {
             config: std::sync::RwLock::new(test_config()),
             config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
             on_config_change: None,
+            telegram_process: buddy_core::state::new_child_process_handle(),
         });
         let app = Router::new()
             .route("/api/chat", post(chat_handler::<SequencedProvider>))
@@ -852,6 +858,7 @@ mod warnings {
             config: std::sync::RwLock::new(test_config()),
             config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
             on_config_change: None,
+            telegram_process: buddy_core::state::new_child_process_handle(),
         });
         Router::new()
             .route("/api/chat", post(chat_handler::<MockProvider>))
@@ -913,6 +920,7 @@ mod warnings {
             config: std::sync::RwLock::new(test_config()),
             config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
             on_config_change: None,
+            telegram_process: buddy_core::state::new_child_process_handle(),
         });
         let app = Router::new()
             .route("/api/warnings", get(get_warnings::<MockProvider>))
@@ -970,6 +978,7 @@ mod warnings {
             config: std::sync::RwLock::new(test_config()),
             config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
             on_config_change: None,
+            telegram_process: buddy_core::state::new_child_process_handle(),
         });
         let app = Router::new()
             .route("/api/warnings", get(get_warnings::<MockProvider>))
@@ -1101,6 +1110,7 @@ mod warnings {
             config: std::sync::RwLock::new(test_config()),
             config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
             on_config_change: None,
+            telegram_process: buddy_core::state::new_child_process_handle(),
         });
 
         // First fetch
@@ -1255,6 +1265,7 @@ mod approval {
             config: std::sync::RwLock::new(test_config()),
             config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
             on_config_change: None,
+            telegram_process: buddy_core::state::new_child_process_handle(),
         });
         let router = Router::new()
             .route("/api/chat", post(chat_handler::<SequencedProvider>))
@@ -1639,6 +1650,7 @@ mod config_api {
             config: std::sync::RwLock::new(config),
             config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
             on_config_change: None,
+            telegram_process: buddy_core::state::new_child_process_handle(),
         });
         Router::new()
             .route("/api/config", get(get_config::<MockProvider>))
@@ -1900,6 +1912,7 @@ endpoint = "http://localhost:1234/v1"
             config: std::sync::RwLock::new(config),
             config_path,
             on_config_change: None,
+            telegram_process: buddy_core::state::new_child_process_handle(),
         });
         let router = Router::new()
             .route("/api/config", get(get_config::<MockProvider>))
@@ -2150,6 +2163,7 @@ approval = "once"
             config: std::sync::RwLock::new(config),
             config_path,
             on_config_change: None,
+            telegram_process: buddy_core::state::new_child_process_handle(),
         });
         let router = Router::new()
             .route("/api/config", get(get_config::<MockProvider>))
@@ -2581,6 +2595,7 @@ approval = "once"
             config: std::sync::RwLock::new(test_config()),
             config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
             on_config_change: None,
+            telegram_process: buddy_core::state::new_child_process_handle(),
         });
         Router::new()
             .route(
@@ -2955,6 +2970,7 @@ mod discover_models {
             config: std::sync::RwLock::new(test_config()),
             config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
             on_config_change: None,
+            telegram_process: buddy_core::state::new_child_process_handle(),
         });
         Router::new()
             .route(
@@ -3191,6 +3207,7 @@ mod settings_page {
             config: std::sync::RwLock::new(config),
             config_path: std::path::PathBuf::from("/tmp/buddy-test-034.toml"),
             on_config_change: None,
+            telegram_process: buddy_core::state::new_child_process_handle(),
         });
         Router::new()
             .route("/api/config", get(get_config::<MockProvider>))
@@ -3237,6 +3254,7 @@ similarity_threshold = 0.5
             config: std::sync::RwLock::new(config),
             config_path,
             on_config_change: None,
+            telegram_process: buddy_core::state::new_child_process_handle(),
         });
         let router = Router::new()
             .route("/api/config", get(get_config::<MockProvider>))
@@ -3584,6 +3602,7 @@ endpoint = "http://localhost:1234/v1"
 
                 Ok(())
             })),
+            telegram_process: buddy_core::state::new_child_process_handle(),
         });
         let router = Router::new()
             .route("/api/chat", post(chat_handler::<MockProvider>))
@@ -3856,6 +3875,7 @@ model = "all-minilm"
             config: std::sync::RwLock::new(config),
             config_path,
             on_config_change: None,
+            telegram_process: buddy_core::state::new_child_process_handle(),
         });
         let router = Router::new()
             .route("/api/config", get(get_config::<MockProvider>))
@@ -4025,6 +4045,7 @@ endpoint = "http://localhost:1234/v1"
             config: std::sync::RwLock::new(config),
             config_path,
             on_config_change: None,
+            telegram_process: buddy_core::state::new_child_process_handle(),
         });
         let app = Router::new()
             .route(
@@ -4135,6 +4156,7 @@ endpoint = "https://api.openai.com/v1"
             config: std::sync::RwLock::new(config),
             config_path,
             on_config_change: None,
+            telegram_process: buddy_core::state::new_child_process_handle(),
         });
         let app = Router::new()
             .route("/api/config", get(get_config::<MockProvider>))
@@ -4437,6 +4459,7 @@ fn test_app_with_vector_store(
         config: std::sync::RwLock::new(test_config()),
         config_path: std::path::PathBuf::from("/tmp/buddy-test-044.toml"),
         on_config_change: None,
+            telegram_process: buddy_core::state::new_child_process_handle(),
     });
     Router::new()
         .route("/api/config/models", put(put_config_models::<MockProvider>))
@@ -4776,6 +4799,7 @@ mod auth {
             config: std::sync::RwLock::new(auth_config(host, token_hash)),
             config_path: std::path::PathBuf::from("/tmp/buddy-test-auth.toml"),
             on_config_change: None,
+            telegram_process: buddy_core::state::new_child_process_handle(),
         });
 
         let protected = Router::new()
@@ -5202,6 +5226,7 @@ mod interfaces_api {
             config: std::sync::RwLock::new(config),
             config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
             on_config_change: None,
+            telegram_process: buddy_core::state::new_child_process_handle(),
         });
         Router::new()
             .route("/api/interfaces/status", get(get_interfaces_status::<MockProvider>))
@@ -5245,6 +5270,7 @@ endpoint = "http://localhost:1234/v1"
             config: std::sync::RwLock::new(config),
             config_path,
             on_config_change: None,
+            telegram_process: buddy_core::state::new_child_process_handle(),
         });
         let router = Router::new()
             .route(
@@ -5510,6 +5536,7 @@ fn health_check_app(config: buddy_core::config::Config) -> Router {
         config: std::sync::RwLock::new(config),
         config_path: std::path::PathBuf::from("/tmp/buddy-test-069.toml"),
         on_config_change: None,
+            telegram_process: buddy_core::state::new_child_process_handle(),
     });
     Router::new()
         .route(

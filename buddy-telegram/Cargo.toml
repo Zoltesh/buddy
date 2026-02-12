@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 buddy-core = { path = "../buddy-core" }
+clap = { version = "4", features = ["derive"] }
 teloxide = "0.17"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
 serde = { version = "1", features = ["derive"] }

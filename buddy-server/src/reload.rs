@@ -110,6 +110,7 @@ model = "all-MiniLM-L6-v2"
             config: std::sync::RwLock::new(config_with_external),
             config_path: tmp.join("buddy.toml"),
             on_config_change: None,
+            telegram_process: buddy_core::state::new_child_process_handle(),
         };
 
         // Config without external embedding providers (should activate local)
