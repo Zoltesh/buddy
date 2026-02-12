@@ -75,7 +75,7 @@ async fn handle_message(
     bot: Bot,
     msg: teloxide::types::Message,
     state: Arc<AppState<ProviderChain<AnyProvider>>>,
-    pending: Arc<approval::TelegramPendingApprovals>,
+    pending: approval::TelegramPendingApprovals,
 ) -> ResponseResult<()> {
     let user_text = match msg.text() {
         Some(t) => t,
@@ -143,7 +143,7 @@ async fn handle_message(
 async fn handle_callback(
     bot: Bot,
     q: CallbackQuery,
-    pending: Arc<approval::TelegramPendingApprovals>,
+    pending: approval::TelegramPendingApprovals,
 ) -> ResponseResult<()> {
     let data = match &q.data {
         Some(d) => d.as_str(),
