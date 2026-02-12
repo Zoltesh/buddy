@@ -39,23 +39,23 @@ Users can approve or deny skill execution during WhatsApp conversations using qu
 
 ## Acceptance Criteria
 
-- [ ] ReadOnly skills execute immediately without approval
-- [ ] Mutating/Network skills with appropriate policies show approval buttons
-- [ ] Interactive message with Approve/Deny buttons is sent via WhatsApp API
-- [ ] Tapping Approve executes the skill and returns the result
-- [ ] Tapping Deny sends a denial to the provider
-- [ ] Timeout (60s) defaults to deny
-- [ ] Tool call and result messages are stored in the database
-- [ ] Tool loop continues after execution (up to 10 iterations)
-- [ ] `WhatsAppClient` has a `send_interactive_message()` method
-- [ ] All existing tests pass
+- [x] ReadOnly skills execute immediately without approval
+- [x] Mutating/Network skills with appropriate policies show approval buttons
+- [x] Interactive message with Approve/Deny buttons is sent via WhatsApp API
+- [x] Tapping Approve executes the skill and returns the result
+- [x] Tapping Deny sends a denial to the provider
+- [x] Timeout (60s) defaults to deny
+- [x] Tool call and result messages are stored in the database
+- [x] Tool loop continues after execution (up to 10 iterations)
+- [x] `WhatsAppClient` has a `send_interactive_message()` method
+- [x] All existing tests pass
 
 ## Test Cases
 
-- [ ] Trigger a ReadOnly skill via WhatsApp; assert it executes without interactive buttons
-- [ ] Trigger a Mutating skill with `Always` policy; assert an interactive button message is sent
-- [ ] Send an "approve" button reply; assert the skill executes and the result is sent
-- [ ] Send a "deny" button reply; assert a denial result is sent to the provider
-- [ ] Do not respond within timeout; assert the action is denied and the user is notified
-- [ ] Trigger multiple consecutive tool calls; assert each goes through the approval flow
-- [ ] Assert ToolCall and ToolResult messages are stored in the conversation database
+- [x] Trigger a ReadOnly skill via WhatsApp; assert it executes without interactive buttons
+- [x] Trigger a Mutating skill with `Always` policy; assert an interactive button message is sent
+- [x] Send an "approve" button reply; assert the skill executes and the result is sent
+- [x] Send a "deny" button reply; assert a denial result is sent to the provider
+- [x] Do not respond within timeout; assert the action is denied and the user is notified
+- [x] Trigger multiple consecutive tool calls; assert each goes through the approval flow
+- [x] Assert ToolCall and ToolResult messages are stored in the conversation database

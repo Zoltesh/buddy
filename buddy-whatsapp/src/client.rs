@@ -60,6 +60,58 @@ impl WhatsAppClient {
 
         Ok(())
     }
+
+    /// Send an interactive button message via the WhatsApp Cloud API.
+    ///
+    /// `buttons` is a slice of `(id, title)` pairs (max 3 per WhatsApp API).
+    pub async fn send_interactive_message(
+        &self,
+        to: &str,
+        body_text: &str,
+        buttons: &[(&str, &str)],
+    ) -> Result<(), WhatsAppError> {
+        let url = format!("{}/{}/messages", GRAPH_API_BASE, self.phone_number_id);
+        let button_rows: Vec<serde_json::Value> = buttons
+            .iter()
+            .map(|(id, title)| {
+                json!({
+                    "type": "reply",
+                    "reply": { "id": id, "title": title }
+                })
+            })
+            .collect();
+
+        let body = json!({
+            "messaging_product": "whatsapp",
+            "to": to,
+            "type": "interactive",
+            "interactive": {
+                "type": "button",
+                "body": { "text": body_text },
+                "action": { "buttons": button_rows }
+            }
+        });
+
+        let response = self
+            .http
+            .post(&url)
+            .bearer_auth(&self.api_token)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| WhatsAppError(e.to_string()))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "failed to read response body".to_string());
+            return Err(WhatsAppError(format!("HTTP {status}: {body}")));
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]

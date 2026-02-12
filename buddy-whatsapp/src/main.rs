@@ -15,6 +15,7 @@ use buddy_core::provider::{AnyProvider, ProviderChain};
 use buddy_core::state::AppState as CoreState;
 
 mod adapter;
+mod approval;
 mod client;
 mod conversation;
 
@@ -60,6 +61,7 @@ struct AppState {
     client: client::WhatsAppClient,
     verify_token: String,
     dedup: MessageDedup,
+    pending_approvals: approval::WhatsAppPendingApprovals,
 }
 
 #[tokio::main]
@@ -102,6 +104,7 @@ async fn main() {
         client: wa_client,
         verify_token,
         dedup: MessageDedup::new(),
+        pending_approvals: approval::new_whatsapp_pending_approvals(),
     });
 
     let app = create_router(state);
@@ -163,6 +166,25 @@ async fn receive_webhook(
 ) -> StatusCode {
     let messages = adapter::extract_messages(&payload);
     for msg in messages {
+        // Handle button replies for skill approval.
+        if let Some((phone, button_id)) = adapter::extract_button_reply(msg) {
+            let approved = button_id == approval::BUTTON_APPROVE;
+            log::info!(
+                "[WhatsApp] button reply from {}: {} ({})",
+                phone,
+                button_id,
+                if approved { "approved" } else { "denied" }
+            );
+            let sender = {
+                let mut guard = state.pending_approvals.lock().await;
+                guard.remove(phone)
+            };
+            if let Some(tx) = sender {
+                let _ = tx.send(approved);
+            }
+            continue;
+        }
+
         if msg.message_type != "text" {
             log::info!(
                 "[WhatsApp] from {}: non-text message ({})",
@@ -199,22 +221,52 @@ async fn receive_webhook(
 async fn process_incoming_message(state: &AppState, phone: &str, text: &str) {
     let provider = state.core.provider.load();
     let registry = state.core.registry.load();
+    let approval_overrides = state.core.approval_overrides.load();
+
+    let approval_ctx = conversation::WhatsAppApprovalContext {
+        client: &state.client,
+        phone,
+        pending: &state.pending_approvals,
+        timeout: state.core.approval_timeout,
+    };
 
     let result = conversation::process_message(
         &state.core.store,
         &**provider,
-        &**registry,
+        &registry,
+        &approval_overrides,
+        &state.core.conversation_approvals,
         phone,
         text,
+        Some(approval_ctx),
     )
     .await;
 
-    let response_text = match result {
-        Ok(ref t) if t.is_empty() => return,
-        Ok(text) => adapter::markdown_to_whatsapp(&text),
-        Err(e) => e.user_message().to_string(),
+    let (final_text, tool_results) = match result {
+        Ok(conversation::ProcessResult::Response {
+            final_text,
+            tool_results,
+        }) => (final_text, tool_results),
+        Ok(conversation::ProcessResult::Empty) => return,
+        Err(e) => {
+            let _ = state
+                .client
+                .send_text_message(phone, e.user_message())
+                .await;
+            return;
+        }
     };
 
+    // Send tool results first, then the final text.
+    for part in tool_results {
+        for chunk in adapter::split_message(&part) {
+            if let Err(e) = state.client.send_text_message(phone, &chunk).await {
+                log::error!("Failed to send WhatsApp message to {phone}: {e}");
+            }
+        }
+    }
+
+    let response_text = adapter::markdown_to_whatsapp(&final_text);
     let parts = adapter::split_message(&response_text);
     for part in parts {
         if let Err(e) = state.client.send_text_message(phone, &part).await {
@@ -282,6 +334,7 @@ database = ":memory:"
             ),
             verify_token: "test-verify-token".to_string(),
             dedup: MessageDedup::new(),
+            pending_approvals: approval::new_whatsapp_pending_approvals(),
         })
     }
 

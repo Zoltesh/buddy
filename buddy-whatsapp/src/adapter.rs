@@ -36,6 +36,23 @@ pub struct WhatsAppMessage {
     #[serde(default)]
     pub timestamp: Option<String>,
     pub text: Option<TextBody>,
+    #[serde(default)]
+    pub interactive: Option<InteractiveReply>,
+}
+
+/// Interactive reply payload (button replies from quick-reply buttons).
+#[derive(Debug, Deserialize)]
+pub struct InteractiveReply {
+    #[serde(rename = "type")]
+    pub reply_type: Option<String>,
+    pub button_reply: Option<ButtonReply>,
+}
+
+/// A single button reply from an interactive message.
+#[derive(Debug, Deserialize)]
+pub struct ButtonReply {
+    pub id: String,
+    pub title: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -138,6 +155,16 @@ pub fn split_message(text: &str) -> Vec<String> {
     parts
 }
 
+/// Check if a WhatsApp message is a button reply, returning (sender, button_id).
+pub fn extract_button_reply(msg: &WhatsAppMessage) -> Option<(&str, &str)> {
+    if msg.message_type != "interactive" {
+        return None;
+    }
+    let interactive = msg.interactive.as_ref()?;
+    let button = interactive.button_reply.as_ref()?;
+    Some((&msg.from, &button.id))
+}
+
 /// Extract all messages from a webhook payload.
 pub fn extract_messages(payload: &WebhookPayload) -> Vec<&WhatsAppMessage> {
     payload
@@ -163,6 +190,7 @@ mod tests {
             text: Some(TextBody {
                 body: text.to_string(),
             }),
+            interactive: None,
         }
     }
 
@@ -173,6 +201,7 @@ mod tests {
             message_type: "image".to_string(),
             timestamp: Some("1234567890".to_string()),
             text: None,
+            interactive: None,
         }
     }
 
@@ -314,5 +343,66 @@ mod tests {
         for part in &parts {
             assert!(part.chars().count() <= WHATSAPP_MAX_LENGTH);
         }
+    }
+
+    #[test]
+    fn extract_button_reply_from_interactive_message() {
+        let msg = WhatsAppMessage {
+            id: "wamid.btn123".to_string(),
+            from: "15551234567".to_string(),
+            message_type: "interactive".to_string(),
+            timestamp: Some("1700000000".to_string()),
+            text: None,
+            interactive: Some(InteractiveReply {
+                reply_type: Some("button_reply".to_string()),
+                button_reply: Some(ButtonReply {
+                    id: "approve".to_string(),
+                    title: Some("Approve".to_string()),
+                }),
+            }),
+        };
+        let result = extract_button_reply(&msg);
+        assert!(result.is_some());
+        let (phone, id) = result.unwrap();
+        assert_eq!(phone, "15551234567");
+        assert_eq!(id, "approve");
+    }
+
+    #[test]
+    fn extract_button_reply_returns_none_for_text() {
+        let msg = make_text_message("15551234567", "hello");
+        assert!(extract_button_reply(&msg).is_none());
+    }
+
+    #[test]
+    fn deserialize_interactive_button_reply_from_json() {
+        let payload: WebhookPayload = serde_json::from_value(serde_json::json!({
+            "entry": [{
+                "changes": [{
+                    "value": {
+                        "messages": [{
+                            "id": "wamid.btn456",
+                            "from": "15559876543",
+                            "timestamp": "1700000000",
+                            "type": "interactive",
+                            "interactive": {
+                                "type": "button_reply",
+                                "button_reply": {
+                                    "id": "deny",
+                                    "title": "Deny"
+                                }
+                            }
+                        }]
+                    }
+                }]
+            }]
+        }))
+        .unwrap();
+
+        let messages = extract_messages(&payload);
+        assert_eq!(messages.len(), 1);
+        let (phone, button_id) = extract_button_reply(messages[0]).unwrap();
+        assert_eq!(phone, "15559876543");
+        assert_eq!(button_id, "deny");
     }
 }
