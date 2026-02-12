@@ -96,6 +96,25 @@
     }
   }
 
+  function startConfiguring(name) {
+    editing = name;
+    saveError = null;
+    if (name === 'telegram') {
+      editForm = {
+        bot_token_env: 'TELEGRAM_BOT_TOKEN',
+        enabled: false,
+      };
+    } else {
+      editForm = {
+        api_token_env: 'WHATSAPP_API_TOKEN',
+        phone_number_id: '',
+        verify_token: '',
+        webhook_port: 8444,
+        enabled: false,
+      };
+    }
+  }
+
   function cancelEditing() {
     editing = null;
     saveError = null;
@@ -209,9 +228,17 @@
 
           <div class="px-4 py-3">
             {#if !isConfigured('telegram') && editing !== 'telegram'}
-              <p class="text-sm text-gray-400 dark:text-gray-500">
-                Not configured. Add <code class="text-xs bg-gray-100 dark:bg-gray-700 px-1 py-0.5 rounded">[interfaces.telegram]</code> to your buddy.toml to enable.
-              </p>
+              <div class="flex items-center justify-between">
+                <p class="text-sm text-gray-500 dark:text-gray-400">
+                  Connect buddy to a Telegram bot for chat via Telegram.
+                </p>
+                <button
+                  onclick={() => startConfiguring('telegram')}
+                  class="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 cursor-pointer flex-shrink-0 ml-4"
+                >
+                  Configure
+                </button>
+              </div>
             {:else if editing === 'telegram'}
               <div class="space-y-3">
                 <div>
@@ -296,9 +323,17 @@
 
           <div class="px-4 py-3">
             {#if !isConfigured('whatsapp') && editing !== 'whatsapp'}
-              <p class="text-sm text-gray-400 dark:text-gray-500">
-                Not configured. Add <code class="text-xs bg-gray-100 dark:bg-gray-700 px-1 py-0.5 rounded">[interfaces.whatsapp]</code> to your buddy.toml to enable.
-              </p>
+              <div class="flex items-center justify-between">
+                <p class="text-sm text-gray-500 dark:text-gray-400">
+                  Connect buddy to WhatsApp Business for chat via WhatsApp.
+                </p>
+                <button
+                  onclick={() => startConfiguring('whatsapp')}
+                  class="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 cursor-pointer flex-shrink-0 ml-4"
+                >
+                  Configure
+                </button>
+              </div>
             {:else if editing === 'whatsapp'}
               <div class="space-y-3">
                 <div>

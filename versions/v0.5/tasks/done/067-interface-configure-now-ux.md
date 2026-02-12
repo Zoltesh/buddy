@@ -30,20 +30,20 @@ Users can configure any interface entirely from the Interfaces page without ever
 
 ## Acceptance Criteria
 
-- [ ] Unconfigured Telegram card shows a description and "Configure" button instead of the buddy.toml message
-- [ ] Unconfigured WhatsApp card shows a description and "Configure" button instead of the buddy.toml message
-- [ ] Clicking "Configure" opens the inline edit form pre-filled with defaults
-- [ ] Saving the form writes the config to `buddy.toml` and the card shows the configured state
-- [ ] Cancelling the form returns to the unconfigured state without changes
-- [ ] Already-configured interfaces continue to show the existing config summary, toggle, and Edit button
-- [ ] All existing functionality (edit, toggle, save) continues to work
+- [x] Unconfigured Telegram card shows a description and "Configure" button instead of the buddy.toml message
+- [x] Unconfigured WhatsApp card shows a description and "Configure" button instead of the buddy.toml message
+- [x] Clicking "Configure" opens the inline edit form pre-filled with defaults
+- [x] Saving the form writes the config to `buddy.toml` and the card shows the configured state
+- [x] Cancelling the form returns to the unconfigured state without changes
+- [x] Already-configured interfaces continue to show the existing config summary, toggle, and Edit button
+- [x] All existing functionality (edit, toggle, save) continues to work
 
 ## Test Cases
 
-- [ ] Load Interfaces page with no Telegram config; assert Telegram card shows description and "Configure" button (no buddy.toml reference)
-- [ ] Load Interfaces page with no WhatsApp config; assert WhatsApp card shows description and "Configure" button (no buddy.toml reference)
-- [ ] Click "Configure" on Telegram card; assert inline form appears with `bot_token_env` pre-filled as `TELEGRAM_BOT_TOKEN`
-- [ ] Click "Configure" on WhatsApp card; assert inline form appears with defaults (api_token_env, phone_number_id, verify_token, webhook_port)
-- [ ] Fill in Telegram form and click Save; assert `PUT /api/config/interfaces` is called and the card transitions to configured state
-- [ ] Click "Configure" then click Cancel; assert the card returns to the unconfigured state and no API call is made
-- [ ] Load page with Telegram already configured; assert the card shows config summary, toggle, and Edit button (not the Configure button)
+- [x] Load Interfaces page with no Telegram config; assert Telegram card shows description and "Configure" button (no buddy.toml reference)
+- [x] Load Interfaces page with no WhatsApp config; assert WhatsApp card shows description and "Configure" button (no buddy.toml reference)
+- [x] Click "Configure" on Telegram card; assert inline form appears with `bot_token_env` pre-filled as `TELEGRAM_BOT_TOKEN`
+- [x] Click "Configure" on WhatsApp card; assert inline form appears with defaults (api_token_env, phone_number_id, verify_token, webhook_port)
+- [x] Fill in Telegram form and click Save; assert `PUT /api/config/interfaces` is called and the card transitions to configured state
+- [x] Click "Configure" then click Cancel; assert the card returns to the unconfigured state and no API call is made
+- [x] Load page with Telegram already configured; assert the card shows config summary, toggle, and Edit button (not the Configure button)
