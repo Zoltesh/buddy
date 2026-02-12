@@ -51,33 +51,33 @@ A `buddy-whatsapp` binary starts an HTTP server that receives WhatsApp webhook e
 - Create `buddy-whatsapp/src/client.rs`:
   - `WhatsAppClient` struct for sending messages via the WhatsApp Business API
   - `async fn send_text_message(&self, to: &str, text: &str) -> Result<(), WhatsAppError>`
-  - API call: `POST https://graph.facebook.com/v21.0/{phone_number_id}/messages`
+  - API call: `POST https://graph.facebook.com/v22.0/{phone_number_id}/messages`
   - Headers: `Authorization: Bearer {token}`, `Content-Type: application/json`
   - Body: `{ "messaging_product": "whatsapp", "to": "{recipient}", "text": { "body": "{text}" } }`
 - `cargo build -p buddy-whatsapp` must succeed
 
 ## Acceptance Criteria
 
-- [ ] `buddy-whatsapp/` exists as a workspace member
-- [ ] `buddy-whatsapp/Cargo.toml` depends on `buddy-core`, `axum`, and `reqwest`
-- [ ] `[interfaces.whatsapp]` config section parses correctly with all fields
-- [ ] Config without `[interfaces.whatsapp]` parses correctly (defaults to disabled)
-- [ ] Webhook verification handshake (`GET /webhook`) returns the challenge when tokens match
-- [ ] Webhook verification rejects requests with wrong verify token (403)
-- [ ] Incoming messages (`POST /webhook`) are parsed and logged
-- [ ] `WhatsAppClient` can send text messages via the API
-- [ ] Message adapter converts between WhatsApp and buddy-core formats
-- [ ] `cargo build -p buddy-whatsapp` succeeds
-- [ ] All existing tests pass
+- [x] `buddy-whatsapp/` exists as a workspace member
+- [x] `buddy-whatsapp/Cargo.toml` depends on `buddy-core`, `axum`, and `reqwest`
+- [x] `[interfaces.whatsapp]` config section parses correctly with all fields
+- [x] Config without `[interfaces.whatsapp]` parses correctly (defaults to disabled)
+- [x] Webhook verification handshake (`GET /webhook`) returns the challenge when tokens match
+- [x] Webhook verification rejects requests with wrong verify token (403)
+- [x] Incoming messages (`POST /webhook`) are parsed and logged
+- [x] `WhatsAppClient` can send text messages via the API
+- [x] Message adapter converts between WhatsApp and buddy-core formats
+- [x] `cargo build -p buddy-whatsapp` succeeds
+- [x] All existing tests pass
 
 ## Test Cases
 
-- [ ] Parse a config with `[interfaces.whatsapp]` and all fields populated; assert `WhatsAppConfig` has correct values
-- [ ] Parse a config without `[interfaces.whatsapp]`; assert defaults to `enabled: false`
-- [ ] Send `GET /webhook?hub.mode=subscribe&hub.verify_token=correct&hub.challenge=abc123`; assert response is `abc123`
-- [ ] Send `GET /webhook?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=abc123`; assert 403
-- [ ] Send `POST /webhook` with a valid text message payload; assert 200 and the message is parsed (check logs or a test hook)
-- [ ] Call `whatsapp_to_buddy()` with a text message payload; assert it returns a buddy-core `Message` with `Role::User` and the correct text
-- [ ] Call `whatsapp_to_buddy()` with a non-text payload (e.g., image); assert it returns `None`
-- [ ] Call `buddy_to_whatsapp()` with a text `Message`; assert it returns the text string
-- [ ] Call `WhatsAppClient::send_text_message()` against a mock HTTP server; assert the request has correct URL, headers, and body format
+- [x] Parse a config with `[interfaces.whatsapp]` and all fields populated; assert `WhatsAppConfig` has correct values
+- [x] Parse a config without `[interfaces.whatsapp]`; assert defaults to `enabled: false`
+- [x] Send `GET /webhook?hub.mode=subscribe&hub.verify_token=correct&hub.challenge=abc123`; assert response is `abc123`
+- [x] Send `GET /webhook?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=abc123`; assert 403
+- [x] Send `POST /webhook` with a valid text message payload; assert 200 and the message is parsed (check logs or a test hook)
+- [x] Call `whatsapp_to_buddy()` with a text message payload; assert it returns a buddy-core `Message` with `Role::User` and the correct text
+- [x] Call `whatsapp_to_buddy()` with a non-text payload (e.g., image); assert it returns `None`
+- [x] Call `buddy_to_whatsapp()` with a text `Message`; assert it returns the text string
+- [x] Call `WhatsAppClient::send_text_message()` against a mock HTTP server; assert the request has correct URL, headers, and body format

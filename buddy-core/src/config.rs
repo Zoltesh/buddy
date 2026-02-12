@@ -202,6 +202,8 @@ pub struct AuthConfig {
 pub struct InterfacesConfig {
     #[serde(default)]
     pub telegram: TelegramConfig,
+    #[serde(default)]
+    pub whatsapp: WhatsAppConfig,
 }
 
 const DEFAULT_BOT_TOKEN_ENV: &str = "TELEGRAM_BOT_TOKEN";
@@ -225,6 +227,43 @@ impl Default for TelegramConfig {
 
 fn default_bot_token_env() -> String {
     DEFAULT_BOT_TOKEN_ENV.to_string()
+}
+
+const DEFAULT_WHATSAPP_API_TOKEN_ENV: &str = "WHATSAPP_API_TOKEN";
+const DEFAULT_WHATSAPP_WEBHOOK_PORT: u16 = 8444;
+
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
+pub struct WhatsAppConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_whatsapp_api_token_env")]
+    pub api_token_env: String,
+    #[serde(default)]
+    pub phone_number_id: String,
+    #[serde(default)]
+    pub verify_token: String,
+    #[serde(default = "default_whatsapp_webhook_port")]
+    pub webhook_port: u16,
+}
+
+impl Default for WhatsAppConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            api_token_env: default_whatsapp_api_token_env(),
+            phone_number_id: String::new(),
+            verify_token: String::new(),
+            webhook_port: DEFAULT_WHATSAPP_WEBHOOK_PORT,
+        }
+    }
+}
+
+fn default_whatsapp_api_token_env() -> String {
+    DEFAULT_WHATSAPP_API_TOKEN_ENV.to_string()
+}
+
+fn default_whatsapp_webhook_port() -> u16 {
+    DEFAULT_WHATSAPP_WEBHOOK_PORT
 }
 
 fn default_auto_retrieve() -> bool {
@@ -785,5 +824,43 @@ bot_token_env = "TELEGRAM_BOT_TOKEN"
             config.interfaces.telegram.bot_token_env,
             "TELEGRAM_BOT_TOKEN"
         );
+    }
+
+    // Test cases for task 059: WhatsApp Config
+
+    #[test]
+    fn parse_config_with_whatsapp_all_fields() {
+        let toml = r#"
+[[models.chat.providers]]
+type = "lmstudio"
+model = "deepseek-coder"
+endpoint = "http://localhost:1234/v1"
+
+[interfaces.whatsapp]
+enabled = true
+api_token_env = "MY_WHATSAPP_TOKEN"
+phone_number_id = "123456789"
+verify_token = "my-secret-verify"
+webhook_port = 9000
+"#;
+        let config = Config::parse(toml).unwrap();
+        assert!(config.interfaces.whatsapp.enabled);
+        assert_eq!(config.interfaces.whatsapp.api_token_env, "MY_WHATSAPP_TOKEN");
+        assert_eq!(config.interfaces.whatsapp.phone_number_id, "123456789");
+        assert_eq!(config.interfaces.whatsapp.verify_token, "my-secret-verify");
+        assert_eq!(config.interfaces.whatsapp.webhook_port, 9000);
+    }
+
+    #[test]
+    fn parse_config_without_whatsapp_defaults_to_disabled() {
+        let config = Config::parse(minimal_chat_toml()).unwrap();
+        assert!(!config.interfaces.whatsapp.enabled);
+        assert_eq!(
+            config.interfaces.whatsapp.api_token_env,
+            "WHATSAPP_API_TOKEN"
+        );
+        assert_eq!(config.interfaces.whatsapp.phone_number_id, "");
+        assert_eq!(config.interfaces.whatsapp.verify_token, "");
+        assert_eq!(config.interfaces.whatsapp.webhook_port, 8444);
     }
 }
