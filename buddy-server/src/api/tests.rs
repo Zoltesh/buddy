@@ -5652,75 +5652,35 @@ bot_token = "000000:INVALID_TOKEN"
     assert_eq!(json["detail"], "Invalid bot token");
 }
 
+/// Backend faithfully streams LLM content including HTML — sanitization is a
+/// frontend responsibility (DOMPurify in Chat.svelte renderMarkdown()).
 #[tokio::test]
-async fn test_xss_script_tag_sanitized() {
-    let app = test_app(vec!["<script>alert('xss')</script>".into()]);
-    let events = post_chat(app, &make_chat_body()).await;
+async fn test_backend_streams_html_content_unchanged() {
+    let payloads: Vec<&str> = vec![
+        "<script>alert('xss')</script>",
+        "<img src=x onerror=alert('xss')>",
+        "[click me](javascript:alert('xss'))",
+    ];
+    for payload in payloads {
+        let app = test_app(vec![payload.into()]);
+        let events = post_chat(app, &make_chat_body()).await;
 
-    // Find the assistant's text response
-    let assistant_text = events
-        .iter()
-        .filter_map(|e| {
-            if let ChatEvent::TokenDelta { content } = e {
-                Some(content.as_str())
-            } else {
-                None
-            }
-        })
-        .collect::<String>();
+        let assistant_text: String = events
+            .iter()
+            .filter_map(|e| {
+                if let ChatEvent::TokenDelta { content } = e {
+                    Some(content.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect();
 
-    // The response should NOT contain <script> tags (sanitized by frontend)
-    // Note: This tests the end-to-end flow - backend returns content, frontend sanitizes
-    assert!(
-        !assistant_text.contains("<script>"),
-        "Script tags should be blocked by DOMPurify sanitization"
-    );
-}
-
-#[tokio::test]
-async fn test_xss_event_handler_sanitized() {
-    let app = test_app(vec!["<img src=x onerror=alert('xss')>".into()]);
-    let events = post_chat(app, &make_chat_body()).await;
-
-    let assistant_text = events
-        .iter()
-        .filter_map(|e| {
-            if let ChatEvent::TokenDelta { content } = e {
-                Some(content.as_str())
-            } else {
-                None
-            }
-        })
-        .collect::<String>();
-
-    // Event handlers should be stripped
-    assert!(
-        !assistant_text.contains("onerror"),
-        "Event handlers should be blocked by DOMPurify sanitization"
-    );
-}
-
-#[tokio::test]
-async fn test_xss_javascript_url_sanitized() {
-    let app = test_app(vec!["[click me](javascript:alert('xss'))".into()]);
-    let events = post_chat(app, &make_chat_body()).await;
-
-    let assistant_text = events
-        .iter()
-        .filter_map(|e| {
-            if let ChatEvent::TokenDelta { content } = e {
-                Some(content.as_str())
-            } else {
-                None
-            }
-        })
-        .collect::<String>();
-
-    // javascript: URLs should be stripped
-    assert!(
-        !assistant_text.contains("javascript:"),
-        "JavaScript URLs should be blocked by DOMPurify sanitization"
-    );
+        assert_eq!(
+            assistant_text, payload,
+            "Backend must stream provider content unchanged; frontend sanitizes via DOMPurify"
+        );
+    }
 }
 
 #[tokio::test]
@@ -5728,7 +5688,7 @@ async fn test_markdown_formatting_preserved() {
     let app = test_app(vec!["**bold**".into(), " and ".into(), "_italic_".into()]);
     let events = post_chat(app, &make_chat_body()).await;
 
-    let assistant_text = events
+    let assistant_text: String = events
         .iter()
         .filter_map(|e| {
             if let ChatEvent::TokenDelta { content } = e {
@@ -5737,11 +5697,10 @@ async fn test_markdown_formatting_preserved() {
                 None
             }
         })
-        .collect::<String>();
+        .collect();
 
-    // Markdown should still be present (will be rendered client-side)
     assert!(
-        assistant_text.contains("**bold**") || assistant_text.contains("_italic_"),
-        "Markdown formatting should be preserved"
+        assistant_text.contains("**bold**") && assistant_text.contains("_italic_"),
+        "Markdown formatting should be preserved in backend response"
     );
 }

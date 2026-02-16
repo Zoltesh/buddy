@@ -227,7 +227,16 @@
   }
 
   function renderMarkdown(content) {
-    return marked.parse(content);
+    const rawHtml = marked.parse(content);
+    return DOMPurify.sanitize(rawHtml, {
+      ALLOWED_TAGS: [
+        'p', 'br', 'strong', 'em', 'code', 'pre', 'a', 'ul', 'ol', 'li',
+        'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'table',
+        'thead', 'tbody', 'tr', 'th', 'td', 'hr', 'del', 'sup', 'sub'
+      ],
+      ALLOWED_ATTR: ['href', 'class'],
+      ALLOW_DATA_ATTR: false
+    });
   }
 </script>
 
