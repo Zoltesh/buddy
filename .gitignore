@@ -24,3 +24,6 @@ buddy.toml
 *.db*
 
 .fastembed_cache/
+
+# Worktrees
+.worktrees/
