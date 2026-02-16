@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { marked } from 'marked';
+  import DOMPurify from 'dompurify';
   import {
     fetchConversation,
     fetchWarnings,
