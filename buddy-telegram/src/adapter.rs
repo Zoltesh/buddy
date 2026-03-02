@@ -1,32 +1,29 @@
-use buddy_core::types::{Message, MessageContent, Role};
+use buddy_core::types::Message;
 use chrono::Utc;
 
 /// Telegram's maximum message length (in characters after entity parsing).
 const TELEGRAM_MAX_LENGTH: usize = 4096;
 
-/// Converts a Telegram message to a buddy-core `Message`.
-///
-/// Returns `None` if the Telegram message contains no text (e.g. photos, stickers).
-pub fn telegram_to_buddy(message: &teloxide::types::Message) -> Option<Message> {
+#[allow(dead_code)]
+pub fn telegram_to_buddy(message: &teloxide::types::Message) -> Option<buddy_core::types::Message> {
     let text = message.text()?;
-    Some(Message {
-        role: Role::User,
-        content: MessageContent::Text {
+    Some(buddy_core::types::Message {
+        role: buddy_core::types::Role::User,
+        content: buddy_core::types::MessageContent::Text {
             text: text.to_string(),
         },
         timestamp: Utc::now(),
     })
 }
 
-/// Converts a buddy-core `Message` to a plain text string suitable for Telegram.
-///
-/// Tool calls are formatted as "Using tool: {name}..." and tool results
-/// pass through their content directly.
+#[allow(dead_code)]
 pub fn buddy_to_telegram(message: &Message) -> String {
     match &message.content {
-        MessageContent::Text { text } => text.clone(),
-        MessageContent::ToolCall { name, .. } => format!("Using tool: {name}..."),
-        MessageContent::ToolResult { content, .. } => content.clone(),
+        buddy_core::types::MessageContent::Text { text } => text.clone(),
+        buddy_core::types::MessageContent::ToolCall { name, .. } => {
+            format!("Using tool: {name}...")
+        }
+        buddy_core::types::MessageContent::ToolResult { content, .. } => content.clone(),
     }
 }
 
@@ -146,9 +143,7 @@ mod tests {
         let result = telegram_to_buddy(&tg_msg);
         let buddy_msg = result.expect("should produce a Message");
         assert_eq!(buddy_msg.role, Role::User);
-        assert!(
-            matches!(&buddy_msg.content, MessageContent::Text { text } if text == "Hello")
-        );
+        assert!(matches!(&buddy_msg.content, MessageContent::Text { text } if text == "Hello"));
     }
 
     #[test]

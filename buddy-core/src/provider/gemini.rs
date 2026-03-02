@@ -170,6 +170,7 @@ struct GeminiChunk {
 struct GeminiCandidate {
     content: Option<GeminiContent>,
     #[serde(rename = "finishReason")]
+    #[allow(dead_code)] // Deserialized from API response; kept for completeness
     finish_reason: Option<String>,
 }
 
@@ -199,6 +200,7 @@ struct GeminiErrorResponse {
 #[derive(Deserialize)]
 struct GeminiError {
     message: String,
+    #[allow(dead_code)] // Deserialized from API response; kept for completeness
     status: Option<String>,
 }
 

@@ -34,6 +34,7 @@ pub struct WhatsAppMessage {
     #[serde(rename = "type")]
     pub message_type: String,
     #[serde(default)]
+    #[allow(dead_code)] // Deserialized from webhook payload; may be used in future
     pub timestamp: Option<String>,
     pub text: Option<TextBody>,
     #[serde(default)]
@@ -44,6 +45,7 @@ pub struct WhatsAppMessage {
 #[derive(Debug, Deserialize)]
 pub struct InteractiveReply {
     #[serde(rename = "type")]
+    #[allow(dead_code)] // Deserialized from webhook payload; may be used in future
     pub reply_type: Option<String>,
     pub button_reply: Option<ButtonReply>,
 }
@@ -52,6 +54,7 @@ pub struct InteractiveReply {
 #[derive(Debug, Deserialize)]
 pub struct ButtonReply {
     pub id: String,
+    #[allow(dead_code)] // Deserialized from webhook payload; may be used in future
     pub title: Option<String>,
 }
 
@@ -63,6 +66,7 @@ pub struct TextBody {
 /// Converts a WhatsApp text message to a buddy-core `Message`.
 ///
 /// Returns `None` if the message is not a text message.
+#[allow(dead_code)]
 pub fn whatsapp_to_buddy(message: &WhatsAppMessage) -> Option<Message> {
     if message.message_type != "text" {
         return None;
@@ -82,6 +86,7 @@ pub fn whatsapp_to_buddy(message: &WhatsAppMessage) -> Option<Message> {
 }
 
 /// Converts a buddy-core `Message` to plain text suitable for WhatsApp.
+#[allow(dead_code)]
 pub fn buddy_to_whatsapp(message: &Message) -> String {
     match &message.content {
         MessageContent::Text { text } => text.clone(),
@@ -211,9 +216,7 @@ mod tests {
         let result = whatsapp_to_buddy(&msg);
         let buddy_msg = result.expect("should produce a Message");
         assert_eq!(buddy_msg.role, Role::User);
-        assert!(
-            matches!(&buddy_msg.content, MessageContent::Text { text } if text == "Hello")
-        );
+        assert!(matches!(&buddy_msg.content, MessageContent::Text { text } if text == "Hello"));
     }
 
     #[test]
@@ -291,7 +294,10 @@ mod tests {
         let messages = extract_messages(&payload);
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].from, "15559876543");
-        assert_eq!(messages[0].text.as_ref().unwrap().body, "Hello from WhatsApp");
+        assert_eq!(
+            messages[0].text.as_ref().unwrap().body,
+            "Hello from WhatsApp"
+        );
     }
 
     #[test]

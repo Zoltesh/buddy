@@ -73,12 +73,12 @@
 
 ## Acceptance Criteria
 
-- [ ] `cargo build --workspace` produces zero warnings
-- [ ] No functional behavior has changed
-- [ ] All existing tests pass (`cargo test`)
-- [ ] No `#[allow(dead_code)]` added without an explanatory comment
+- [x] `cargo build --workspace` produces zero warnings
+- [x] No functional behavior has changed
+- [x] All existing tests pass (`cargo test`)
+- [x] No `#[allow(dead_code)]` added without an explanatory comment
 
 ## Test Cases
 
-- [ ] Run `cargo build --workspace 2>&1`; assert no lines containing `warning[dead_code]` or `warning[unused`
-- [ ] Run `cargo test`; assert all tests pass (no regressions from removed code)
+- [x] Run `cargo build --workspace 2>&1`; assert no lines containing `warning[dead_code]` or `warning[unused`
+- [x] Run `cargo test`; assert all tests pass (no regressions from removed code)

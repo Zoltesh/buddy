@@ -30,7 +30,9 @@ use axum::Json;
 use serde::{Deserialize, Serialize};
 
 use buddy_core::provider::Provider;
-pub use buddy_core::state::{AppState, ConversationApprovals, PendingApprovals, new_pending_approvals};
+pub use buddy_core::state::AppState;
+#[allow(unused_imports)]
+pub use buddy_core::state::new_pending_approvals;
 
 // Re-export handler functions for use in main.rs router setup.
 pub use chat::{approve_handler, chat_handler};

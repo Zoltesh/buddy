@@ -4479,7 +4479,6 @@ async fn migration_required_when_model_changed_and_memories_exist() {
     }).unwrap();
 
     // Change config to model "B" (different dimensions).
-    let embedder_b: Arc<dyn buddy_core::embedding::Embedder> = Arc::new(MockEmbedder::new(5));
     let store_b = Arc::new(SqliteVectorStore::open_in_memory("model-B", 5).unwrap());
     // Copy entry with old dimensions to trigger mismatch.
     store_b.store(VectorEntry {

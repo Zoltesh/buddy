@@ -40,9 +40,9 @@ pub enum ProcessError {
     /// All configured providers are unavailable (network/rate-limit).
     AllUnavailable,
     /// A provider returned a non-transient error.
-    Provider(String),
+    Provider,
     /// A database operation failed.
-    Store(String),
+    Store,
 }
 
 impl ProcessError {
@@ -52,7 +52,7 @@ impl ProcessError {
             Self::AllUnavailable => {
                 "All models are currently unavailable. Please check your buddy configuration."
             }
-            Self::Provider(_) | Self::Store(_) => {
+            Self::Provider | Self::Store => {
                 "Sorry, I couldn't process that. Please try again."
             }
         }
@@ -94,7 +94,7 @@ pub async fn process_message<P: Provider>(
         .append_message(&conversation_id, &user_msg)
         .map_err(|e| {
             log::error!("Failed to append user message: {e}");
-            ProcessError::Store(e)
+            ProcessError::Store
         })?;
 
     let messages = match store.get_conversation(&conversation_id) {
@@ -356,13 +356,13 @@ fn resolve_conversation(
             let title: String = first_message_text.trim().chars().take(50).collect();
             let conv = store
                 .create_conversation_with_source(&title, "telegram")
-                .map_err(ProcessError::Store)?;
+                .map_err(|_| ProcessError::Store)?;
             store
                 .set_telegram_chat_mapping(chat_id, &conv.id)
-                .map_err(ProcessError::Store)?;
+                .map_err(|_| ProcessError::Store)?;
             Ok(conv.id)
         }
-        Err(e) => Err(ProcessError::Store(e)),
+        Err(_e) => Err(ProcessError::Store),
     }
 }
 
@@ -371,7 +371,7 @@ fn classify_provider_error(e: ProviderError) -> ProcessError {
         ProviderError::Network(_) | ProviderError::RateLimit(_) => {
             ProcessError::AllUnavailable
         }
-        _ => ProcessError::Provider(e.to_string()),
+        _ => ProcessError::Provider,
     }
 }
 
@@ -800,8 +800,8 @@ mod tests {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             match self {
                 Self::AllUnavailable => write!(f, "AllUnavailable"),
-                Self::Provider(msg) => write!(f, "Provider({msg:?})"),
-                Self::Store(msg) => write!(f, "Store({msg:?})"),
+                Self::Provider => write!(f, "Provider"),
+                Self::Store => write!(f, "Store"),
             }
         }
     }
