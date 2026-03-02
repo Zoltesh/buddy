@@ -96,7 +96,7 @@
       content: text,
       timestamp: new Date().toISOString(),
     };
-    displayItems.push(userItem);
+    displayItems = [...displayItems, userItem];
     inputText = '';
     isStreaming = true;
 
@@ -113,12 +113,12 @@
     };
 
     // Assistant placeholder.
-    displayItems.push({
+    displayItems = [...displayItems, {
       kind: 'text',
       role: 'assistant',
       content: '',
       timestamp: new Date().toISOString(),
-    });
+    }];
     let currentAssistantIdx = displayItems.length - 1;
 
     try {
@@ -166,15 +166,15 @@
                   displayItems[currentAssistantIdx]?.kind === 'text' &&
                   !displayItems[currentAssistantIdx]?.content
                 ) {
-                  displayItems.splice(currentAssistantIdx, 1);
+                  displayItems = displayItems.filter((_, i) => i !== currentAssistantIdx);
                 }
-                displayItems.push({
+                displayItems = [...displayItems, {
                   kind: 'tool_call',
                   id: event.id,
                   name: event.name,
                   arguments: event.arguments,
                   result: null,
-                });
+                }];
               } else if (event.type === 'tool_call_result') {
                 const toolIdx = displayItems.findIndex(
                   (item) => item.kind === 'tool_call' && item.id === event.id,
@@ -183,12 +183,12 @@
                   displayItems[toolIdx].result = event.content;
                 }
                 // New assistant placeholder for text that may follow.
-                displayItems.push({
+                displayItems = [...displayItems, {
                   kind: 'text',
                   role: 'assistant',
                   content: '',
                   timestamp: new Date().toISOString(),
-                });
+                }];
                 currentAssistantIdx = displayItems.length - 1;
               } else if (event.type === 'warnings') {
                 warnings = event.warnings;
@@ -199,7 +199,7 @@
                 // Remove trailing empty assistant placeholder.
                 const last = displayItems[displayItems.length - 1];
                 if (last && last.kind === 'text' && !last.content) {
-                  displayItems.pop();
+                  displayItems = displayItems.slice(0, -1);
                 }
                 onReloadConversations();
               }

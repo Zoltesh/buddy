@@ -311,13 +311,18 @@ impl Config {
     }
 
     pub fn parse(contents: &str) -> Result<Self, String> {
-        let config: Config = toml::from_str(contents).map_err(|e| {
-            let msg = e.to_string();
-            if msg.contains("missing field `models`") || msg.contains("missing field `chat`") {
-                return "invalid config: [models.chat] section is required".to_string();
-            }
-            format!("invalid config: {msg}")
-        })?;
+        let value: toml::Value =
+            toml::from_str(contents).map_err(|e| format!("invalid config: {e}"))?;
+
+        if !value.get("models").is_some() {
+            return Err("invalid config: [models.chat] section is required".to_string());
+        }
+        if !value["models"].get("chat").is_some() {
+            return Err("invalid config: [models.chat] section is required".to_string());
+        }
+
+        let config: Config =
+            toml::from_str(contents).map_err(|e| format!("invalid config: {e}"))?;
         if config.models.chat.providers.is_empty() {
             return Err("invalid config: models.chat.providers must not be empty".to_string());
         }
@@ -409,6 +414,67 @@ port = 8080
             err.contains("models.chat"),
             "error should mention models.chat: {err}"
         );
+    }
+
+    #[test]
+    fn missing_models_section_produces_friendly_error() {
+        let toml = r#"
+[server]
+host = "0.0.0.0"
+port = 8080
+"#;
+        let err = Config::parse(toml).unwrap_err();
+        assert!(
+            err.contains("[models.chat] section is required"),
+            "error should mention [models.chat] section is required: {err}"
+        );
+    }
+
+    #[test]
+    fn missing_chat_subsection_produces_friendly_error() {
+        let toml = r#"
+[models]
+
+[[models.embedding.providers]]
+type = "local"
+model = "all-minilm"
+"#;
+        let err = Config::parse(toml).unwrap_err();
+        assert!(
+            err.contains("[models.chat] section is required"),
+            "error should mention [models.chat] section is required: {err}"
+        );
+    }
+
+    #[test]
+    fn syntax_error_not_mistaken_for_missing_field() {
+        let toml = r#"
+[[models.chat.providers]]
+type = "openai"
+model = "gpt-4"
+endpoint = "https://api.openai.com/v1
+"#;
+        let err = Config::parse(toml).unwrap_err();
+        assert!(
+            err.contains("invalid config"),
+            "error should mention invalid config: {err}"
+        );
+        assert!(
+            !err.contains("[models.chat] section is required"),
+            "syntax error should not produce missing field message: {err}"
+        );
+    }
+
+    #[test]
+    fn valid_config_parses_successfully() {
+        let toml = r#"
+[[models.chat.providers]]
+type = "lmstudio"
+model = "deepseek-coder"
+endpoint = "http://localhost:1234/v1"
+"#;
+        let config = Config::parse(toml).unwrap();
+        assert_eq!(config.models.chat.providers[0].model, "deepseek-coder");
     }
 
     #[test]
