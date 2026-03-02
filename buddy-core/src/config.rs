@@ -84,9 +84,7 @@ impl ProviderEntry {
         }
         match &self.api_key_env {
             Some(var_name) => std::env::var(var_name).map_err(|_| {
-                format!(
-                    "environment variable '{var_name}' is not set (required by api_key_env)"
-                )
+                format!("environment variable '{var_name}' is not set (required by api_key_env)")
             }),
             None => Ok(String::new()),
         }
@@ -321,13 +319,12 @@ impl Config {
             format!("invalid config: {msg}")
         })?;
         if config.models.chat.providers.is_empty() {
-            return Err(
-                "invalid config: models.chat.providers must not be empty".to_string(),
-            );
+            return Err("invalid config: models.chat.providers must not be empty".to_string());
         }
         Ok(config)
     }
 
+    // Config round-trips through TOML; serialization failure indicates a code bug
     pub fn to_toml_string(&self) -> String {
         toml::to_string_pretty(self).expect("Config should always be serializable to TOML")
     }
@@ -501,7 +498,10 @@ allowed_domains = ["example.com", "api.github.com"]
         let config = Config::parse(toml).unwrap();
 
         let rf = config.skills.read_file.unwrap();
-        assert_eq!(rf.allowed_directories, vec!["/home/user/docs", "/tmp/shared"]);
+        assert_eq!(
+            rf.allowed_directories,
+            vec!["/home/user/docs", "/tmp/shared"]
+        );
 
         let wf = config.skills.write_file.unwrap();
         assert_eq!(wf.allowed_directories, vec!["/home/user/sandbox"]);
@@ -768,7 +768,10 @@ api_key_env = "MISTRAL_API_KEY"
 "#;
         let config = Config::parse(toml).unwrap();
         assert_eq!(config.models.chat.providers[0].provider_type, "mistral");
-        assert_eq!(config.models.chat.providers[0].model, "mistral-large-latest");
+        assert_eq!(
+            config.models.chat.providers[0].model,
+            "mistral-large-latest"
+        );
         assert_eq!(
             config.models.chat.providers[0].api_key_env.as_deref(),
             Some("MISTRAL_API_KEY")
@@ -788,7 +791,10 @@ endpoint = "https://custom.mistral.example"
 "#;
         let config = Config::parse(toml).unwrap();
         assert_eq!(config.models.chat.providers[0].provider_type, "mistral");
-        assert_eq!(config.models.chat.providers[0].model, "mistral-large-latest");
+        assert_eq!(
+            config.models.chat.providers[0].model,
+            "mistral-large-latest"
+        );
         assert_eq!(
             config.models.chat.providers[0].endpoint.as_deref(),
             Some("https://custom.mistral.example")
@@ -872,7 +878,10 @@ webhook_port = 9000
 "#;
         let config = Config::parse(toml).unwrap();
         assert!(config.interfaces.whatsapp.enabled);
-        assert_eq!(config.interfaces.whatsapp.api_token_env, "MY_WHATSAPP_TOKEN");
+        assert_eq!(
+            config.interfaces.whatsapp.api_token_env,
+            "MY_WHATSAPP_TOKEN"
+        );
         assert_eq!(config.interfaces.whatsapp.phone_number_id, "123456789");
         assert_eq!(config.interfaces.whatsapp.verify_token, "my-secret-verify");
         assert_eq!(config.interfaces.whatsapp.webhook_port, 9000);
@@ -1010,9 +1019,15 @@ endpoint = "http://localhost:1234/v1"
 bot_token = "tok123"
 "#;
         let config = Config::parse(toml).unwrap();
-        assert_eq!(config.interfaces.telegram.bot_token.as_deref(), Some("tok123"));
+        assert_eq!(
+            config.interfaces.telegram.bot_token.as_deref(),
+            Some("tok123")
+        );
         let serialized = config.to_toml_string();
         let reparsed = Config::parse(&serialized).unwrap();
-        assert_eq!(reparsed.interfaces.telegram.bot_token.as_deref(), Some("tok123"));
+        assert_eq!(
+            reparsed.interfaces.telegram.bot_token.as_deref(),
+            Some("tok123")
+        );
     }
 }

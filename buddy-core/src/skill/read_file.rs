@@ -48,7 +48,8 @@ fn validate_path(path: &str, allowed_dirs: &[PathBuf]) -> Result<PathBuf, SkillE
         .map_err(|e| SkillError::ExecutionFailed(format!("cannot resolve path '{path}': {e}")))?;
 
     for dir in allowed_dirs {
-        let canonical_dir = std::fs::canonicalize(dir).unwrap();
+        let canonical_dir = std::fs::canonicalize(dir)
+            .map_err(|e| SkillError::ExecutionFailed(format!("failed to resolve directory: {e}")))?;
         if canonical.starts_with(&canonical_dir) {
             return Ok(canonical);
         }

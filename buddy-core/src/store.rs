@@ -454,6 +454,7 @@ fn serialize_content(content: &MessageContent) -> (String, String) {
         MessageContent::ToolCall { .. } => "tool_call",
         MessageContent::ToolResult { .. } => "tool_result",
     };
+    // MessageContent is a known enum; serialization failure indicates a code bug
     let json = serde_json::to_string(content).expect("MessageContent should always serialize");
     (content_type.to_string(), json)
 }
