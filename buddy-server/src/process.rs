@@ -34,8 +34,9 @@ fn which(name: &str) -> Option<PathBuf> {
 /// Spawn `buddy-telegram` with the given config path. Returns the child
 /// process on success, or an error message.
 fn spawn_telegram(config_path: &Path) -> Result<Child, String> {
-    let binary = find_telegram_binary()
-        .ok_or_else(|| "buddy-telegram binary not found (not adjacent to server, not in PATH)".to_string())?;
+    let binary = find_telegram_binary().ok_or_else(|| {
+        "buddy-telegram binary not found (not adjacent to server, not in PATH)".to_string()
+    })?;
 
     let mut child = Command::new(&binary)
         .arg("--config")
@@ -81,24 +82,30 @@ fn stop_child(child: &mut Child) {
 }
 
 /// Stop the currently running telegram process, if any.
-pub fn stop_telegram(handle: &ChildProcessHandle) {
-    let mut guard = handle.lock().unwrap();
+pub fn stop_telegram(handle: &ChildProcessHandle) -> Result<(), String> {
+    let mut guard = handle
+        .lock()
+        .map_err(|_| "telegram process lock poisoned".to_string())?;
     if let Some(ref mut child) = *guard {
         stop_child(child);
     }
     *guard = None;
+    Ok(())
 }
 
 /// Check the current config and manage the telegram child process accordingly.
 /// Called on startup and after every config change.
-pub fn manage_telegram<P: Provider>(state: &AppState<P>) {
+pub fn manage_telegram<P: Provider>(state: &AppState<P>) -> Result<(), String> {
     let config = state.config.read().unwrap();
     let tg = &config.interfaces.telegram;
     let should_run = tg.enabled && tg.resolve_bot_token().is_ok();
     let config_path = state.config_path.clone();
     drop(config);
 
-    let mut guard = state.telegram_process.lock().unwrap();
+    let mut guard = state
+        .telegram_process
+        .lock()
+        .map_err(|_| "telegram process lock poisoned".to_string())?;
 
     let is_running = guard
         .as_mut()
@@ -130,6 +137,7 @@ pub fn manage_telegram<P: Provider>(state: &AppState<P>) {
         }
         *guard = None;
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -144,9 +152,7 @@ mod tests {
             provider: arc_swap::ArcSwap::from_pointee(buddy_core::testutil::MockProvider {
                 tokens: vec![],
             }),
-            registry: arc_swap::ArcSwap::from_pointee(
-                buddy_core::skill::SkillRegistry::new(),
-            ),
+            registry: arc_swap::ArcSwap::from_pointee(buddy_core::skill::SkillRegistry::new()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -203,10 +209,14 @@ bot_token = "fake:token"
         );
         // Ensure buddy-telegram is not findable — clear PATH to a nonexistent dir.
         let orig_path = std::env::var_os("PATH");
-        unsafe { std::env::set_var("PATH", "/nonexistent_070_test_dir"); }
+        unsafe {
+            std::env::set_var("PATH", "/nonexistent_070_test_dir");
+        }
         manage_telegram(&state);
         if let Some(p) = orig_path {
-            unsafe { std::env::set_var("PATH", p); }
+            unsafe {
+                std::env::set_var("PATH", p);
+            }
         }
         let guard = state.telegram_process.lock().unwrap();
         assert!(guard.is_none(), "should not have spawned without binary");
@@ -235,10 +245,7 @@ bot_token = "fake:token"
 
         assert!(handle.lock().unwrap().is_none());
         // Verify the process is no longer running.
-        let status = Command::new("kill")
-            .arg("-0")
-            .arg(pid.to_string())
-            .status();
+        let status = Command::new("kill").arg("-0").arg(pid.to_string()).status();
         assert!(
             status.is_err() || !status.unwrap().success(),
             "process should no longer be running"
@@ -267,7 +274,7 @@ enabled = false
 
 /// Variant of manage_telegram that always restarts a running process.
 /// Used when config changes (token or enabled state may have changed).
-pub fn manage_telegram_on_config_change<P: Provider>(state: &AppState<P>) {
+pub fn manage_telegram_on_config_change<P: Provider>(state: &AppState<P>) -> Result<(), String> {
     let config = state.config.read().unwrap();
     let tg = &config.interfaces.telegram;
     let should_run = tg.enabled && tg.resolve_bot_token().is_ok();
@@ -278,7 +285,10 @@ pub fn manage_telegram_on_config_change<P: Provider>(state: &AppState<P>) {
     }
     drop(config);
 
-    let mut guard = state.telegram_process.lock().unwrap();
+    let mut guard = state
+        .telegram_process
+        .lock()
+        .map_err(|_| "telegram process lock poisoned".to_string())?;
 
     let is_running = guard
         .as_mut()
@@ -310,4 +320,5 @@ pub fn manage_telegram_on_config_change<P: Provider>(state: &AppState<P>) {
         }
         *guard = None;
     }
+    Ok(())
 }

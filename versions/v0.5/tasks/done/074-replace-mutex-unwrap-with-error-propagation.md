@@ -54,14 +54,14 @@ All `.lock().unwrap()` calls in production code (non-test) are replaced with err
 
 ## Acceptance Criteria
 
-- [ ] Zero `.lock().unwrap()` calls remain in non-test production code across these 3 files
-- [ ] Each replaced call site propagates a descriptive error instead of panicking
-- [ ] Test code still uses `.unwrap()` (no unnecessary changes)
-- [ ] All existing tests pass (`cargo test`)
-- [ ] `cargo build --workspace` compiles without new warnings
+- [x] Zero `.lock().unwrap()` calls remain in non-test production code across these 3 files
+- [x] Each replaced call site propagates a descriptive error instead of panicking
+- [x] Test code still uses `.unwrap()` (no unnecessary changes)
+- [x] All existing tests pass (`cargo test`)
+- [x] `cargo build --workspace` compiles without new warnings
 
 ## Test Cases
 
-- [ ] Call `Store::list_conversations()` on a healthy store; assert it returns `Ok(...)` (existing behavior preserved)
-- [ ] Call `MemoryWriteSkill::execute()` normally; assert it returns success (existing behavior preserved)
-- [ ] Run `cargo test`; assert all existing tests still pass (regression check)
+- [x] Call `Store::list_conversations()` on a healthy store; assert it returns `Ok(...)` (existing behavior preserved)
+- [x] Call `MemoryWriteSkill::execute()` normally; assert it returns success (existing behavior preserved)
+- [x] Run `cargo test`; assert all existing tests still pass (regression check)

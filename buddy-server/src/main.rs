@@ -62,14 +62,16 @@ async fn main() {
         let config = state.config.read().unwrap();
         reload::reload_from_config(&config, state).map_err(|e| e.to_string())?;
         drop(config);
-        process::manage_telegram_on_config_change(state);
+        process::manage_telegram_on_config_change(state).map_err(|e| e.to_string())?;
         Ok(())
     }));
 
     let state = Arc::new(app_state);
 
     // Spawn buddy-telegram if enabled.
-    process::manage_telegram(&state);
+    if let Err(e) = process::manage_telegram(&state) {
+        eprintln!("Warning: failed to manage telegram: {e}");
+    }
 
     // Routes protected by auth middleware.
     let protected_api = Router::new()
@@ -137,7 +139,9 @@ async fn main() {
         .expect("server error");
 
     // Clean up child processes on shutdown.
-    process::stop_telegram(&state.telegram_process);
+    if let Err(e) = process::stop_telegram(&state.telegram_process) {
+        eprintln!("Warning: failed to stop telegram: {e}");
+    }
 }
 
 async fn shutdown_signal() {

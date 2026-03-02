@@ -3,7 +3,7 @@ use std::sync::Mutex;
 
 use crate::types::{Message, MessageContent, Role};
 use chrono::{DateTime, Utc};
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
 /// A conversation with all its messages.
@@ -62,7 +62,10 @@ impl Store {
 
     /// Run schema migrations idempotently.
     fn migrate(&self) -> Result<(), String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "database lock poisoned".to_string())?;
         conn.execute_batch(
             "
             PRAGMA journal_mode = WAL;
@@ -121,7 +124,10 @@ impl Store {
         let now = Utc::now();
         let now_str = now.to_rfc3339();
 
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "database lock poisoned".to_string())?;
         conn.execute(
             "INSERT INTO conversations (id, title, created_at, updated_at) VALUES (?1, ?2, ?3, ?4)",
             params![id, title, now_str, now_str],
@@ -148,7 +154,10 @@ impl Store {
         let now = Utc::now();
         let now_str = now.to_rfc3339();
 
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "database lock poisoned".to_string())?;
         conn.execute(
             "INSERT INTO conversations (id, title, source, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![id, title, source, now_str, now_str],
@@ -167,7 +176,10 @@ impl Store {
 
     /// List all conversations ordered by `updated_at` descending.
     pub fn list_conversations(&self) -> Result<Vec<ConversationSummary>, String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "database lock poisoned".to_string())?;
         let mut stmt = conn
             .prepare(
                 "SELECT c.id, c.title, c.source, c.created_at, c.updated_at,
@@ -201,11 +213,16 @@ impl Store {
 
     /// Get a conversation with all its messages, or `None` if not found.
     pub fn get_conversation(&self, id: &str) -> Result<Option<Conversation>, String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "database lock poisoned".to_string())?;
 
         // Fetch conversation metadata.
         let mut stmt = conn
-            .prepare("SELECT id, title, source, created_at, updated_at FROM conversations WHERE id = ?1")
+            .prepare(
+                "SELECT id, title, source, created_at, updated_at FROM conversations WHERE id = ?1",
+            )
             .map_err(|e| format!("failed to prepare get query: {e}"))?;
 
         let conv = stmt
@@ -268,7 +285,10 @@ impl Store {
     /// Delete a conversation and all its messages (via ON DELETE CASCADE).
     /// Returns `true` if a conversation was deleted, `false` if it didn't exist.
     pub fn delete_conversation(&self, id: &str) -> Result<bool, String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "database lock poisoned".to_string())?;
         // Ensure foreign keys are enforced for CASCADE.
         conn.execute("PRAGMA foreign_keys = ON", [])
             .map_err(|e| format!("failed to enable foreign keys: {e}"))?;
@@ -280,7 +300,10 @@ impl Store {
 
     /// Append a single message to a conversation.
     pub fn append_message(&self, conversation_id: &str, message: &Message) -> Result<(), String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "database lock poisoned".to_string())?;
 
         // Determine the next sort_order.
         let sort_order: i64 = conn
@@ -319,7 +342,10 @@ impl Store {
         &self,
         chat_id: i64,
     ) -> Result<Option<String>, String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "database lock poisoned".to_string())?;
         let result = conn
             .query_row(
                 "SELECT conversation_id FROM telegram_chats WHERE chat_id = ?1",
@@ -337,7 +363,10 @@ impl Store {
         chat_id: i64,
         conversation_id: &str,
     ) -> Result<(), String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "database lock poisoned".to_string())?;
         conn.execute(
             "INSERT OR REPLACE INTO telegram_chats (chat_id, conversation_id) VALUES (?1, ?2)",
             params![chat_id, conversation_id],
@@ -351,7 +380,10 @@ impl Store {
         &self,
         phone: &str,
     ) -> Result<Option<String>, String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "database lock poisoned".to_string())?;
         let result = conn
             .query_row(
                 "SELECT conversation_id FROM whatsapp_chats WHERE phone = ?1",
@@ -369,7 +401,10 @@ impl Store {
         phone: &str,
         conversation_id: &str,
     ) -> Result<(), String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "database lock poisoned".to_string())?;
         conn.execute(
             "INSERT OR REPLACE INTO whatsapp_chats (phone, conversation_id) VALUES (?1, ?2)",
             params![phone, conversation_id],
@@ -380,7 +415,10 @@ impl Store {
 
     /// Update a conversation's title.
     pub fn update_conversation_title(&self, id: &str, title: &str) -> Result<(), String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "database lock poisoned".to_string())?;
         let now_str = Utc::now().to_rfc3339();
         conn.execute(
             "UPDATE conversations SET title = ?1, updated_at = ?2 WHERE id = ?3",
@@ -483,17 +521,23 @@ mod tests {
             let messages = vec![
                 Message {
                     role: Role::User,
-                    content: MessageContent::Text { text: "Hello".into() },
+                    content: MessageContent::Text {
+                        text: "Hello".into(),
+                    },
                     timestamp: Utc::now(),
                 },
                 Message {
                     role: Role::Assistant,
-                    content: MessageContent::Text { text: "Hi there!".into() },
+                    content: MessageContent::Text {
+                        text: "Hi there!".into(),
+                    },
                     timestamp: Utc::now(),
                 },
                 Message {
                     role: Role::User,
-                    content: MessageContent::Text { text: "How are you?".into() },
+                    content: MessageContent::Text {
+                        text: "How are you?".into(),
+                    },
                     timestamp: Utc::now(),
                 },
             ];
@@ -513,15 +557,21 @@ mod tests {
             assert_eq!(conv.messages.len(), 3);
             assert_eq!(
                 conv.messages[0].content,
-                MessageContent::Text { text: "Hello".into() }
+                MessageContent::Text {
+                    text: "Hello".into()
+                }
             );
             assert_eq!(
                 conv.messages[1].content,
-                MessageContent::Text { text: "Hi there!".into() }
+                MessageContent::Text {
+                    text: "Hi there!".into()
+                }
             );
             assert_eq!(
                 conv.messages[2].content,
-                MessageContent::Text { text: "How are you?".into() }
+                MessageContent::Text {
+                    text: "How are you?".into()
+                }
             );
         }
 
@@ -554,7 +604,9 @@ mod tests {
                 &c1.id,
                 &Message {
                     role: Role::User,
-                    content: MessageContent::Text { text: "bump".into() },
+                    content: MessageContent::Text {
+                        text: "bump".into(),
+                    },
                     timestamp: Utc::now(),
                 },
             )
@@ -630,7 +682,11 @@ mod tests {
     fn title_truncation_at_word_boundary() {
         let long_msg = "Tell me about the history of computing in the modern era and how it has shaped our daily lives forever";
         let title = title_from_message(long_msg);
-        assert!(title.len() <= 80, "title should be <= 80 chars, got {}", title.len());
+        assert!(
+            title.len() <= 80,
+            "title should be <= 80 chars, got {}",
+            title.len()
+        );
         assert!(!title.ends_with(' '), "title should not end with a space");
         // Should truncate at a word boundary.
         assert!(
@@ -649,13 +705,21 @@ mod tests {
         let cjk = "日本語のテキストを使って長い文章を作成してテストを行います";
         // Should not panic, and result should be valid UTF-8.
         let title = title_from_message(cjk);
-        assert!(title.len() <= 83, "title bytes should be near 80, got {}", title.len());
+        assert!(
+            title.len() <= 83,
+            "title bytes should be near 80, got {}",
+            title.len()
+        );
         assert!(cjk.starts_with(&title));
 
         // Mixed ASCII + emoji.
         let mixed = "Hello 🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍";
         let title = title_from_message(mixed);
-        assert!(title.len() <= 84, "title bytes should be near 80, got {}", title.len());
+        assert!(
+            title.len() <= 84,
+            "title bytes should be near 80, got {}",
+            title.len()
+        );
     }
 
     // ── Test: Idempotent migrations (open DB twice) ─────────────────────
@@ -722,7 +786,9 @@ mod tests {
         let store = Store::open_in_memory().unwrap();
         let conv = store.create_conversation("Original").unwrap();
 
-        store.update_conversation_title(&conv.id, "Updated").unwrap();
+        store
+            .update_conversation_title(&conv.id, "Updated")
+            .unwrap();
 
         let loaded = store.get_conversation(&conv.id).unwrap().unwrap();
         assert_eq!(loaded.title, "Updated");
@@ -808,9 +874,7 @@ mod tests {
 
         // Set mapping.
         store.set_telegram_chat_mapping(12345, &conv.id).unwrap();
-        let found = store
-            .get_conversation_id_for_telegram_chat(12345)
-            .unwrap();
+        let found = store.get_conversation_id_for_telegram_chat(12345).unwrap();
         assert_eq!(found, Some(conv.id));
     }
 }

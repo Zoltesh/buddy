@@ -140,7 +140,7 @@ impl Skill for MemoryWriteSkill {
                     SkillError::ExecutionFailed("missing conversation context".into())
                 })?;
 
-            let mut map = self.map.lock().unwrap();
+            let mut map = self.map.lock().map_err(|_| SkillError::ExecutionFailed("memory lock poisoned".into()))?;
             let wm = map.entry(conversation_id.to_string()).or_default();
 
             match action {
@@ -237,7 +237,7 @@ impl Skill for MemoryReadSkill {
                     SkillError::ExecutionFailed("missing conversation context".into())
                 })?;
 
-            let map = self.map.lock().unwrap();
+            let map = self.map.lock().map_err(|_| SkillError::ExecutionFailed("memory lock poisoned".into()))?;
             let wm = map.get(conversation_id);
 
             if let Some(key) = input.get("key").and_then(|v| v.as_str()) {
