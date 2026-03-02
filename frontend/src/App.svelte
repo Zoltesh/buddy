@@ -17,6 +17,7 @@
   let authChecking = $state(true);
   let authRequired = $state(false);
   let authenticated = $state(false);
+  let authError = $state('');
 
   let conversations = $state([]);
   let activeConversationId = $state(null);
@@ -84,11 +85,10 @@
       authenticated = false;
       authChecking = false;
     } catch {
-      // If auth status check fails, assume no auth required
-      authRequired = false;
-      authenticated = true;
+      authRequired = true;
+      authenticated = false;
       authChecking = false;
-      loadConversations();
+      authError = 'Unable to connect to server. Please check your connection and reload.';
     }
   }
 
@@ -159,6 +159,19 @@
   <!-- Loading state while checking auth -->
   <div class="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-950">
     <p class="text-gray-400 dark:text-gray-500">Loading...</p>
+  </div>
+{:else if authError}
+  <!-- Error state when auth check fails -->
+  <div class="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-950">
+    <div class="text-center">
+      <p class="text-red-500 dark:text-red-400 mb-4">{authError}</p>
+      <button
+        class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors cursor-pointer"
+        onclick={() => { authError = ''; authChecking = true; initAuth(); }}
+      >
+        Retry
+      </button>
+    </div>
   </div>
 {:else if authRequired && !authenticated}
   <Login onAuthenticated={handleAuthenticated} />
