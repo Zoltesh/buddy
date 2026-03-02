@@ -257,6 +257,7 @@ mod tests {
             role: Role::Assistant,
             content: MessageContent::ToolResult {
                 id: "call_1".into(),
+                name: "get_weather".into(),
                 content: "72°F and sunny".into(),
             },
             timestamp: Utc::now(),

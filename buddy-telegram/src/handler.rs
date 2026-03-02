@@ -239,6 +239,7 @@ pub async fn process_message<P: Provider>(
                 role: Role::User,
                 content: MessageContent::ToolResult {
                     id: id.clone(),
+                    name: name.clone(),
                     content: result_content.clone(),
                 },
                 timestamp: Utc::now(),

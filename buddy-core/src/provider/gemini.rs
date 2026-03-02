@@ -76,13 +76,10 @@ fn to_gemini_contents(messages: &[Message]) -> Vec<serde_json::Value> {
                         }
                     })
                 }
-                MessageContent::ToolResult { content, .. } => {
-                    // Gemini expects tool results to have a matching function name.
-                    // We don't have the name stored in ToolResult, so we use a
-                    // placeholder. This may need adjustment based on actual usage.
+                MessageContent::ToolResult { name, content, .. } => {
                     serde_json::json!({
                         "functionResponse": {
-                            "name": "tool_result",
+                            "name": name,
                             "response": {
                                 "content": content,
                             }
@@ -384,6 +381,25 @@ mod tests {
         assert_eq!(contents[0]["parts"][0]["text"], "Hello");
         assert_eq!(contents[1]["role"], "model");
         assert_eq!(contents[1]["parts"][0]["text"], "Hi there");
+    }
+
+    #[test]
+    fn to_gemini_contents_tool_result_uses_function_name() {
+        let msg = Message {
+            role: Role::User,
+            content: MessageContent::ToolResult {
+                id: "call_123".into(),
+                name: "get_weather".into(),
+                content: r#"{"temp":72,"condition":"sunny"}"#.into(),
+            },
+            timestamp: Utc::now(),
+        };
+        let contents = to_gemini_contents(&[msg]);
+
+        assert_eq!(contents.len(), 1);
+        let function_response = &contents[0]["parts"][0]["functionResponse"];
+        assert_eq!(function_response["name"], "get_weather");
+        assert_eq!(function_response["response"]["content"], r#"{"temp":72,"condition":"sunny"}"#);
     }
 
     #[test]

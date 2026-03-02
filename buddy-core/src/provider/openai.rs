@@ -97,7 +97,7 @@ fn to_chat_messages(messages: &[Message]) -> Vec<serde_json::Value> {
                     "tool_calls": tool_calls,
                 }));
             }
-            MessageContent::ToolResult { id, content } => {
+            MessageContent::ToolResult { id, content, name: _ } => {
                 result.push(serde_json::json!({
                     "role": "tool",
                     "tool_call_id": id,
@@ -529,6 +529,7 @@ mod tests {
                 role: Role::User,
                 content: MessageContent::ToolResult {
                     id: "call_1".into(),
+                    name: "read_file".into(),
                     content: "contents of a".into(),
                 },
                 timestamp: now,
@@ -537,6 +538,7 @@ mod tests {
                 role: Role::User,
                 content: MessageContent::ToolResult {
                     id: "call_2".into(),
+                    name: "list_files".into(),
                     content: "contents of b".into(),
                 },
                 timestamp: now,

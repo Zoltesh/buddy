@@ -22,6 +22,8 @@ pub enum MessageContent {
     },
     ToolResult {
         id: String,
+        #[serde(default)]
+        name: String,
         content: String,
     },
 }
@@ -93,6 +95,7 @@ mod tests {
             role: Role::User,
             content: MessageContent::ToolResult {
                 id: "call_123".into(),
+                name: "get_weather".into(),
                 content: "72°F and sunny".into(),
             },
             timestamp: Utc::now(),
@@ -101,5 +104,19 @@ mod tests {
         let json = serde_json::to_string(&msg).expect("serialize");
         let deserialized: Message = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(msg, deserialized);
+    }
+
+    #[test]
+    fn backward_compat_tool_result_without_name() {
+        let json = r#"{"type":"tool_result","id":"call_123","content":"72°F and sunny"}"#;
+        let deserialized: MessageContent = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(
+            deserialized,
+            MessageContent::ToolResult {
+                id: "call_123".into(),
+                name: "".into(),
+                content: "72°F and sunny".into(),
+            }
+        );
     }
 }

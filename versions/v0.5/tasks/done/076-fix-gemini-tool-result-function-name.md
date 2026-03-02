@@ -51,16 +51,16 @@ Tool results sent to the Gemini API include the correct function name that match
 
 ## Acceptance Criteria
 
-- [ ] `MessageContent::ToolResult` includes a `name: String` field
-- [ ] Gemini provider sends the actual function name in `functionResponse.name`
-- [ ] All places constructing `ToolResult` provide the tool name
-- [ ] Existing stored conversations still deserialize correctly (backward compat)
-- [ ] All existing tests pass (`cargo test`)
-- [ ] `cargo build --workspace` compiles without new warnings
+- [x] `MessageContent::ToolResult` includes a `name: String` field
+- [x] Gemini provider sends the actual function name in `functionResponse.name`
+- [x] All places constructing `ToolResult` provide the tool name
+- [x] Existing stored conversations still deserialize correctly (backward compat)
+- [x] All existing tests pass (`cargo test`)
+- [x] `cargo build --workspace` compiles without new warnings
 
 ## Test Cases
 
-- [ ] Construct a `ToolResult` with `name: "get_weather"` and `content: "{...}"`; serialize to Gemini format; assert JSON contains `"name": "get_weather"` (not `"tool_result"`)
-- [ ] Deserialize a `ToolResult` JSON blob that lacks the `name` field (old format); assert it deserializes successfully with a default name
+- [x] Construct a `ToolResult` with `name: "get_weather"` and `content: "{...}"`; serialize to Gemini format; assert JSON contains `"name": "get_weather"` (not `"tool_result"`)
+- [x] Deserialize a `ToolResult` JSON blob that lacks the `name` field (old format); assert it deserializes successfully with a default name
 - [ ] Run the full tool-loop test with a `SequencedProvider`; assert `ToolResult` messages include the correct tool name
-- [ ] Run `cargo test`; assert all existing tests still pass
+- [x] Run `cargo test`; assert all existing tests still pass

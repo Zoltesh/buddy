@@ -661,6 +661,7 @@ mod tests {
             role: Role::User,
             content: MessageContent::ToolResult {
                 id: "call_abc".into(),
+                name: "read_file".into(),
                 content: "file contents here".into(),
             },
             timestamp: Utc::now(),

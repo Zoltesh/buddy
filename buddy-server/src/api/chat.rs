@@ -527,6 +527,7 @@ async fn run_tool_loop<P: Provider>(
                 role: Role::User,
                 content: MessageContent::ToolResult {
                     id: id.clone(),
+                    name: name.clone(),
                     content: result_content,
                 },
                 timestamp: Utc::now(),
