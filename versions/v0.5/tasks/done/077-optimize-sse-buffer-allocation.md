@@ -37,12 +37,12 @@ Replace per-line `String` allocation with an in-place drain approach in all SSE 
 
 ## Acceptance Criteria
 
-- [ ] No provider file contains `buffer[pos + 1..].to_string()` or similar slicing pattern
-- [ ] All providers use `buffer.drain(..pos + 1)` (or equivalent zero-alloc approach)
-- [ ] Streaming behavior is unchanged — same SSE events, same order, same content
-- [ ] All existing tests pass (`cargo test`)
+- [x] No provider file contains `buffer[pos + 1..].to_string()` or similar slicing pattern
+- [x] All providers use `buffer.drain(..pos + 1)` (or equivalent zero-alloc approach)
+- [x] Streaming behavior is unchanged — same SSE events, same order, same content
+- [x] All existing tests pass (`cargo test`)
 
 ## Test Cases
 
-- [ ] Run existing SSE parsing tests for each provider; assert they produce identical output (regression check)
-- [ ] Run `cargo test`; assert all tests pass
+- [x] Run existing SSE parsing tests for each provider; assert they produce identical output (regression check)
+- [x] Run `cargo test`; assert all tests pass

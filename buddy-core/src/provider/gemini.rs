@@ -257,7 +257,7 @@ fn parse_gemini_stream(response: reqwest::Response) -> TokenStream {
 
             while let Some(pos) = buffer.find('\n') {
                 let line = buffer[..pos].trim_end_matches('\r').to_string();
-                buffer = buffer[pos + 1..].to_string();
+                buffer.drain(..pos + 1);
 
                 for token in parse_gemini_sse_line(&line)? {
                     yield token;

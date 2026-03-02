@@ -330,7 +330,7 @@ pub(crate) fn parse_sse_stream(response: reqwest::Response) -> TokenStream {
 
             while let Some(pos) = buffer.find('\n') {
                 let line = buffer[..pos].trim_end_matches('\r').to_string();
-                buffer = buffer[pos + 1..].to_string();
+                buffer.drain(..pos + 1);
 
                 match parse_sse_line(&line)? {
                     SseChunk::TextDelta(text) => yield Token::Text { text },
