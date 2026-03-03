@@ -2987,6 +2987,179 @@ approval = "once"
                 .contains("BUDDY_TEST_MISTRAL_NOTSET_048")
         );
     }
+
+    #[tokio::test]
+    async fn test_provider_lmstudio_model_loaded_succeeds() {
+        let mock_app = Router::new()
+            .route(
+                "/api/v0/models",
+                get(|| async {
+                    axum::Json(serde_json::json!({
+                        "data": [
+                            {
+                                "id": "qwen/qwen3-8b",
+                                "state": "loaded",
+                            },
+                            {
+                                "id": "nvidia/nemotron-3-nano",
+                                "state": "not-loaded",
+                            }
+                        ]
+                    }))
+                }),
+            )
+            .route(
+                "/v1/chat/completions",
+                post(|| async {
+                    axum::Json(serde_json::json!({
+                        "id": "test",
+                        "object": "chat.completion",
+                        "created": 0,
+                        "model": "qwen/qwen3-8b",
+                        "choices": [{
+                            "index": 0,
+                            "message": { "role": "assistant", "content": "hi" },
+                            "finish_reason": "stop"
+                        }]
+                    }))
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, mock_app).await.unwrap();
+        });
+
+        let app = test_provider_app();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/config/test-provider")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "type": "lmstudio",
+                            "model": "qwen/qwen3-8b",
+                            "endpoint": format!("http://{addr}/v1")
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["message"], "Connected successfully");
+
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn test_provider_lmstudio_model_not_loaded_returns_error() {
+        let mock_app = Router::new().route(
+            "/api/v0/models",
+            get(|| async {
+                axum::Json(serde_json::json!({
+                    "data": [
+                        {
+                            "id": "qwen/qwen3-8b",
+                            "state": "loaded",
+                        },
+                        {
+                            "id": "nvidia/nemotron-3-nano",
+                            "state": "not-loaded",
+                        }
+                    ]
+                }))
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, mock_app).await.unwrap();
+        });
+
+        let app = test_provider_app();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/config/test-provider")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "type": "lmstudio",
+                            "model": "nvidia/nemotron-3-nano",
+                            "endpoint": format!("http://{addr}/v1")
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+
+        assert_eq!(json["status"], "error");
+        assert!(
+            json["message"]
+                .as_str()
+                .unwrap()
+                .contains("not loaded in LM Studio")
+        );
+
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn test_provider_lmstudio_api_unreachable_returns_error() {
+        let app = test_provider_app();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/config/test-provider")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "type": "lmstudio",
+                            "model": "qwen/qwen3-8b",
+                            "endpoint": "http://127.0.0.1:1/v1"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+
+        assert_eq!(json["status"], "error");
+        assert!(
+            json["message"]
+                .as_str()
+                .unwrap()
+                .contains("Connection failed")
+        );
+    }
 }
 
 /// Tests for task 041 — LM Studio model discovery.

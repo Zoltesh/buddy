@@ -392,6 +392,82 @@ pub async fn test_provider<P: Provider + 'static>(
         }
     };
 
+    // For LM Studio, verify the configured model is actually loaded before testing.
+    if entry.provider_type == "lmstudio" {
+        let base = match base_url(&endpoint) {
+            Ok(b) => b,
+            Err(e) => {
+                return Json(TestProviderResponse {
+                    status: "error".into(),
+                    message: format!("failed to parse endpoint URL: {e}"),
+                })
+                .into_response();
+            }
+        };
+
+        // Query LM Studio's native API to get loaded models.
+        let url = format!("{}api/v0/models", base.as_str());
+        let models_result = client.get(&url).send().await;
+
+        match models_result {
+            Ok(resp) => {
+                if !resp.status().is_success() {
+                    return Json(TestProviderResponse {
+                        status: "error".into(),
+                        message: format!("failed to query LM Studio models: HTTP {}", resp.status()),
+                    })
+                    .into_response();
+                }
+
+                let json: serde_json::Value = match resp.json().await {
+                    Ok(j) => j,
+                    Err(e) => {
+                        return Json(TestProviderResponse {
+                            status: "error".into(),
+                            message: format!("failed to parse LM Studio response: {e}"),
+                        })
+                        .into_response();
+                    }
+                };
+
+                let data = match json.get("data").and_then(|d| d.as_array()) {
+                    Some(arr) => arr,
+                    None => {
+                        return Json(TestProviderResponse {
+                            status: "error".into(),
+                            message: "invalid LM Studio response: missing 'data' array".into(),
+                        })
+                        .into_response();
+                    }
+                };
+
+                // Check if the configured model is loaded.
+                let is_loaded = data.iter().any(|m| {
+                    m.get("id").and_then(|id| id.as_str()) == Some(&entry.model)
+                        && m.get("state").and_then(|s| s.as_str()) == Some("loaded")
+                });
+
+                if !is_loaded {
+                    return Json(TestProviderResponse {
+                        status: "error".into(),
+                        message: format!(
+                            "Model '{}' is not loaded in LM Studio. Please load it first.",
+                            entry.model
+                        ),
+                    })
+                    .into_response();
+                }
+            }
+            Err(e) => {
+                return Json(TestProviderResponse {
+                    status: "error".into(),
+                    message: format!("Connection failed: {e}"),
+                })
+                .into_response();
+            }
+        }
+    }
+
     // Send a minimal non-streaming chat completion request.
     // Gemini uses a different API format.
     let request = if entry.provider_type == "gemini" {
