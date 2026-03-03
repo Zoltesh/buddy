@@ -66,40 +66,20 @@
     return status?.[name]?.enabled ?? false;
   }
 
-  function statusLabel(name) {
-    if (!isConfigured(name)) return 'Not configured';
-    if (!isEnabled(name)) return 'Disabled';
-    if (healthChecking[name]) return 'Checking...';
+  function getStatus(name) {
+    if (!isConfigured(name)) return { label: 'Not configured', color: 'bg-gray-400', textColor: 'text-gray-500 dark:text-gray-400' };
+    if (!isEnabled(name))   return { label: 'Disabled',       color: 'bg-gray-400', textColor: 'text-gray-500 dark:text-gray-400' };
+    if (healthChecking[name]) return { label: 'Checking...',   color: 'bg-yellow-400 animate-pulse', textColor: 'text-yellow-600 dark:text-yellow-400' };
     const hr = healthResult[name];
     if (hr) {
-      if (hr.status === 'connected') return `Connected — ${hr.detail}`;
-      return hr.detail;
+      const connected = hr.status === 'connected';
+      return {
+        label: connected ? `Connected — ${hr.detail}` : hr.detail,
+        color: connected ? 'bg-green-500' : 'bg-red-500',
+        textColor: connected ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400',
+      };
     }
-    return 'Enabled';
-  }
-
-  function statusColor(name) {
-    if (!isConfigured(name)) return 'bg-gray-400';
-    if (!isEnabled(name)) return 'bg-gray-400';
-    if (healthChecking[name]) return 'bg-yellow-400 animate-pulse';
-    const hr = healthResult[name];
-    if (hr) {
-      return hr.status === 'connected' ? 'bg-green-500' : 'bg-red-500';
-    }
-    return 'bg-gray-400';
-  }
-
-  function statusTextColor(name) {
-    if (!isConfigured(name)) return 'text-gray-500 dark:text-gray-400';
-    if (!isEnabled(name)) return 'text-gray-500 dark:text-gray-400';
-    if (healthChecking[name]) return 'text-yellow-600 dark:text-yellow-400';
-    const hr = healthResult[name];
-    if (hr) {
-      return hr.status === 'connected'
-        ? 'text-green-600 dark:text-green-400'
-        : 'text-red-600 dark:text-red-400';
-    }
-    return 'text-gray-500 dark:text-gray-400';
+    return { label: 'Enabled', color: 'bg-gray-400', textColor: 'text-gray-500 dark:text-gray-400' };
   }
 
   async function toggleEnabled(name) {
@@ -267,8 +247,8 @@
               <span class="font-medium text-gray-900 dark:text-gray-100">Telegram</span>
             </div>
             <div class="flex items-center gap-2">
-              <span class="w-2 h-2 rounded-full {statusColor('telegram')}"></span>
-              <span class="text-xs {statusTextColor('telegram')}">{statusLabel('telegram')}</span>
+              <span class="w-2 h-2 rounded-full {getStatus('telegram').color}"></span>
+              <span class="text-xs {getStatus('telegram').textColor}">{getStatus('telegram').label}</span>
             </div>
           </div>
 
@@ -374,8 +354,8 @@
               <span class="font-medium text-gray-900 dark:text-gray-100">WhatsApp</span>
             </div>
             <div class="flex items-center gap-2">
-              <span class="w-2 h-2 rounded-full {statusColor('whatsapp')}"></span>
-              <span class="text-xs {statusTextColor('whatsapp')}">{statusLabel('whatsapp')}</span>
+              <span class="w-2 h-2 rounded-full {getStatus('whatsapp').color}"></span>
+              <span class="text-xs {getStatus('whatsapp').textColor}">{getStatus('whatsapp').label}</span>
             </div>
           </div>
 

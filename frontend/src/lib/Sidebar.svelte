@@ -133,12 +133,13 @@
             <div
               class="group flex items-center gap-2 px-3 py-3 cursor-pointer border-l-2 transition-colors
                      {conv.id === activeId
-                ? 'bg-blue-50 dark:bg-blue-900/20 border-l-blue-500'
-                : 'hover:bg-gray-100 dark:hover:bg-gray-900 border-l-transparent'}"
+                       ? 'bg-blue-50 dark:bg-blue-900/20 border-l-blue-500'
+                       : 'hover:bg-gray-100 dark:hover:bg-gray-900 border-l-transparent'}"
               onclick={() => onSelect(conv.id)}
               role="button"
               tabindex="0"
               onkeydown={(e) => e.key === 'Enter' && onSelect(conv.id)}
+              aria-label="Open conversation: {conv.title || 'Untitled conversation'}"
             >
               <div class="flex-1 min-w-0">
                 <p class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate flex items-center gap-1.5">
@@ -161,7 +162,7 @@
                   e.stopPropagation();
                   onDelete(conv.id);
                 }}
-                title="Delete conversation"
+                aria-label="Delete conversation"
               >
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path

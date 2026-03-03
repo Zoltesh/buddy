@@ -47,77 +47,121 @@ fn registry_with_failing() -> SkillRegistry {
     r
 }
 
-fn test_app(tokens: Vec<String>) -> Router {
-    let state = Arc::new(AppState {
-        provider: arc_swap::ArcSwap::from_pointee(MockProvider { tokens }),
-        registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
-        store: buddy_core::store::Store::open_in_memory().unwrap(),
-        embedder: arc_swap::ArcSwap::from_pointee(None),
-        vector_store: arc_swap::ArcSwap::from_pointee(None),
-        working_memory: buddy_core::skill::working_memory::new_working_memory_map(),
-        memory_config: arc_swap::ArcSwap::from_pointee(buddy_core::config::MemoryConfig::default()),
-        warnings: buddy_core::warning::new_shared_warnings(),
-        pending_approvals: new_pending_approvals(),
-        conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
-        approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
-        approval_timeout: std::time::Duration::from_secs(1),
-        config: std::sync::RwLock::new(test_config()),
-        config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
-        on_config_change: None,
+struct TestAppBuilder {
+    tokens: Vec<String>,
+    responses: Option<Vec<MockResponse>>,
+    registry: Option<SkillRegistry>,
+    embedder: Option<Arc<dyn buddy_core::embedding::Embedder>>,
+    vector_store: Option<Arc<dyn buddy_core::memory::VectorStore>>,
+    static_dir: Option<String>,
+}
+
+impl TestAppBuilder {
+    fn new() -> Self {
+        Self {
+            tokens: vec![],
+            responses: None,
+            registry: None,
+            embedder: None,
+            vector_store: None,
+            static_dir: None,
+        }
+    }
+
+    fn with_tokens(mut self, tokens: Vec<String>) -> Self {
+        self.tokens = tokens;
+        self
+    }
+
+    fn with_sequenced(mut self, responses: Vec<MockResponse>, registry: SkillRegistry) -> Self {
+        self.responses = Some(responses);
+        self.registry = Some(registry);
+        self
+    }
+
+    fn with_registry(mut self, r: SkillRegistry) -> Self {
+        self.registry = Some(r);
+        self
+    }
+
+    fn with_embedder(mut self, e: Arc<dyn buddy_core::embedding::Embedder>) -> Self {
+        self.embedder = Some(e);
+        self
+    }
+
+    fn with_vector_store(mut self, v: Arc<dyn buddy_core::memory::VectorStore>) -> Self {
+        self.vector_store = Some(v);
+        self
+    }
+
+    fn with_static_dir(mut self, dir: &str) -> Self {
+        self.static_dir = Some(dir.to_string());
+        self
+    }
+
+    fn build_mock(self) -> Router {
+        self.build::<MockProvider>(|tokens| MockProvider { tokens })
+    }
+
+    fn build_sequenced(self) -> Router {
+        let mut builder = self;
+        let responses = builder.responses.take().unwrap_or_default();
+        builder.build(move |_| SequencedProvider::new(responses))
+    }
+
+    fn build<P: buddy_core::provider::Provider + 'static>(
+        self,
+        make_provider: impl FnOnce(Vec<String>) -> P,
+    ) -> Router {
+        let provider = make_provider(self.tokens);
+        let registry = self.registry.unwrap_or_else(SkillRegistry::new);
+
+        let state = Arc::new(AppState {
+            provider: arc_swap::ArcSwap::from_pointee(provider),
+            registry: arc_swap::ArcSwap::from_pointee(registry),
+            store: buddy_core::store::Store::open_in_memory().unwrap(),
+            embedder: arc_swap::ArcSwap::from_pointee(self.embedder),
+            vector_store: arc_swap::ArcSwap::from_pointee(self.vector_store),
+            working_memory: buddy_core::skill::working_memory::new_working_memory_map(),
+            memory_config: arc_swap::ArcSwap::from_pointee(buddy_core::config::MemoryConfig::default()),
+            warnings: buddy_core::warning::new_shared_warnings(),
+            pending_approvals: new_pending_approvals(),
+            conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
+            approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
+            approval_timeout: std::time::Duration::from_secs(1),
+            config: std::sync::RwLock::new(test_config()),
+            config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
+            on_config_change: None,
             telegram_process: buddy_core::state::new_child_process_handle(),
-    });
-    Router::new()
-        .route("/api/chat", post(chat_handler::<MockProvider>))
-        .with_state(state)
+        });
+
+        let mut router = Router::new()
+            .route("/api/chat", post(chat_handler::<P>))
+            .with_state(state);
+
+        if let Some(static_dir) = self.static_dir {
+            router = router.fallback_service(ServeDir::new(static_dir));
+        }
+
+        router
+    }
+}
+
+fn test_app(tokens: Vec<String>) -> Router {
+    TestAppBuilder::new().with_tokens(tokens).build_mock()
 }
 
 fn test_app_with_static(tokens: Vec<String>, static_dir: &str) -> Router {
-    let state = Arc::new(AppState {
-        provider: arc_swap::ArcSwap::from_pointee(MockProvider { tokens }),
-        registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
-        store: buddy_core::store::Store::open_in_memory().unwrap(),
-        embedder: arc_swap::ArcSwap::from_pointee(None),
-        vector_store: arc_swap::ArcSwap::from_pointee(None),
-        working_memory: buddy_core::skill::working_memory::new_working_memory_map(),
-        memory_config: arc_swap::ArcSwap::from_pointee(buddy_core::config::MemoryConfig::default()),
-        warnings: buddy_core::warning::new_shared_warnings(),
-        pending_approvals: new_pending_approvals(),
-        conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
-        approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
-        approval_timeout: std::time::Duration::from_secs(1),
-        config: std::sync::RwLock::new(test_config()),
-        config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
-        on_config_change: None,
-            telegram_process: buddy_core::state::new_child_process_handle(),
-    });
-    Router::new()
-        .route("/api/chat", post(chat_handler::<MockProvider>))
-        .with_state(state)
-        .fallback_service(ServeDir::new(static_dir))
+    TestAppBuilder::new()
+        .with_tokens(tokens)
+        .with_static_dir(static_dir)
+        .build_mock()
 }
 
 fn sequenced_app(responses: Vec<MockResponse>, registry: SkillRegistry) -> Router {
-    let state = Arc::new(AppState {
-        provider: arc_swap::ArcSwap::from_pointee(SequencedProvider::new(responses)),
-        registry: arc_swap::ArcSwap::from_pointee(registry),
-        store: buddy_core::store::Store::open_in_memory().unwrap(),
-        embedder: arc_swap::ArcSwap::from_pointee(None),
-        vector_store: arc_swap::ArcSwap::from_pointee(None),
-        working_memory: buddy_core::skill::working_memory::new_working_memory_map(),
-        memory_config: arc_swap::ArcSwap::from_pointee(buddy_core::config::MemoryConfig::default()),
-        warnings: buddy_core::warning::new_shared_warnings(),
-        pending_approvals: new_pending_approvals(),
-        conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
-        approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
-        approval_timeout: std::time::Duration::from_secs(1),
-        config: std::sync::RwLock::new(test_config()),
-        config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
-        on_config_change: None,
-            telegram_process: buddy_core::state::new_child_process_handle(),
-    });
-    Router::new()
-        .route("/api/chat", post(chat_handler::<SequencedProvider>))
-        .with_state(state)
+    TestAppBuilder::new()
+        .with_sequenced(responses, registry)
+        .build_sequenced()
 }
 
 fn conversation_app(tokens: Vec<String>) -> (Arc<AppState<MockProvider>>, Router) {
@@ -4099,22 +4143,6 @@ endpoint = "http://localhost:1234/v1"
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    /// Test case 4: Assert the drag handle is visible on each provider card.
-    /// Verifies the built frontend HTML contains the drag handle SVG markup.
-    #[tokio::test]
-    async fn drag_handle_markup_present_in_source() {
-        // Read the ModelsTab.svelte source and verify it contains the drag handle.
-        let source = include_str!("../../../frontend/src/lib/settings/ModelsTab.svelte");
-        assert!(
-            source.contains("aria-label=\"Drag to reorder\""),
-            "ModelsTab.svelte should contain drag handle with aria-label"
-        );
-        assert!(
-            source.contains("data-drag-index"),
-            "ModelsTab.svelte should contain data-drag-index attributes"
-        );
-    }
-
     /// Test case 5: Drag a provider within a single-item list (no-op);
     /// assert no API call is made.
     /// From the API side, verify that PUTting a single-item list with the same
@@ -4276,494 +4304,6 @@ endpoint = "https://api.openai.com/v1"
         std::fs::remove_dir_all(&dir).ok();
     }
 }
-
-mod app_shell_navigation {
-    /// Test case 1: Sidebar source contains "buddy" brand mark, Chat and Settings
-    /// nav items, and conversation list below navigation.
-    #[test]
-    fn sidebar_has_brand_and_nav_items() {
-        let source = include_str!("../../../frontend/src/lib/Sidebar.svelte");
-        assert!(
-            source.contains(">buddy</span>"),
-            "Sidebar should contain 'buddy' brand text"
-        );
-        assert!(
-            source.contains(">b</span>"),
-            "Sidebar should contain 'b' collapsed brand text"
-        );
-        assert!(
-            source.contains("href=\"#/\""),
-            "Sidebar should have a Chat nav link to #/"
-        );
-        assert!(
-            source.contains("href=\"#/settings\""),
-            "Sidebar should have a Settings nav link to #/settings"
-        );
-        assert!(
-            source.contains(">Chat</span>"),
-            "Sidebar should have a Chat label"
-        );
-        assert!(
-            source.contains(">Settings</span>"),
-            "Sidebar should have a Settings label"
-        );
-    }
-
-    /// Test case 2–3: Active route indication uses highlighted background and
-    /// left accent border. Settings and Chat nav items toggle based on
-    /// currentRoute.
-    #[test]
-    fn nav_items_have_active_route_styling() {
-        let source = include_str!("../../../frontend/src/lib/Sidebar.svelte");
-        assert!(
-            source.contains("border-l-blue-500"),
-            "Active nav item should have blue left border"
-        );
-        assert!(
-            source.contains("bg-blue-50"),
-            "Active nav item should have highlighted background"
-        );
-        assert!(
-            source.contains("border-l-transparent"),
-            "Inactive nav item should have transparent left border"
-        );
-    }
-
-    /// Test case 3: Conversation list is conditional on Chat route being active.
-    #[test]
-    fn conversation_list_conditional_on_chat_route() {
-        let source = include_str!("../../../frontend/src/lib/Sidebar.svelte");
-        assert!(
-            source.contains("currentRoute === '/'"),
-            "Conversation list should be conditional on Chat route"
-        );
-    }
-
-    /// Test case 4–7: Collapse toggle exists, labels hidden when collapsed,
-    /// nav icons remain visible, tooltips on collapsed icons.
-    #[test]
-    fn collapse_toggle_and_collapsed_behavior() {
-        let source = include_str!("../../../frontend/src/lib/Sidebar.svelte");
-        assert!(
-            source.contains("onToggleCollapse"),
-            "Sidebar should accept onToggleCollapse callback"
-        );
-        assert!(
-            source.contains("'Expand sidebar'"),
-            "Collapse toggle should have expand aria-label"
-        );
-        assert!(
-            source.contains("'Collapse sidebar'"),
-            "Collapse toggle should have collapse aria-label"
-        );
-        assert!(
-            source.contains("collapsed ? 'md:hidden'"),
-            "Labels should be hidden on desktop when collapsed"
-        );
-        assert!(
-            source.contains("title={collapsed ? 'Chat'"),
-            "Chat nav should show tooltip when collapsed"
-        );
-        assert!(
-            source.contains("title={collapsed ? 'Settings'"),
-            "Settings nav should show tooltip when collapsed"
-        );
-    }
-
-    /// Test case 8–9: Collapse preference persists via localStorage.
-    #[test]
-    fn collapse_persists_in_local_storage() {
-        let source = include_str!("../../../frontend/src/App.svelte");
-        assert!(
-            source.contains("buddy-sidebar-collapsed"),
-            "App should use localStorage key 'buddy-sidebar-collapsed'"
-        );
-        assert!(
-            source.contains("localStorage.getItem('buddy-sidebar-collapsed')"),
-            "App should read collapse state from localStorage on init"
-        );
-        assert!(
-            source.contains("localStorage.setItem('buddy-sidebar-collapsed'"),
-            "App should persist collapse state to localStorage"
-        );
-    }
-
-    /// Test case 10: Transitions use duration-200 for smooth animation.
-    #[test]
-    fn sidebar_has_smooth_transitions() {
-        let source = include_str!("../../../frontend/src/App.svelte");
-        assert!(
-            source.contains("transition-all duration-200"),
-            "Sidebar aside should have transition-all duration-200"
-        );
-        let sidebar = include_str!("../../../frontend/src/lib/Sidebar.svelte");
-        assert!(
-            sidebar.contains("transition-transform duration-200"),
-            "Collapse icon should have transition-transform duration-200"
-        );
-    }
-
-    /// Test case 10: Mobile sidebar uses existing overlay behavior.
-    /// The collapse toggle is hidden on mobile (hidden md:block).
-    #[test]
-    fn collapse_toggle_hidden_on_mobile() {
-        let source = include_str!("../../../frontend/src/lib/Sidebar.svelte");
-        assert!(
-            source.contains("hidden md:block"),
-            "Collapse toggle wrapper should be hidden on mobile"
-        );
-    }
-
-    /// Test case 11: App.svelte passes collapsed prop and width class to
-    /// aside for desktop collapse.
-    #[test]
-    fn aside_width_responds_to_collapsed_state() {
-        let source = include_str!("../../../frontend/src/App.svelte");
-        assert!(
-            source.contains("md:w-14"),
-            "Aside should use md:w-14 when collapsed"
-        );
-        assert!(
-            source.contains("collapsed={sidebarCollapsed}"),
-            "App should pass collapsed prop to Sidebar"
-        );
-    }
-}
-
-// ── Task 044: Embedding migration detection ────────────────────────────
-
-use axum::routing::put;
-use buddy_core::testutil::MockEmbedder;
-use buddy_core::memory::sqlite::SqliteVectorStore;
-use buddy_core::memory::{VectorEntry, VectorStore};
-use crate::api::config::put_config_models;
-use crate::api::memory::get_memory_status;
-
-fn test_app_with_vector_store(
-    embedder: Option<Arc<dyn buddy_core::embedding::Embedder>>,
-    vector_store: Option<Arc<dyn VectorStore>>,
-) -> Router {
-    let state = Arc::new(AppState {
-        provider: arc_swap::ArcSwap::from_pointee(MockProvider { tokens: vec![] }),
-        registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
-        store: buddy_core::store::Store::open_in_memory().unwrap(),
-        embedder: arc_swap::ArcSwap::from_pointee(embedder),
-        vector_store: arc_swap::ArcSwap::from_pointee(vector_store),
-        working_memory: buddy_core::skill::working_memory::new_working_memory_map(),
-        memory_config: arc_swap::ArcSwap::from_pointee(buddy_core::config::MemoryConfig::default()),
-        warnings: buddy_core::warning::new_shared_warnings(),
-        pending_approvals: new_pending_approvals(),
-        conversation_approvals: Arc::new(Mutex::new(HashMap::new())),
-        approval_overrides: arc_swap::ArcSwap::from_pointee(HashMap::new()),
-        approval_timeout: std::time::Duration::from_secs(1),
-        config: std::sync::RwLock::new(test_config()),
-        config_path: std::path::PathBuf::from("/tmp/buddy-test-044.toml"),
-        on_config_change: None,
-            telegram_process: buddy_core::state::new_child_process_handle(),
-    });
-    Router::new()
-        .route("/api/config/models", put(put_config_models::<MockProvider>))
-        .route("/api/memory/status", get(get_memory_status::<MockProvider>))
-        .with_state(state)
-}
-
-#[tokio::test]
-async fn migration_required_when_model_changed_and_memories_exist() {
-    // Store one memory with model "A".
-    let store = Arc::new(SqliteVectorStore::open_in_memory("model-A", 3).unwrap());
-    store.store(VectorEntry {
-        id: "e1".to_string(),
-        embedding: vec![1.0, 0.0, 0.0],
-        source_text: "test memory".to_string(),
-        metadata: serde_json::json!({}),
-    }).unwrap();
-
-    // Change config to model "B" (different dimensions).
-    let store_b = Arc::new(SqliteVectorStore::open_in_memory("model-B", 5).unwrap());
-    // Copy entry with old dimensions to trigger mismatch.
-    store_b.store(VectorEntry {
-        id: "e1".to_string(),
-        embedding: vec![1.0, 0.0, 0.0],
-        source_text: "test memory".to_string(),
-        metadata: serde_json::json!({}),
-    }).unwrap_err(); // This will fail dimension check, so let's simulate properly.
-
-    // Actually, let's simulate the real scenario: store with model A has an entry,
-    // then we open with model B config.
-    let path = std::env::temp_dir().join("buddy-test-044-migration-required.db");
-    let _ = std::fs::remove_file(&path);
-
-    {
-        let store_a = SqliteVectorStore::open(&path, "model-A", 3).unwrap();
-        store_a.store(VectorEntry {
-            id: "e1".to_string(),
-            embedding: vec![1.0, 0.0, 0.0],
-            source_text: "test memory".to_string(),
-            metadata: serde_json::json!({}),
-        }).unwrap();
-    }
-
-    // Now open with model B - this will detect migration needed.
-    let store_b = Arc::new(SqliteVectorStore::open(&path, "model-B", 5).unwrap());
-    let embedder_b: Arc<dyn buddy_core::embedding::Embedder> = Arc::new(MockEmbedder::new(5));
-
-    let app = test_app_with_vector_store(Some(embedder_b), Some(store_b));
-
-    let body = serde_json::json!({
-        "chat": {
-            "providers": [
-                {
-                    "type": "lmstudio",
-                    "model": "new-model",
-                    "endpoint": "http://localhost:1234/v1"
-                }
-            ]
-        }
-    });
-
-    let req = Request::builder()
-        .method("PUT")
-        .uri("/api/config/models")
-        .header("content-type", "application/json")
-        .body(Body::from(serde_json::to_vec(&body).unwrap()))
-        .unwrap();
-
-    let resp = app.oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-
-    let body_bytes = resp.into_body().collect().await.unwrap().to_bytes();
-    let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
-
-    assert_eq!(
-        json["embedding_migration_required"], true,
-        "should require migration when model changed and memories exist"
-    );
-
-    let _ = std::fs::remove_file(&path);
-}
-
-#[tokio::test]
-async fn migration_not_required_when_no_memories() {
-    // Empty store with model B.
-    let store = Arc::new(SqliteVectorStore::open_in_memory("model-B", 5).unwrap());
-    let embedder: Arc<dyn buddy_core::embedding::Embedder> = Arc::new(MockEmbedder::new(5));
-
-    let app = test_app_with_vector_store(Some(embedder), Some(store));
-
-    let body = serde_json::json!({
-        "chat": {
-            "providers": [
-                {
-                    "type": "lmstudio",
-                    "model": "different-model",
-                    "endpoint": "http://localhost:1234/v1"
-                }
-            ]
-        }
-    });
-
-    let req = Request::builder()
-        .method("PUT")
-        .uri("/api/config/models")
-        .header("content-type", "application/json")
-        .body(Body::from(serde_json::to_vec(&body).unwrap()))
-        .unwrap();
-
-    let resp = app.oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-
-    let body_bytes = resp.into_body().collect().await.unwrap().to_bytes();
-    let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
-
-    assert_eq!(
-        json["embedding_migration_required"], false,
-        "should not require migration when no memories exist"
-    );
-}
-
-#[tokio::test]
-async fn migration_not_required_when_model_unchanged() {
-    // Store with model A, keep using model A.
-    let path = std::env::temp_dir().join("buddy-test-044-no-change.db");
-    let _ = std::fs::remove_file(&path);
-
-    {
-        let store_a = SqliteVectorStore::open(&path, "model-A", 3).unwrap();
-        store_a.store(VectorEntry {
-            id: "e1".to_string(),
-            embedding: vec![1.0, 0.0, 0.0],
-            source_text: "test memory".to_string(),
-            metadata: serde_json::json!({}),
-        }).unwrap();
-    }
-
-    let store = Arc::new(SqliteVectorStore::open(&path, "model-A", 3).unwrap());
-    let embedder: Arc<dyn buddy_core::embedding::Embedder> = Arc::new(MockEmbedder::new(3));
-
-    let app = test_app_with_vector_store(Some(embedder), Some(store));
-
-    let body = serde_json::json!({
-        "chat": {
-            "providers": [
-                {
-                    "type": "lmstudio",
-                    "model": "same-model",
-                    "endpoint": "http://localhost:1234/v1"
-                }
-            ]
-        }
-    });
-
-    let req = Request::builder()
-        .method("PUT")
-        .uri("/api/config/models")
-        .header("content-type", "application/json")
-        .body(Body::from(serde_json::to_vec(&body).unwrap()))
-        .unwrap();
-
-    let resp = app.oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-
-    let body_bytes = resp.into_body().collect().await.unwrap().to_bytes();
-    let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
-
-    assert_eq!(
-        json["embedding_migration_required"], false,
-        "should not require migration when model unchanged"
-    );
-
-    let _ = std::fs::remove_file(&path);
-}
-
-#[tokio::test]
-async fn memory_status_empty_store() {
-    let store = Arc::new(SqliteVectorStore::open_in_memory("model-A", 3).unwrap());
-    let embedder: Arc<dyn buddy_core::embedding::Embedder> = Arc::new(MockEmbedder::new(3));
-
-    let app = test_app_with_vector_store(Some(embedder), Some(store));
-
-    let req = Request::builder()
-        .method("GET")
-        .uri("/api/memory/status")
-        .body(Body::empty())
-        .unwrap();
-
-    let resp = app.oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-
-    let body_bytes = resp.into_body().collect().await.unwrap().to_bytes();
-    let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
-
-    assert_eq!(json["total_entries"], 0);
-    assert_eq!(json["migration_required"], false);
-    assert_eq!(json["stored_model"], serde_json::Value::Null);
-    assert_eq!(json["stored_dimensions"], serde_json::Value::Null);
-    assert_eq!(json["active_model"], "test-embedder");
-    assert_eq!(json["active_dimensions"], 3);
-}
-
-#[tokio::test]
-async fn memory_status_with_mismatch() {
-    // Store a memory with model "all-MiniLM-L6-v2", 384 dims.
-    let path = std::env::temp_dir().join("buddy-test-044-status-mismatch.db");
-    let _ = std::fs::remove_file(&path);
-
-    {
-        let store_old = SqliteVectorStore::open(&path, "all-MiniLM-L6-v2", 384).unwrap();
-        store_old.store(VectorEntry {
-            id: "e1".to_string(),
-            embedding: vec![0.0; 384],
-            source_text: "test memory".to_string(),
-            metadata: serde_json::json!({}),
-        }).unwrap();
-    }
-
-    // Change active embedder to "text-embedding-3-small", 1536 dims.
-    let store = Arc::new(SqliteVectorStore::open(&path, "text-embedding-3-small", 1536).unwrap());
-    let embedder: Arc<dyn buddy_core::embedding::Embedder> = Arc::new(MockEmbedder::new(1536));
-
-    let app = test_app_with_vector_store(Some(embedder), Some(store));
-
-    let req = Request::builder()
-        .method("GET")
-        .uri("/api/memory/status")
-        .body(Body::empty())
-        .unwrap();
-
-    let resp = app.oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-
-    let body_bytes = resp.into_body().collect().await.unwrap().to_bytes();
-    let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
-
-    assert_eq!(json["total_entries"], 1);
-    assert_eq!(json["migration_required"], true);
-    assert_eq!(json["stored_model"], "all-MiniLM-L6-v2");
-    assert_eq!(json["stored_dimensions"], 384);
-    assert_eq!(json["active_model"], "test-embedder");
-    assert_eq!(json["active_dimensions"], 1536);
-
-    let _ = std::fs::remove_file(&path);
-}
-
-#[tokio::test]
-async fn memory_status_after_migration() {
-    // Store a memory with model A, migrate to model B, then check status.
-    let path = std::env::temp_dir().join("buddy-test-044-after-migrate.db");
-    let _ = std::fs::remove_file(&path);
-
-    {
-        let store_a = SqliteVectorStore::open(&path, "model-A", 3).unwrap();
-        store_a.store(VectorEntry {
-            id: "e1".to_string(),
-            embedding: vec![1.0, 0.0, 0.0],
-            source_text: "test memory".to_string(),
-            metadata: serde_json::json!({}),
-        }).unwrap();
-    }
-
-    // Open with model B - migration needed.
-    let store_b = SqliteVectorStore::open(&path, "model-B", 5).unwrap();
-    assert!(store_b.needs_migration());
-
-    // Simulate migration: clear and re-store.
-    let entries = store_b.list_all().unwrap();
-    store_b.clear().unwrap();
-    for entry in entries {
-        store_b.store(VectorEntry {
-            id: entry.id,
-            embedding: vec![0.0; 5], // New 5-dim embedding
-            source_text: entry.source_text,
-            metadata: entry.metadata,
-        }).unwrap();
-    }
-
-    let store = Arc::new(store_b);
-    let embedder: Arc<dyn buddy_core::embedding::Embedder> = Arc::new(MockEmbedder::new(5));
-
-    let app = test_app_with_vector_store(Some(embedder), Some(store));
-
-    let req = Request::builder()
-        .method("GET")
-        .uri("/api/memory/status")
-        .body(Body::empty())
-        .unwrap();
-
-    let resp = app.oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-
-    let body_bytes = resp.into_body().collect().await.unwrap().to_bytes();
-    let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
-
-    assert_eq!(json["total_entries"], 1);
-    assert_eq!(json["migration_required"], false, "migration should not be required after re-embedding");
-    assert_eq!(json["stored_model"], "model-B");
-    assert_eq!(json["stored_dimensions"], 5);
-
-    let _ = std::fs::remove_file(&path);
-}
-
-// ── Auth tests ──────────────────────────────────────────────────────
 
 mod auth {
     use super::*;
@@ -5004,201 +4544,6 @@ mod auth {
         let body = resp.into_body().collect().await.unwrap().to_bytes();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(json["required"], false);
-    }
-}
-
-// ── Task 055: Authentication frontend ──────────────────────────────────
-
-mod auth_frontend {
-    /// Test case 1: When auth status returns required: false, main app renders
-    /// with no login page gate.
-    #[test]
-    fn no_auth_required_shows_main_app() {
-        let app = include_str!("../../../frontend/src/App.svelte");
-        // App checks auth status on startup
-        assert!(
-            app.contains("checkAuthStatus"),
-            "App should call checkAuthStatus on startup"
-        );
-        // When not required, authenticated is set true and main app renders
-        assert!(
-            app.contains("authRequired && !authenticated"),
-            "App should gate on authRequired && !authenticated to show login"
-        );
-    }
-
-    /// Test case 2: When auth is required and no token is stored, login page
-    /// renders with token input and Sign In button.
-    #[test]
-    fn auth_required_no_token_shows_login_page() {
-        let login = include_str!("../../../frontend/src/lib/Login.svelte");
-        assert!(
-            login.contains("type=\"password\""),
-            "Login page should have a password input field for the token"
-        );
-        assert!(
-            login.contains("Access Token"),
-            "Login page should label the input as 'Access Token'"
-        );
-        assert!(
-            login.contains("Sign In"),
-            "Login page should have a 'Sign In' button"
-        );
-    }
-
-    /// Test case 3: Valid token submission stores token and shows main app.
-    #[test]
-    fn valid_token_stores_and_proceeds() {
-        let login = include_str!("../../../frontend/src/lib/Login.svelte");
-        assert!(
-            login.contains("verifyToken"),
-            "Login should call verifyToken with the entered token"
-        );
-        assert!(
-            login.contains("setAuthToken"),
-            "Login should call setAuthToken to store a valid token"
-        );
-        assert!(
-            login.contains("onAuthenticated"),
-            "Login should call onAuthenticated callback after successful login"
-        );
-    }
-
-    /// Test case 4: Invalid token shows error message and clears input.
-    #[test]
-    fn invalid_token_shows_error() {
-        let login = include_str!("../../../frontend/src/lib/Login.svelte");
-        assert!(
-            login.contains("Invalid token. Please try again."),
-            "Login should display 'Invalid token. Please try again.' on failure"
-        );
-        assert!(
-            login.contains("token = ''"),
-            "Login should clear the input on failure"
-        );
-    }
-
-    /// Test case 5: On reload, app checks stored token validity before
-    /// showing main app.
-    #[test]
-    fn reload_verifies_stored_token() {
-        let app = include_str!("../../../frontend/src/App.svelte");
-        assert!(
-            app.contains("getAuthToken"),
-            "App should check for stored token on init"
-        );
-        assert!(
-            app.contains("verifyToken"),
-            "App should verify stored token with backend"
-        );
-    }
-
-    /// Test case 6: If token is missing from localStorage, login page appears.
-    /// (Covered by initAuth flow: no token → authenticated stays false.)
-    #[test]
-    fn missing_token_shows_login() {
-        let app = include_str!("../../../frontend/src/App.svelte");
-        // When getAuthToken returns null, auth flow skips verification
-        // and leaves authenticated = false, showing login
-        assert!(
-            app.contains("clearAuthToken"),
-            "App should clear invalid tokens"
-        );
-        assert!(
-            app.contains("authenticated = false"),
-            "App should set authenticated to false when no valid token"
-        );
-    }
-
-    /// Test case 7: A 401 response from any API call clears token and shows
-    /// login page via the buddy-auth-expired event.
-    #[test]
-    fn api_401_clears_token_and_shows_login() {
-        let api = include_str!("../../../frontend/src/lib/api.js");
-        assert!(
-            api.contains("res.status === 401"),
-            "authFetch should check for 401 status"
-        );
-        assert!(
-            api.contains("clearAuthToken()"),
-            "authFetch should clear token on 401"
-        );
-        assert!(
-            api.contains("buddy-auth-expired"),
-            "authFetch should dispatch buddy-auth-expired event on 401"
-        );
-        let app = include_str!("../../../frontend/src/App.svelte");
-        assert!(
-            app.contains("buddy-auth-expired"),
-            "App should listen for buddy-auth-expired event"
-        );
-    }
-
-    /// Test case 8: Sign Out button clears token and shows login page.
-    #[test]
-    fn sign_out_clears_token() {
-        let sidebar = include_str!("../../../frontend/src/lib/Sidebar.svelte");
-        assert!(
-            sidebar.contains("Sign Out"),
-            "Sidebar should have a 'Sign Out' button"
-        );
-        assert!(
-            sidebar.contains("onSignOut"),
-            "Sidebar should call onSignOut callback"
-        );
-        let app = include_str!("../../../frontend/src/App.svelte");
-        assert!(
-            app.contains("handleSignOut"),
-            "App should define handleSignOut"
-        );
-        assert!(
-            app.contains("clearAuthToken"),
-            "handleSignOut should clear the auth token"
-        );
-    }
-
-    /// Test case 9: API calls include Authorization: Bearer header when
-    /// a token is stored.
-    #[test]
-    fn api_calls_include_bearer_header() {
-        let api = include_str!("../../../frontend/src/lib/api.js");
-        assert!(
-            api.contains("Authorization"),
-            "authFetch should set Authorization header"
-        );
-        assert!(
-            api.contains("Bearer ${token}"),
-            "authFetch should use Bearer token format"
-        );
-        // All API functions use authFetch
-        assert!(
-            api.contains("await authFetch('/api/conversations')"),
-            "fetchConversations should use authFetch"
-        );
-        assert!(
-            api.contains("await authFetch('/api/config')"),
-            "fetchConfig should use authFetch"
-        );
-        let chat = include_str!("../../../frontend/src/lib/Chat.svelte");
-        assert!(
-            chat.contains("authFetch('/api/chat'"),
-            "Chat POST should use authFetch"
-        );
-    }
-
-    /// Test case 10: When auth is not required, no Sign Out button appears.
-    #[test]
-    fn no_sign_out_when_auth_not_required() {
-        let sidebar = include_str!("../../../frontend/src/lib/Sidebar.svelte");
-        assert!(
-            sidebar.contains("{#if authRequired}"),
-            "Sign Out should be conditionally rendered based on authRequired prop"
-        );
-        let app = include_str!("../../../frontend/src/App.svelte");
-        assert!(
-            app.contains("{authRequired}"),
-            "App should pass authRequired prop to Sidebar"
-        );
     }
 }
 

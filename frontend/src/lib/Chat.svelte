@@ -387,6 +387,7 @@
         onkeydown={handleKeydown}
         disabled={isStreaming}
         placeholder="Type a message..."
+        aria-label="Type a message"
         class="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg
                bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100
                placeholder-gray-500 dark:placeholder-gray-400

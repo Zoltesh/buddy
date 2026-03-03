@@ -139,4 +139,274 @@ endpoint = "http://localhost:1234/v1"
         // Cleanup
         let _ = std::fs::remove_dir_all(&tmp);
     }
+
+    #[test]
+    fn reload_provider_chain_changes_on_model_config_change() {
+        let config_v1 = Config::parse(
+            r#"
+[[models.chat.providers]]
+type = "lmstudio"
+model = "gpt-4"
+endpoint = "http://localhost:1234/v1"
+"#,
+        )
+        .unwrap();
+
+        let tmp = std::env::temp_dir().join("buddy_test_provider");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let store = Store::open(&tmp.join("test.db")).unwrap();
+        let provider = build_provider_chain(&config_v1).unwrap();
+        let embedder = build_embedder(&config_v1).unwrap();
+        let vector_store = build_vector_store(&embedder).unwrap();
+        let working_memory = skill::working_memory::new_working_memory_map();
+        let registry =
+            build_skill_registry(&config_v1, working_memory.clone(), &embedder, &vector_store);
+        let approval_overrides = build_approval_overrides(&config_v1);
+        let warnings = warning::new_shared_warnings();
+
+        let state = AppState {
+            provider: arc_swap::ArcSwap::from_pointee(provider),
+            registry: arc_swap::ArcSwap::from_pointee(registry),
+            store,
+            embedder: arc_swap::ArcSwap::from_pointee(embedder),
+            vector_store: arc_swap::ArcSwap::from_pointee(vector_store),
+            working_memory,
+            memory_config: arc_swap::ArcSwap::from_pointee(config_v1.memory.clone()),
+            warnings,
+            pending_approvals: buddy_core::state::new_pending_approvals(),
+            conversation_approvals: Arc::new(tokio::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
+            approval_overrides: arc_swap::ArcSwap::from_pointee(approval_overrides),
+            approval_timeout: std::time::Duration::from_secs(60),
+            config: std::sync::RwLock::new(config_v1),
+            config_path: tmp.join("buddy.toml"),
+            on_config_change: None,
+            telegram_process: buddy_core::state::new_child_process_handle(),
+        };
+
+        let config_v2 = Config::parse(
+            r#"
+[[models.chat.providers]]
+type = "lmstudio"
+model = "deepseek-coder"
+endpoint = "http://localhost:1234/v1"
+"#,
+        )
+        .unwrap();
+
+        reload_from_config(&config_v2, &state).unwrap();
+
+        let provider = state.provider.load();
+        assert_eq!(provider.len(), 1, "should have 1 provider after reload");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn reload_preserves_existing_conversations() {
+        let config = Config::parse(
+            r#"
+[[models.chat.providers]]
+type = "lmstudio"
+model = "test-model"
+endpoint = "http://localhost:1234/v1"
+"#,
+        )
+        .unwrap();
+
+        let tmp = std::env::temp_dir().join("buddy_test_conv");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let store = Store::open(&tmp.join("test.db")).unwrap();
+        let conversation = store.create_conversation("test").unwrap();
+        let conversation_id = conversation.id.clone();
+
+        let provider = build_provider_chain(&config).unwrap();
+        let embedder = build_embedder(&config).unwrap();
+        let vector_store = build_vector_store(&embedder).unwrap();
+        let working_memory = skill::working_memory::new_working_memory_map();
+        let registry =
+            build_skill_registry(&config, working_memory.clone(), &embedder, &vector_store);
+        let approval_overrides = build_approval_overrides(&config);
+        let warnings = warning::new_shared_warnings();
+
+        let state = AppState {
+            provider: arc_swap::ArcSwap::from_pointee(provider),
+            registry: arc_swap::ArcSwap::from_pointee(registry),
+            store,
+            embedder: arc_swap::ArcSwap::from_pointee(embedder),
+            vector_store: arc_swap::ArcSwap::from_pointee(vector_store),
+            working_memory,
+            memory_config: arc_swap::ArcSwap::from_pointee(config.memory.clone()),
+            warnings,
+            pending_approvals: buddy_core::state::new_pending_approvals(),
+            conversation_approvals: Arc::new(tokio::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
+            approval_overrides: arc_swap::ArcSwap::from_pointee(approval_overrides),
+            approval_timeout: std::time::Duration::from_secs(60),
+            config: std::sync::RwLock::new(config.clone()),
+            config_path: tmp.join("buddy.toml"),
+            on_config_change: None,
+            telegram_process: buddy_core::state::new_child_process_handle(),
+        };
+
+        reload_from_config(&config, &state).unwrap();
+
+        let conv = state.store.get_conversation(&conversation_id).unwrap();
+        assert!(conv.is_some(), "conversation should exist after reload");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn reload_with_invalid_provider_config_does_not_crash() {
+        let config_valid = Config::parse(
+            r#"
+[[models.chat.providers]]
+type = "lmstudio"
+model = "test-model"
+endpoint = "http://localhost:1234/v1"
+"#,
+        )
+        .unwrap();
+
+        let tmp = std::env::temp_dir().join("buddy_test_invalid");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let store = Store::open(&tmp.join("test.db")).unwrap();
+        let provider = build_provider_chain(&config_valid).unwrap();
+        let embedder = build_embedder(&config_valid).unwrap();
+        let vector_store = build_vector_store(&embedder).unwrap();
+        let working_memory = skill::working_memory::new_working_memory_map();
+        let registry = build_skill_registry(
+            &config_valid,
+            working_memory.clone(),
+            &embedder,
+            &vector_store,
+        );
+        let approval_overrides = build_approval_overrides(&config_valid);
+        let warnings = warning::new_shared_warnings();
+
+        let state = AppState {
+            provider: arc_swap::ArcSwap::from_pointee(provider),
+            registry: arc_swap::ArcSwap::from_pointee(registry),
+            store,
+            embedder: arc_swap::ArcSwap::from_pointee(embedder),
+            vector_store: arc_swap::ArcSwap::from_pointee(vector_store),
+            working_memory,
+            memory_config: arc_swap::ArcSwap::from_pointee(config_valid.memory.clone()),
+            warnings,
+            pending_approvals: buddy_core::state::new_pending_approvals(),
+            conversation_approvals: Arc::new(tokio::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
+            approval_overrides: arc_swap::ArcSwap::from_pointee(approval_overrides),
+            approval_timeout: std::time::Duration::from_secs(60),
+            config: std::sync::RwLock::new(config_valid),
+            config_path: tmp.join("buddy.toml"),
+            on_config_change: None,
+            telegram_process: buddy_core::state::new_child_process_handle(),
+        };
+
+        let config_invalid = Config::parse(
+            r#"
+[[models.chat.providers]]
+type = "openai"
+model = "gpt-4"
+api_key_env = "INVALID_ENV_VAR_THAT_DOES_NOT_EXIST"
+"#,
+        )
+        .unwrap();
+
+        let result = reload_from_config(&config_invalid, &state);
+        assert!(result.is_err(), "reload should fail with invalid config");
+
+        let provider = state.provider.load();
+        assert_eq!(
+            provider.len(),
+            1,
+            "provider should be unchanged after failed reload"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn reload_updates_embedder() {
+        let config_no_embedder = Config::parse(
+            r#"
+[[models.chat.providers]]
+type = "lmstudio"
+model = "test-model"
+endpoint = "http://localhost:1234/v1"
+"#,
+        )
+        .unwrap();
+
+        let tmp = std::env::temp_dir().join("buddy_test_embedder2");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let store = Store::open(&tmp.join("test.db")).unwrap();
+        let provider = build_provider_chain(&config_no_embedder).unwrap();
+        let embedder = build_embedder(&config_no_embedder).unwrap();
+        let vector_store = build_vector_store(&embedder).unwrap();
+        let working_memory = skill::working_memory::new_working_memory_map();
+        let registry = build_skill_registry(
+            &config_no_embedder,
+            working_memory.clone(),
+            &embedder,
+            &vector_store,
+        );
+        let approval_overrides = build_approval_overrides(&config_no_embedder);
+        let warnings = warning::new_shared_warnings();
+
+        let state = AppState {
+            provider: arc_swap::ArcSwap::from_pointee(provider),
+            registry: arc_swap::ArcSwap::from_pointee(registry),
+            store,
+            embedder: arc_swap::ArcSwap::from_pointee(embedder),
+            vector_store: arc_swap::ArcSwap::from_pointee(vector_store),
+            working_memory,
+            memory_config: arc_swap::ArcSwap::from_pointee(config_no_embedder.memory.clone()),
+            warnings,
+            pending_approvals: buddy_core::state::new_pending_approvals(),
+            conversation_approvals: Arc::new(tokio::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
+            approval_overrides: arc_swap::ArcSwap::from_pointee(approval_overrides),
+            approval_timeout: std::time::Duration::from_secs(60),
+            config: std::sync::RwLock::new(config_no_embedder),
+            config_path: tmp.join("buddy.toml"),
+            on_config_change: None,
+            telegram_process: buddy_core::state::new_child_process_handle(),
+        };
+
+        let config_with_embedder = Config::parse(
+            r#"
+[[models.chat.providers]]
+type = "lmstudio"
+model = "test-model"
+endpoint = "http://localhost:1234/v1"
+
+[[models.embedding.providers]]
+type = "local"
+model = "all-MiniLM-L6-v2"
+"#,
+        )
+        .unwrap();
+
+        reload_from_config(&config_with_embedder, &state).unwrap();
+
+        let embedder = state.embedder.load();
+        assert!(embedder.is_some(), "embedder should be Some after reload");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
 }
