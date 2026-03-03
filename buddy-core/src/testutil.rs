@@ -9,7 +9,7 @@ use std::sync::Mutex;
 
 use crate::types::Message;
 use crate::provider::{Provider, ProviderError, Token, TokenStream};
-use crate::skill::{PermissionLevel, Skill, SkillError};
+use crate::skill::{PermissionLevel, Tool, ToolError};
 
 // ── Mock skills ─────────────────────────────────────────────────────────
 
@@ -17,7 +17,7 @@ use crate::skill::{PermissionLevel, Skill, SkillError};
 /// (api.rs) and `MockSkill` (skill/mod.rs).
 pub struct MockEchoSkill;
 
-impl Skill for MockEchoSkill {
+impl Tool for MockEchoSkill {
     fn name(&self) -> &str {
         "echo"
     }
@@ -34,21 +34,21 @@ impl Skill for MockEchoSkill {
     fn execute(
         &self,
         input: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SkillError>> + Send + '_>> {
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, ToolError>> + Send + '_>> {
         Box::pin(async move {
             let value = input
                 .get("value")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| SkillError::InvalidInput("missing required field: value".into()))?;
+                .ok_or_else(|| ToolError::InvalidInput("missing required field: value".into()))?;
             Ok(serde_json::json!({ "echo": value }))
         })
     }
 }
 
-/// A skill that always fails with `SkillError::ExecutionFailed`.
+/// A tool that always fails with `ToolError::ExecutionFailed`.
 pub struct FailingSkill;
 
-impl Skill for FailingSkill {
+impl Tool for FailingSkill {
     fn name(&self) -> &str {
         "failing"
     }
@@ -61,16 +61,16 @@ impl Skill for FailingSkill {
     fn execute(
         &self,
         _input: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SkillError>> + Send + '_>> {
-        Box::pin(async { Err(SkillError::ExecutionFailed("boom".into())) })
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, ToolError>> + Send + '_>> {
+        Box::pin(async { Err(ToolError::ExecutionFailed("boom".into())) })
     }
 }
 
-/// A no-op skill that returns `{ "ok": true }`. Used for multi-skill
+/// A no-op tool that returns `{ "ok": true }`. Used for multi-tool
 /// registry tests.
 pub struct MockNoOpSkill;
 
-impl Skill for MockNoOpSkill {
+impl Tool for MockNoOpSkill {
     fn name(&self) -> &str {
         "noop"
     }
@@ -86,15 +86,15 @@ impl Skill for MockNoOpSkill {
     fn execute(
         &self,
         _input: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SkillError>> + Send + '_>> {
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, ToolError>> + Send + '_>> {
         Box::pin(async { Ok(serde_json::json!({ "ok": true })) })
     }
 }
 
-/// A skill that echoes its input with `PermissionLevel::Mutating`.
+/// A tool that echoes its input with `PermissionLevel::Mutating`.
 pub struct MockMutatingSkill;
 
-impl Skill for MockMutatingSkill {
+impl Tool for MockMutatingSkill {
     fn name(&self) -> &str {
         "mutating"
     }
@@ -114,21 +114,21 @@ impl Skill for MockMutatingSkill {
     fn execute(
         &self,
         input: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SkillError>> + Send + '_>> {
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, ToolError>> + Send + '_>> {
         Box::pin(async move {
             let value = input
                 .get("value")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| SkillError::InvalidInput("missing required field: value".into()))?;
+                .ok_or_else(|| ToolError::InvalidInput("missing required field: value".into()))?;
             Ok(serde_json::json!({ "echo": value }))
         })
     }
 }
 
-/// A skill that echoes its input with `PermissionLevel::Network`.
+/// A tool that echoes its input with `PermissionLevel::Network`.
 pub struct MockNetworkSkill;
 
-impl Skill for MockNetworkSkill {
+impl Tool for MockNetworkSkill {
     fn name(&self) -> &str {
         "network"
     }
@@ -148,12 +148,12 @@ impl Skill for MockNetworkSkill {
     fn execute(
         &self,
         input: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SkillError>> + Send + '_>> {
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, ToolError>> + Send + '_>> {
         Box::pin(async move {
             let value = input
                 .get("value")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| SkillError::InvalidInput("missing required field: value".into()))?;
+                .ok_or_else(|| ToolError::InvalidInput("missing required field: value".into()))?;
             Ok(serde_json::json!({ "echo": value }))
         })
     }

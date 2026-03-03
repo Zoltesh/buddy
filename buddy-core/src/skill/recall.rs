@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::embedding::Embedder;
 use crate::memory::VectorStore;
 
-use super::{Skill, SkillError};
+use super::{Tool, ToolError};
 
 /// Default maximum number of results returned by a recall query.
 const DEFAULT_LIMIT: usize = 5;
@@ -25,7 +25,7 @@ impl RecallSkill {
     }
 }
 
-impl Skill for RecallSkill {
+impl Tool for RecallSkill {
     fn name(&self) -> &str {
         "recall"
     }
@@ -54,15 +54,15 @@ impl Skill for RecallSkill {
     fn execute(
         &self,
         input: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SkillError>> + Send + '_>> {
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, ToolError>> + Send + '_>> {
         Box::pin(async move {
             let query = input
                 .get("query")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| SkillError::InvalidInput("missing required field: query".into()))?;
+                .ok_or_else(|| ToolError::InvalidInput("missing required field: query".into()))?;
 
             if query.is_empty() {
-                return Err(SkillError::InvalidInput("query must not be empty".into()));
+                return Err(ToolError::InvalidInput("query must not be empty".into()));
             }
 
             let limit = input
@@ -75,18 +75,18 @@ impl Skill for RecallSkill {
             let embeddings = self
                 .embedder
                 .embed(&[query])
-                .map_err(|e| SkillError::ExecutionFailed(format!("embedding failed: {e}")))?;
+                .map_err(|e| ToolError::ExecutionFailed(format!("embedding failed: {e}")))?;
 
             let embedding = embeddings
                 .into_iter()
                 .next()
-                .ok_or_else(|| SkillError::ExecutionFailed("embedder returned no vectors".into()))?;
+                .ok_or_else(|| ToolError::ExecutionFailed("embedder returned no vectors".into()))?;
 
             // Search the vector store.
             let results = self
                 .vector_store
                 .search(&embedding, limit)
-                .map_err(|e| SkillError::ExecutionFailed(format!("search failed: {e}")))?;
+                .map_err(|e| ToolError::ExecutionFailed(format!("search failed: {e}")))?;
 
             let formatted: Vec<serde_json::Value> = results
                 .iter()
@@ -119,7 +119,7 @@ mod tests {
     use super::*;
     use crate::memory::sqlite::SqliteVectorStore;
     use crate::memory::{VectorEntry, VectorStore};
-    use crate::skill::Skill;
+    use crate::skill::Tool;
     use crate::testutil::MockEmbedder;
 
     fn setup() -> (Arc<dyn Embedder>, Arc<dyn VectorStore>, RecallSkill) {
@@ -226,7 +226,7 @@ mod tests {
             .execute(serde_json::json!({ "query": "" }))
             .await
             .unwrap_err();
-        assert!(matches!(err, SkillError::InvalidInput(_)));
+        assert!(matches!(err, ToolError::InvalidInput(_)));
     }
 
     #[tokio::test]

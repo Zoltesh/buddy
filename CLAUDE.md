@@ -13,14 +13,11 @@ buddy-server/       Rust binary crate (Axum web server)
 frontend/           Svelte + Tailwind SPA (built with Vite)
   src/lib/
     settings/       Settings tab components (GeneralTab, ModelsTab, SkillsTab)
-versions/           Version specs and task boards
-  v0.X/
-    v0.X.md         Version spec (goals, scope, architectural decisions)
-    tasks/
-      backlog/      Tasks not yet started
-      in-progress/  Tasks currently being worked on
-      blocked/      Tasks that cannot proceed
-      done/         Completed tasks
+tasks/
+  backlog/      Tasks not yet started
+  in-progress/  Tasks currently being worked on
+  blocked/      Tasks that cannot proceed
+  done/         Completed tasks
 ```
 
 ## Commands
@@ -37,33 +34,6 @@ All commands are run from the project root.
 | `make clean` | `cargo clean` + remove `frontend/dist` and `frontend/node_modules` |
 | `cargo test` | Run Rust tests |
 | `cd frontend && npm run dev` | Vite dev server for frontend only |
-
-## Task Workflow
-
-Each version has a task board under `versions/vX.Y/tasks/` with four directories: `backlog/`, `in-progress/`, `blocked/`, `done/`.
-
-### Picking up a task
-
-1. Move the task file from `backlog/` to `in-progress/`.
-2. Work the task until all acceptance criteria are met.
-3. Check off checklist items (`- [ ]` → `- [x]`) in the task file as each one is completed.
-
-### Running test cases
-
-Every task includes a **Test Cases** section. Each test case is a behavioral specification written as: setup → action → expected result (separated by semicolons). These must be implemented as automated Rust tests and verified with `cargo test` before a task is complete.
-
-1. Read the test cases in the task file.
-2. Implement each test case as a `#[test]` or `#[tokio::test]` function.
-3. Run `cargo test` and confirm all tests pass (both new and existing).
-4. Check off each test case (`- [ ]` → `- [x]`) in the task file as it passes.
-
-### Blocked tasks
-
-If a task cannot proceed (missing dependency, unresolved question, etc.), move the task file from `in-progress/` to `blocked/`.
-
-### Completing a task
-
-When all acceptance criteria are met and all test cases pass, move the task file from `in-progress/` to `done/`.
 
 ## Code Standards
 

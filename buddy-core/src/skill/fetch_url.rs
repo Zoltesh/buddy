@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use crate::config::FetchUrlConfig;
 
-use super::{PermissionLevel, Skill, SkillError};
+use super::{PermissionLevel, Tool, ToolError};
 
 /// Skill that fetches URLs via HTTP GET, restricted to allowlisted domains.
 pub struct FetchUrlSkill {
@@ -27,24 +27,24 @@ impl FetchUrlSkill {
 }
 
 /// Validate that a URL's domain is in the allowlist.
-fn validate_domain(url_str: &str, allowed_domains: &[String]) -> Result<(), SkillError> {
+fn validate_domain(url_str: &str, allowed_domains: &[String]) -> Result<(), ToolError> {
     let parsed = url::Url::parse(url_str)
-        .map_err(|e| SkillError::InvalidInput(format!("invalid URL: {e}")))?;
+        .map_err(|e| ToolError::InvalidInput(format!("invalid URL: {e}")))?;
 
     let domain = parsed
         .host_str()
-        .ok_or_else(|| SkillError::InvalidInput("URL has no host".into()))?;
+        .ok_or_else(|| ToolError::InvalidInput("URL has no host".into()))?;
 
     if allowed_domains.iter().any(|d| d == domain) {
         Ok(())
     } else {
-        Err(SkillError::Forbidden(format!(
+        Err(ToolError::Forbidden(format!(
             "domain '{domain}' is not in the allowlist"
         )))
     }
 }
 
-impl Skill for FetchUrlSkill {
+impl Tool for FetchUrlSkill {
     fn name(&self) -> &str {
         "fetch_url"
     }
@@ -70,12 +70,12 @@ impl Skill for FetchUrlSkill {
     fn execute(
         &self,
         input: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SkillError>> + Send + '_>> {
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, ToolError>> + Send + '_>> {
         Box::pin(async move {
             let url = input
                 .get("url")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| SkillError::InvalidInput("missing required field: url".into()))?;
+                .ok_or_else(|| ToolError::InvalidInput("missing required field: url".into()))?;
 
             validate_domain(url, &self.allowed_domains)?;
 
@@ -84,13 +84,13 @@ impl Skill for FetchUrlSkill {
                 .get(url)
                 .send()
                 .await
-                .map_err(|e| SkillError::ExecutionFailed(format!("HTTP request failed: {e}")))?;
+                .map_err(|e| ToolError::ExecutionFailed(format!("HTTP request failed: {e}")))?;
 
             let status = response.status().as_u16();
             let body = response
                 .text()
                 .await
-                .map_err(|e| SkillError::ExecutionFailed(format!("failed to read response: {e}")))?;
+                .map_err(|e| ToolError::ExecutionFailed(format!("failed to read response: {e}")))?;
 
             Ok(serde_json::json!({
                 "status": status,
@@ -116,7 +116,7 @@ mod tests {
         let domains = vec!["example.com".into()];
         let result = validate_domain("https://evil.com/steal", &domains);
         match result {
-            Err(SkillError::Forbidden(msg)) => {
+            Err(ToolError::Forbidden(msg)) => {
                 assert!(msg.contains("evil.com"));
             }
             other => panic!("expected Forbidden, got {other:?}"),
@@ -127,7 +127,7 @@ mod tests {
     fn validate_domain_invalid_url() {
         let domains = vec!["example.com".into()];
         let result = validate_domain("not-a-url", &domains);
-        assert!(matches!(result, Err(SkillError::InvalidInput(_))));
+        assert!(matches!(result, Err(ToolError::InvalidInput(_))));
     }
 
     #[tokio::test]
@@ -142,7 +142,7 @@ mod tests {
             .await;
 
         match result {
-            Err(SkillError::Forbidden(_)) => {}
+            Err(ToolError::Forbidden(_)) => {}
             other => panic!("expected Forbidden, got {other:?}"),
         }
     }

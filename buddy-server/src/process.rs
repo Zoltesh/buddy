@@ -152,7 +152,7 @@ mod tests {
             provider: arc_swap::ArcSwap::from_pointee(buddy_core::testutil::MockProvider {
                 tokens: vec![],
             }),
-            registry: arc_swap::ArcSwap::from_pointee(buddy_core::skill::SkillRegistry::new()),
+            registry: arc_swap::ArcSwap::from_pointee(buddy_core::skill::ToolRegistry::new()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),

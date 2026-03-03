@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use buddy_core::config::ApprovalPolicy;
 use buddy_core::provider::{Provider, ProviderError, Token};
-use buddy_core::skill::{PermissionLevel, SkillRegistry};
+use buddy_core::skill::{PermissionLevel, ToolRegistry};
 use buddy_core::state::ConversationApprovals;
 use buddy_core::store::Store;
 use buddy_core::types::{Message, MessageContent, Role};
@@ -74,7 +74,7 @@ pub struct TelegramApprovalContext<'a> {
 pub async fn process_message<P: Provider>(
     store: &Store,
     provider: &P,
-    registry: &SkillRegistry,
+    registry: &ToolRegistry,
     approval_overrides: &HashMap<String, ApprovalPolicy>,
     conversation_approvals: &ConversationApprovals,
     chat_id: i64,
@@ -381,27 +381,27 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use buddy_core::skill::SkillRegistry;
+    use buddy_core::skill::ToolRegistry;
     use buddy_core::config::ApprovalPolicy;
     use buddy_core::testutil::{
         MockEchoSkill, MockMutatingSkill, MockNetworkSkill, MockProvider, MockResponse,
         SequencedProvider,
     };
 
-    fn registry_with_echo() -> SkillRegistry {
-        let mut r = SkillRegistry::new();
+    fn registry_with_echo() -> ToolRegistry {
+        let mut r = ToolRegistry::new();
         r.register(Box::new(MockEchoSkill));
         r
     }
 
-    fn registry_with_mutating() -> SkillRegistry {
-        let mut r = SkillRegistry::new();
+    fn registry_with_mutating() -> ToolRegistry {
+        let mut r = ToolRegistry::new();
         r.register(Box::new(MockMutatingSkill));
         r
     }
 
-    fn registry_with_network() -> SkillRegistry {
-        let mut r = SkillRegistry::new();
+    fn registry_with_network() -> ToolRegistry {
+        let mut r = ToolRegistry::new();
         r.register(Box::new(MockNetworkSkill));
         r
     }
@@ -412,7 +412,7 @@ mod tests {
         let provider = MockProvider {
             tokens: vec!["Hello!".into()],
         };
-        let registry = SkillRegistry::new();
+        let registry = ToolRegistry::new();
         let overrides = HashMap::new();
         let conversation_approvals = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
 
@@ -448,7 +448,7 @@ mod tests {
         let provider = MockProvider {
             tokens: vec!["I can ".into(), "help!".into()],
         };
-        let registry = SkillRegistry::new();
+        let registry = ToolRegistry::new();
         let overrides = HashMap::new();
         let conversation_approvals = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
 
@@ -485,7 +485,7 @@ mod tests {
         let provider = MockProvider {
             tokens: vec!["ok".into()],
         };
-        let registry = SkillRegistry::new();
+        let registry = ToolRegistry::new();
         let overrides = HashMap::new();
         let conversation_approvals = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
 

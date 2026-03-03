@@ -265,7 +265,7 @@ async fn check_approval<P: Provider>(
 /// Run the tool-call loop, sending `ChatEvent`s through `tx`.
 ///
 /// 1. Send messages + tool definitions to the provider.
-/// 2. If the provider yields tool calls: execute them via the `SkillRegistry`,
+/// 2. If the provider yields tool calls: execute them via the `ToolRegistry`,
 ///    append `ToolCall` and `ToolResult` messages, and call the provider again.
 /// 3. Repeat until the provider returns only text (no tool calls).
 /// 4. Text deltas are streamed to the client as `TokenDelta` events.

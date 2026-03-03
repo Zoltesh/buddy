@@ -4,7 +4,7 @@ use std::pin::Pin;
 
 use crate::config::WriteFileConfig;
 
-use super::{PermissionLevel, Skill, SkillError, normalize_path};
+use super::{PermissionLevel, Tool, ToolError, normalize_path};
 
 /// Skill that writes file contents to sandboxed directories.
 pub struct WriteFileSkill {
@@ -28,14 +28,14 @@ impl WriteFileSkill {
 fn validate_write_path(
     path: &str,
     allowed_dirs: &[PathBuf],
-) -> Result<PathBuf, SkillError> {
+) -> Result<PathBuf, ToolError> {
     let normalized = normalize_path(Path::new(path))?;
 
     // First pass: check normalized path against allowed dirs
     let mut allowed = false;
     for dir in allowed_dirs {
         let canonical_dir = std::fs::canonicalize(dir).map_err(|e| {
-            SkillError::ExecutionFailed(format!(
+            ToolError::ExecutionFailed(format!(
                 "cannot resolve allowed directory '{}': {e}",
                 dir.display()
             ))
@@ -47,7 +47,7 @@ fn validate_write_path(
     }
 
     if !allowed {
-        return Err(SkillError::Forbidden(format!(
+        return Err(ToolError::Forbidden(format!(
             "path '{path}' is outside allowed directories"
         )));
     }
@@ -55,26 +55,26 @@ fn validate_write_path(
     // Create parent directories
     if let Some(parent) = normalized.parent() {
         std::fs::create_dir_all(parent).map_err(|e| {
-            SkillError::ExecutionFailed(format!("failed to create parent directories: {e}"))
+            ToolError::ExecutionFailed(format!("failed to create parent directories: {e}"))
         })?;
     }
 
     // Second pass: canonicalize parent to catch symlink-based escapes
     let parent = normalized
         .parent()
-        .ok_or_else(|| SkillError::InvalidInput("path has no parent directory".into()))?;
+        .ok_or_else(|| ToolError::InvalidInput("path has no parent directory".into()))?;
     let canonical_parent = std::fs::canonicalize(parent)
-        .map_err(|e| SkillError::ExecutionFailed(format!("cannot resolve parent directory: {e}")))?;
+        .map_err(|e| ToolError::ExecutionFailed(format!("cannot resolve parent directory: {e}")))?;
     let final_path = canonical_parent.join(
         normalized
             .file_name()
-            .ok_or_else(|| SkillError::InvalidInput("path has no file name".into()))?,
+            .ok_or_else(|| ToolError::InvalidInput("path has no file name".into()))?,
     );
 
     let mut verified = false;
     for dir in allowed_dirs {
         let canonical_dir = std::fs::canonicalize(dir).map_err(|e| {
-            SkillError::ExecutionFailed(format!(
+            ToolError::ExecutionFailed(format!(
                 "cannot resolve allowed directory '{}': {e}",
                 dir.display()
             ))
@@ -86,7 +86,7 @@ fn validate_write_path(
     }
 
     if !verified {
-        return Err(SkillError::Forbidden(format!(
+        return Err(ToolError::Forbidden(format!(
             "path '{path}' resolves outside allowed directories"
         )));
     }
@@ -94,7 +94,7 @@ fn validate_write_path(
     Ok(final_path)
 }
 
-impl Skill for WriteFileSkill {
+impl Tool for WriteFileSkill {
     fn name(&self) -> &str {
         "write_file"
     }
@@ -121,24 +121,24 @@ impl Skill for WriteFileSkill {
     fn execute(
         &self,
         input: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SkillError>> + Send + '_>> {
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, ToolError>> + Send + '_>> {
         Box::pin(async move {
             let path = input
                 .get("path")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| SkillError::InvalidInput("missing required field: path".into()))?;
+                .ok_or_else(|| ToolError::InvalidInput("missing required field: path".into()))?;
             let content = input
                 .get("content")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| {
-                    SkillError::InvalidInput("missing required field: content".into())
+                    ToolError::InvalidInput("missing required field: content".into())
                 })?;
 
             let resolved = validate_write_path(path, &self.allowed_directories)?;
 
             let bytes = content.len();
             std::fs::write(&resolved, content)
-                .map_err(|e| SkillError::ExecutionFailed(format!("failed to write file: {e}")))?;
+                .map_err(|e| ToolError::ExecutionFailed(format!("failed to write file: {e}")))?;
 
             Ok(serde_json::json!({ "bytes_written": bytes }))
         })
@@ -214,7 +214,7 @@ mod tests {
             .await;
 
         match result {
-            Err(SkillError::Forbidden(_)) => {}
+            Err(ToolError::Forbidden(_)) => {}
             other => panic!("expected Forbidden, got {other:?}"),
         }
 
@@ -236,7 +236,7 @@ mod tests {
             .await;
 
         match result {
-            Err(SkillError::Forbidden(_)) => {}
+            Err(ToolError::Forbidden(_)) => {}
             other => panic!("expected Forbidden, got {other:?}"),
         }
 

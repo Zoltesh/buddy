@@ -4,6 +4,7 @@
   import GeneralTab from './settings/GeneralTab.svelte';
   import ModelsTab from './settings/ModelsTab.svelte';
   import SkillsTab from './settings/SkillsTab.svelte';
+  import ToolsTab from './settings/ToolsTab.svelte';
 
   let { initialTab = null } = $props();
 
@@ -15,6 +16,7 @@
   const tabs = [
     { id: 'general', label: 'General' },
     { id: 'models', label: 'Models' },
+    { id: 'tools', label: 'Tools' },
     { id: 'skills', label: 'Skills' },
   ];
 
@@ -109,6 +111,8 @@
           <GeneralTab bind:config />
         {:else if activeTab === 'models'}
           <ModelsTab bind:config />
+        {:else if activeTab === 'tools'}
+          <ToolsTab bind:config />
         {:else if activeTab === 'skills'}
           <SkillsTab bind:config />
         {/if}

@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
-use super::{PermissionLevel, Skill, SkillError};
+use super::{PermissionLevel, Tool, ToolError};
 
 /// Per-conversation short-term scratchpad.
 ///
@@ -88,7 +88,7 @@ impl MemoryWriteSkill {
     }
 }
 
-impl Skill for MemoryWriteSkill {
+impl Tool for MemoryWriteSkill {
     fn name(&self) -> &str {
         "memory_write"
     }
@@ -126,21 +126,21 @@ impl Skill for MemoryWriteSkill {
     fn execute(
         &self,
         input: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SkillError>> + Send + '_>> {
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, ToolError>> + Send + '_>> {
         Box::pin(async move {
             let action = input
                 .get("action")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| SkillError::InvalidInput("missing required field: action".into()))?;
+                .ok_or_else(|| ToolError::InvalidInput("missing required field: action".into()))?;
 
             let conversation_id = input
                 .get("conversation_id")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| {
-                    SkillError::ExecutionFailed("missing conversation context".into())
+                    ToolError::ExecutionFailed("missing conversation context".into())
                 })?;
 
-            let mut map = self.map.lock().map_err(|_| SkillError::ExecutionFailed("memory lock poisoned".into()))?;
+            let mut map = self.map.lock().map_err(|_| ToolError::ExecutionFailed("memory lock poisoned".into()))?;
             let wm = map.entry(conversation_id.to_string()).or_default();
 
             match action {
@@ -149,13 +149,13 @@ impl Skill for MemoryWriteSkill {
                         .get("key")
                         .and_then(|v| v.as_str())
                         .ok_or_else(|| {
-                            SkillError::InvalidInput("set requires 'key'".into())
+                            ToolError::InvalidInput("set requires 'key'".into())
                         })?;
                     let value = input
                         .get("value")
                         .and_then(|v| v.as_str())
                         .ok_or_else(|| {
-                            SkillError::InvalidInput("set requires 'value'".into())
+                            ToolError::InvalidInput("set requires 'value'".into())
                         })?;
                     wm.set(key.to_string(), value.to_string());
                     Ok(serde_json::json!({ "status": "ok", "action": "set", "key": key, "value": value }))
@@ -165,7 +165,7 @@ impl Skill for MemoryWriteSkill {
                         .get("value")
                         .and_then(|v| v.as_str())
                         .ok_or_else(|| {
-                            SkillError::InvalidInput("note requires 'value'".into())
+                            ToolError::InvalidInput("note requires 'value'".into())
                         })?;
                     wm.add_note(value.to_string());
                     Ok(serde_json::json!({ "status": "ok", "action": "note" }))
@@ -175,7 +175,7 @@ impl Skill for MemoryWriteSkill {
                         .get("key")
                         .and_then(|v| v.as_str())
                         .ok_or_else(|| {
-                            SkillError::InvalidInput("delete requires 'key'".into())
+                            ToolError::InvalidInput("delete requires 'key'".into())
                         })?;
                     let existed = wm.delete(key);
                     Ok(serde_json::json!({ "status": "ok", "action": "delete", "key": key, "existed": existed }))
@@ -184,7 +184,7 @@ impl Skill for MemoryWriteSkill {
                     wm.clear();
                     Ok(serde_json::json!({ "status": "ok", "action": "clear" }))
                 }
-                other => Err(SkillError::InvalidInput(format!(
+                other => Err(ToolError::InvalidInput(format!(
                     "unknown action: '{other}'. Valid actions: set, note, delete, clear"
                 ))),
             }
@@ -204,7 +204,7 @@ impl MemoryReadSkill {
     }
 }
 
-impl Skill for MemoryReadSkill {
+impl Tool for MemoryReadSkill {
     fn name(&self) -> &str {
         "memory_read"
     }
@@ -228,16 +228,16 @@ impl Skill for MemoryReadSkill {
     fn execute(
         &self,
         input: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SkillError>> + Send + '_>> {
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, ToolError>> + Send + '_>> {
         Box::pin(async move {
             let conversation_id = input
                 .get("conversation_id")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| {
-                    SkillError::ExecutionFailed("missing conversation context".into())
+                    ToolError::ExecutionFailed("missing conversation context".into())
                 })?;
 
-            let map = self.map.lock().map_err(|_| SkillError::ExecutionFailed("memory lock poisoned".into()))?;
+            let map = self.map.lock().map_err(|_| ToolError::ExecutionFailed("memory lock poisoned".into()))?;
             let wm = map.get(conversation_id);
 
             if let Some(key) = input.get("key").and_then(|v| v.as_str()) {
@@ -420,7 +420,7 @@ mod tests {
             }))
             .await
             .unwrap_err();
-        assert!(matches!(err, SkillError::InvalidInput(_)));
+        assert!(matches!(err, ToolError::InvalidInput(_)));
     }
 
     #[tokio::test]
@@ -435,6 +435,6 @@ mod tests {
             }))
             .await
             .unwrap_err();
-        assert!(matches!(err, SkillError::InvalidInput(_)));
+        assert!(matches!(err, ToolError::InvalidInput(_)));
     }
 }

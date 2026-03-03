@@ -4,7 +4,7 @@ use std::pin::Pin;
 
 use crate::config::ReadFileConfig;
 
-use super::{Skill, SkillError, normalize_path};
+use super::{Tool, ToolError, normalize_path};
 
 /// Skill that reads file contents from sandboxed directories.
 pub struct ReadFileSkill {
@@ -23,7 +23,7 @@ impl ReadFileSkill {
 ///
 /// 1. Normalize the path (resolve `..` without filesystem access) and reject if outside sandbox
 /// 2. Canonicalize the real path (resolves symlinks) and reject if outside sandbox
-fn validate_path(path: &str, allowed_dirs: &[PathBuf]) -> Result<PathBuf, SkillError> {
+fn validate_path(path: &str, allowed_dirs: &[PathBuf]) -> Result<PathBuf, ToolError> {
     // First pass: normalize and check (catches `../` traversal even for non-existent paths)
     let normalized = normalize_path(Path::new(path))?;
     let mut in_sandbox = false;
@@ -38,29 +38,29 @@ fn validate_path(path: &str, allowed_dirs: &[PathBuf]) -> Result<PathBuf, SkillE
         }
     }
     if !in_sandbox {
-        return Err(SkillError::Forbidden(format!(
+        return Err(ToolError::Forbidden(format!(
             "path '{path}' is outside allowed directories"
         )));
     }
 
     // Second pass: canonicalize to resolve symlinks and verify again
     let canonical = std::fs::canonicalize(path)
-        .map_err(|e| SkillError::ExecutionFailed(format!("cannot resolve path '{path}': {e}")))?;
+        .map_err(|e| ToolError::ExecutionFailed(format!("cannot resolve path '{path}': {e}")))?;
 
     for dir in allowed_dirs {
         let canonical_dir = std::fs::canonicalize(dir)
-            .map_err(|e| SkillError::ExecutionFailed(format!("failed to resolve directory: {e}")))?;
+            .map_err(|e| ToolError::ExecutionFailed(format!("failed to resolve directory: {e}")))?;
         if canonical.starts_with(&canonical_dir) {
             return Ok(canonical);
         }
     }
 
-    Err(SkillError::Forbidden(format!(
+    Err(ToolError::Forbidden(format!(
         "path '{path}' resolves outside allowed directories"
     )))
 }
 
-impl Skill for ReadFileSkill {
+impl Tool for ReadFileSkill {
     fn name(&self) -> &str {
         "read_file"
     }
@@ -82,17 +82,17 @@ impl Skill for ReadFileSkill {
     fn execute(
         &self,
         input: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SkillError>> + Send + '_>> {
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, ToolError>> + Send + '_>> {
         Box::pin(async move {
             let path = input
                 .get("path")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| SkillError::InvalidInput("missing required field: path".into()))?;
+                .ok_or_else(|| ToolError::InvalidInput("missing required field: path".into()))?;
 
             let canonical = validate_path(path, &self.allowed_directories)?;
 
             let content = std::fs::read_to_string(&canonical)
-                .map_err(|e| SkillError::ExecutionFailed(format!("failed to read file: {e}")))?;
+                .map_err(|e| ToolError::ExecutionFailed(format!("failed to read file: {e}")))?;
 
             Ok(serde_json::json!({ "content": content }))
         })
@@ -139,7 +139,7 @@ mod tests {
             .await;
 
         match result {
-            Err(SkillError::Forbidden(_)) => {}
+            Err(ToolError::Forbidden(_)) => {}
             other => panic!("expected Forbidden, got {other:?}"),
         }
 
@@ -166,7 +166,7 @@ mod tests {
             .await;
 
         match result {
-            Err(SkillError::Forbidden(_)) => {}
+            Err(ToolError::Forbidden(_)) => {}
             other => panic!("expected Forbidden, got {other:?}"),
         }
 

@@ -54,7 +54,7 @@ pub fn build_provider_chain(config: &Config) -> Result<ProviderChain<AnyProvider
             "openai" => {
                 let endpoint = entry.endpoint.as_deref().ok_or_else(|| {
                     ReloadError::InvalidConfig(
-                        "endpoint is required for provider type 'openai'".into()
+                        "endpoint is required for provider type 'openai'".into(),
                     )
                 })?;
                 if api_key.is_empty() {
@@ -70,7 +70,10 @@ pub fn build_provider_chain(config: &Config) -> Result<ProviderChain<AnyProvider
                 ))
             }
             "mistral" => {
-                let endpoint = entry.endpoint.as_deref().unwrap_or("https://api.mistral.ai");
+                let endpoint = entry
+                    .endpoint
+                    .as_deref()
+                    .unwrap_or("https://api.mistral.ai");
                 if api_key.is_empty() {
                     return Err(ReloadError::InvalidConfig(
                         "an API key is required when type = \"mistral\"".into(),
@@ -86,25 +89,23 @@ pub fn build_provider_chain(config: &Config) -> Result<ProviderChain<AnyProvider
             "lmstudio" => {
                 let endpoint = entry.endpoint.as_deref().ok_or_else(|| {
                     ReloadError::InvalidConfig(
-                        "endpoint is required for provider type 'lmstudio'".into()
+                        "endpoint is required for provider type 'lmstudio'".into(),
                     )
                 })?;
-                AnyProvider::LmStudio(LmStudioProvider::new(
-                    &entry.model,
-                    endpoint,
-                    system_prompt,
-                ))
+                AnyProvider::LmStudio(LmStudioProvider::new(&entry.model, endpoint, system_prompt))
             }
             "ollama" => {
-                let endpoint = entry.endpoint.as_deref().unwrap_or("http://localhost:11434");
-                AnyProvider::Ollama(OllamaProvider::new(
-                    &entry.model,
-                    endpoint,
-                    system_prompt,
-                ))
+                let endpoint = entry
+                    .endpoint
+                    .as_deref()
+                    .unwrap_or("http://localhost:11434");
+                AnyProvider::Ollama(OllamaProvider::new(&entry.model, endpoint, system_prompt))
             }
             "gemini" => {
-                let endpoint = entry.endpoint.as_deref().unwrap_or("https://generativelanguage.googleapis.com");
+                let endpoint = entry
+                    .endpoint
+                    .as_deref()
+                    .unwrap_or("https://generativelanguage.googleapis.com");
                 if api_key.is_empty() {
                     return Err(ReloadError::InvalidConfig(
                         "an API key is required when type = \"gemini\"".into(),
@@ -200,14 +201,14 @@ pub fn build_vector_store(
     Ok(result)
 }
 
-/// Build the skill registry from config, including memory skills.
-pub fn build_skill_registry(
+/// Build the tool registry from config, including memory tools.
+pub fn build_tool_registry(
     config: &Config,
     working_memory: skill::working_memory::WorkingMemoryMap,
     embedder: &Option<Arc<dyn embedding::Embedder>>,
     vector_store: &Option<Arc<dyn memory::VectorStore>>,
-) -> skill::SkillRegistry {
-    let mut registry = skill::build_registry(&config.skills);
+) -> skill::ToolRegistry {
+    let mut registry = skill::build_tool_registry(&config.skills);
     registry.register(Box::new(skill::working_memory::MemoryWriteSkill::new(
         working_memory.clone(),
     )));
@@ -228,9 +229,7 @@ pub fn build_skill_registry(
 }
 
 /// Extract per-skill approval overrides from config.
-pub fn build_approval_overrides(
-    config: &Config,
-) -> HashMap<String, ApprovalPolicy> {
+pub fn build_approval_overrides(config: &Config) -> HashMap<String, ApprovalPolicy> {
     let mut map = HashMap::new();
     if let Some(ref cfg) = config.skills.read_file {
         if let Some(policy) = cfg.approval {
@@ -294,7 +293,6 @@ pub fn refresh_warnings(
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -347,7 +345,10 @@ endpoint = "http://localhost:5678/v1"
     fn build_embedder_defaults_to_local_when_not_configured() {
         let config = lmstudio_config();
         let embedder = build_embedder(&config).unwrap();
-        assert!(embedder.is_some(), "local embedder should be active by default");
+        assert!(
+            embedder.is_some(),
+            "local embedder should be active by default"
+        );
         assert_eq!(embedder.unwrap().model_name(), "all-MiniLM-L6-v2");
     }
 
@@ -493,9 +494,7 @@ model = "all-MiniLM-L6-v2"
         let collector = warnings.read().unwrap();
         let list = collector.list();
         assert!(
-            !list
-                .iter()
-                .any(|w| w.code == "no_embedding_provider"),
+            !list.iter().any(|w| w.code == "no_embedding_provider"),
             "should not emit no_embedding_provider warning"
         );
     }
@@ -529,7 +528,10 @@ endpoint = "http://localhost:11434"
         )
         .unwrap();
         let chain = build_provider_chain(&config);
-        assert!(chain.is_ok(), "should build successfully with default endpoint");
+        assert!(
+            chain.is_ok(),
+            "should build successfully with default endpoint"
+        );
     }
 
     // Test cases for task 048: Mistral Provider
@@ -549,7 +551,10 @@ api_key_env = "BUDDY_TEST_MISTRAL_KEY_048"
         .unwrap();
         let chain = build_provider_chain(&config);
         unsafe { std::env::remove_var("BUDDY_TEST_MISTRAL_KEY_048") };
-        assert!(chain.is_ok(), "should build successfully with default endpoint");
+        assert!(
+            chain.is_ok(),
+            "should build successfully with default endpoint"
+        );
         assert_eq!(chain.unwrap().len(), 1);
     }
 
@@ -570,7 +575,10 @@ api_key_env = "BUDDY_TEST_GEMINI_KEY_047"
         .unwrap();
         let chain = build_provider_chain(&config);
         unsafe { std::env::remove_var("BUDDY_TEST_GEMINI_KEY_047") };
-        assert!(chain.is_ok(), "should build successfully with default endpoint");
+        assert!(
+            chain.is_ok(),
+            "should build successfully with default endpoint"
+        );
         assert_eq!(chain.unwrap().len(), 1);
     }
 }

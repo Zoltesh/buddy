@@ -12,7 +12,7 @@ use tower_http::services::ServeDir;
 
 use buddy_core::types::MessageContent;
 use buddy_core::provider::ProviderChain;
-use buddy_core::skill::SkillRegistry;
+use buddy_core::skill::ToolRegistry;
 use buddy_core::testutil::{
     ConfigurableMockProvider, FailingSkill, MockEchoSkill, MockProvider, MockResponse,
     SequencedProvider,
@@ -35,14 +35,14 @@ endpoint = "http://localhost:1234/v1"
     .unwrap()
 }
 
-fn registry_with_echo() -> SkillRegistry {
-    let mut r = SkillRegistry::new();
+fn registry_with_echo() -> ToolRegistry {
+    let mut r = ToolRegistry::new();
     r.register(Box::new(MockEchoSkill));
     r
 }
 
-fn registry_with_failing() -> SkillRegistry {
-    let mut r = SkillRegistry::new();
+fn registry_with_failing() -> ToolRegistry {
+    let mut r = ToolRegistry::new();
     r.register(Box::new(FailingSkill));
     r
 }
@@ -50,7 +50,7 @@ fn registry_with_failing() -> SkillRegistry {
 struct TestAppBuilder {
     tokens: Vec<String>,
     responses: Option<Vec<MockResponse>>,
-    registry: Option<SkillRegistry>,
+    registry: Option<ToolRegistry>,
     embedder: Option<Arc<dyn buddy_core::embedding::Embedder>>,
     vector_store: Option<Arc<dyn buddy_core::memory::VectorStore>>,
     static_dir: Option<String>,
@@ -73,13 +73,13 @@ impl TestAppBuilder {
         self
     }
 
-    fn with_sequenced(mut self, responses: Vec<MockResponse>, registry: SkillRegistry) -> Self {
+    fn with_sequenced(mut self, responses: Vec<MockResponse>, registry: ToolRegistry) -> Self {
         self.responses = Some(responses);
         self.registry = Some(registry);
         self
     }
 
-    fn with_registry(mut self, r: SkillRegistry) -> Self {
+    fn with_registry(mut self, r: ToolRegistry) -> Self {
         self.registry = Some(r);
         self
     }
@@ -114,7 +114,7 @@ impl TestAppBuilder {
         make_provider: impl FnOnce(Vec<String>) -> P,
     ) -> Router {
         let provider = make_provider(self.tokens);
-        let registry = self.registry.unwrap_or_else(SkillRegistry::new);
+        let registry = self.registry.unwrap_or_else(ToolRegistry::new);
 
         let state = Arc::new(AppState {
             provider: arc_swap::ArcSwap::from_pointee(provider),
@@ -158,7 +158,7 @@ fn test_app_with_static(tokens: Vec<String>, static_dir: &str) -> Router {
         .build_mock()
 }
 
-fn sequenced_app(responses: Vec<MockResponse>, registry: SkillRegistry) -> Router {
+fn sequenced_app(responses: Vec<MockResponse>, registry: ToolRegistry) -> Router {
     TestAppBuilder::new()
         .with_sequenced(responses, registry)
         .build_sequenced()
@@ -167,7 +167,7 @@ fn sequenced_app(responses: Vec<MockResponse>, registry: SkillRegistry) -> Route
 fn conversation_app(tokens: Vec<String>) -> (Arc<AppState<MockProvider>>, Router) {
     let state = Arc::new(AppState {
         provider: arc_swap::ArcSwap::from_pointee(MockProvider { tokens }),
-        registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
+        registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
         store: buddy_core::store::Store::open_in_memory().unwrap(),
         embedder: arc_swap::ArcSwap::from_pointee(None),
         vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -481,7 +481,7 @@ mod tool_loop {
                 )]),
                 MockResponse::Text(vec!["OK.".into()]),
             ],
-            SkillRegistry::new(), // empty registry
+            ToolRegistry::new(), // empty registry
         );
 
         let events = post_chat(app, &make_chat_body()).await;
@@ -530,7 +530,7 @@ mod tool_loop {
         ]);
         let state = Arc::new(AppState {
             provider: arc_swap::ArcSwap::from_pointee(chain),
-            registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
+            registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -888,7 +888,7 @@ mod warnings {
         }
         let state = Arc::new(AppState {
             provider: arc_swap::ArcSwap::from_pointee(MockProvider { tokens }),
-            registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
+            registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -950,7 +950,7 @@ mod warnings {
         let warnings = new_shared_warnings();
         let state = Arc::new(AppState {
             provider: arc_swap::ArcSwap::from_pointee(MockProvider { tokens: vec![] }),
-            registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
+            registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -1008,7 +1008,7 @@ mod warnings {
         }
         let state = Arc::new(AppState {
             provider: arc_swap::ArcSwap::from_pointee(MockProvider { tokens: vec![] }),
-            registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
+            registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -1140,7 +1140,7 @@ mod warnings {
         }
         let state = Arc::new(AppState {
             provider: arc_swap::ArcSwap::from_pointee(MockProvider { tokens: vec![] }),
-            registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
+            registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -1275,21 +1275,21 @@ mod approval {
     use buddy_core::config::ApprovalPolicy;
     use buddy_core::testutil::{MockMutatingSkill, MockNetworkSkill};
 
-    fn registry_with_mutating() -> SkillRegistry {
-        let mut r = SkillRegistry::new();
+    fn registry_with_mutating() -> ToolRegistry {
+        let mut r = ToolRegistry::new();
         r.register(Box::new(MockMutatingSkill));
         r
     }
 
-    fn registry_with_network() -> SkillRegistry {
-        let mut r = SkillRegistry::new();
+    fn registry_with_network() -> ToolRegistry {
+        let mut r = ToolRegistry::new();
         r.register(Box::new(MockNetworkSkill));
         r
     }
 
     fn approval_app(
         responses: Vec<MockResponse>,
-        registry: SkillRegistry,
+        registry: ToolRegistry,
         overrides: HashMap<String, ApprovalPolicy>,
         timeout: std::time::Duration,
     ) -> (Arc<AppState<SequencedProvider>>, Router) {
@@ -1680,7 +1680,7 @@ mod config_api {
             provider: arc_swap::ArcSwap::from_pointee(MockProvider {
                 tokens: vec!["hi".into()],
             }),
-            registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
+            registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -1942,7 +1942,7 @@ endpoint = "http://localhost:1234/v1"
         let config = buddy_core::config::Config::parse(initial_toml).unwrap();
         let state = Arc::new(AppState {
             provider: arc_swap::ArcSwap::from_pointee(MockProvider { tokens: vec!["hi".into()] }),
-            registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
+            registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -2191,7 +2191,7 @@ approval = "once"
             provider: arc_swap::ArcSwap::from_pointee(MockProvider {
                 tokens: vec!["hi".into()],
             }),
-            registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
+            registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -2623,7 +2623,7 @@ approval = "once"
             provider: arc_swap::ArcSwap::from_pointee(MockProvider {
                 tokens: vec!["hi".into()],
             }),
-            registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
+            registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -3171,7 +3171,7 @@ mod discover_models {
             provider: arc_swap::ArcSwap::from_pointee(MockProvider {
                 tokens: vec!["hi".into()],
             }),
-            registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
+            registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -3408,7 +3408,7 @@ mod settings_page {
             provider: arc_swap::ArcSwap::from_pointee(MockProvider {
                 tokens: vec!["hi".into()],
             }),
-            registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
+            registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -3455,7 +3455,7 @@ similarity_threshold = 0.5
             provider: arc_swap::ArcSwap::from_pointee(MockProvider {
                 tokens: vec!["hi".into()],
             }),
-            registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
+            registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -3777,7 +3777,7 @@ endpoint = "http://localhost:1234/v1"
             provider: arc_swap::ArcSwap::from_pointee(MockProvider {
                 tokens: vec!["hi".into()],
             }),
-            registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
+            registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -3795,8 +3795,8 @@ endpoint = "http://localhost:1234/v1"
             on_config_change: Some(Box::new(|state| {
                 let config = state.config.read().unwrap();
 
-                // Rebuild skill registry from config.
-                let registry = buddy_core::skill::build_registry(&config.skills);
+                // Rebuild tool registry from config.
+                let registry = buddy_core::skill::build_tool_registry(&config.skills);
                 state.registry.store(Arc::new(registry));
 
                 // Update memory config.
@@ -4076,7 +4076,7 @@ model = "all-minilm"
             provider: arc_swap::ArcSwap::from_pointee(MockProvider {
                 tokens: vec!["hi".into()],
             }),
-            registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
+            registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -4246,7 +4246,7 @@ endpoint = "http://localhost:1234/v1"
             provider: arc_swap::ArcSwap::from_pointee(MockProvider {
                 tokens: vec!["hi".into()],
             }),
-            registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
+            registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -4341,7 +4341,7 @@ endpoint = "https://api.openai.com/v1"
             provider: arc_swap::ArcSwap::from_pointee(MockProvider {
                 tokens: vec!["hi".into()],
             }),
-            registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
+            registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -4495,7 +4495,7 @@ mod auth {
     fn auth_app(host: &str, token_hash: Option<&str>) -> Router {
         let state = Arc::new(AppState {
             provider: arc_swap::ArcSwap::from_pointee(MockProvider { tokens: vec![] }),
-            registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
+            registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -4729,7 +4729,7 @@ mod interfaces_api {
             provider: arc_swap::ArcSwap::from_pointee(MockProvider {
                 tokens: vec!["hi".into()],
             }),
-            registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
+            registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -4773,7 +4773,7 @@ endpoint = "http://localhost:1234/v1"
             provider: arc_swap::ArcSwap::from_pointee(MockProvider {
                 tokens: vec!["hi".into()],
             }),
-            registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
+            registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -5039,7 +5039,7 @@ fn health_check_app(config: buddy_core::config::Config) -> Router {
         provider: arc_swap::ArcSwap::from_pointee(MockProvider {
             tokens: vec!["ok".into()],
         }),
-        registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new()),
+        registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
         store: buddy_core::store::Store::open_in_memory().unwrap(),
         embedder: arc_swap::ArcSwap::from_pointee(None),
         vector_store: arc_swap::ArcSwap::from_pointee(None),

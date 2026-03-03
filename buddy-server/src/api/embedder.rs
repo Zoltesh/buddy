@@ -116,7 +116,7 @@ mod tests {
     use buddy_core::config::{Config, MemoryConfig};
     use crate::api::new_pending_approvals;
     use buddy_core::embedding::Embedder;
-    use buddy_core::skill::SkillRegistry;
+    use buddy_core::skill::ToolRegistry;
     use buddy_core::store::Store;
     use buddy_core::testutil::{FailingEmbedder, MockEmbedder, MockProvider, WrongDimensionEmbedder};
     use axum::http::Request;
@@ -133,7 +133,7 @@ mod tests {
         let provider = MockProvider {
             tokens: vec!["ok".into()],
         };
-        let registry = SkillRegistry::new();
+        let registry = ToolRegistry::new();
         let config = Config::parse(
             r#"
 [[models.chat.providers]]

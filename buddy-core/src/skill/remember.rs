@@ -8,7 +8,7 @@ use uuid::Uuid;
 use crate::embedding::Embedder;
 use crate::memory::{VectorEntry, VectorStore};
 
-use super::{PermissionLevel, Skill, SkillError};
+use super::{PermissionLevel, Tool, ToolError};
 
 /// Skill that saves facts to long-term vector memory.
 pub struct RememberSkill {
@@ -25,7 +25,7 @@ impl RememberSkill {
     }
 }
 
-impl Skill for RememberSkill {
+impl Tool for RememberSkill {
     fn name(&self) -> &str {
         "remember"
     }
@@ -58,15 +58,15 @@ impl Skill for RememberSkill {
     fn execute(
         &self,
         input: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SkillError>> + Send + '_>> {
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, ToolError>> + Send + '_>> {
         Box::pin(async move {
             let text = input
                 .get("text")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| SkillError::InvalidInput("missing required field: text".into()))?;
+                .ok_or_else(|| ToolError::InvalidInput("missing required field: text".into()))?;
 
             if text.is_empty() {
-                return Err(SkillError::InvalidInput("text must not be empty".into()));
+                return Err(ToolError::InvalidInput("text must not be empty".into()));
             }
 
             let category = input.get("category").and_then(|v| v.as_str());
@@ -76,12 +76,12 @@ impl Skill for RememberSkill {
             let embeddings = self
                 .embedder
                 .embed(&[text])
-                .map_err(|e| SkillError::ExecutionFailed(format!("embedding failed: {e}")))?;
+                .map_err(|e| ToolError::ExecutionFailed(format!("embedding failed: {e}")))?;
 
             let embedding = embeddings
                 .into_iter()
                 .next()
-                .ok_or_else(|| SkillError::ExecutionFailed("embedder returned no vectors".into()))?;
+                .ok_or_else(|| ToolError::ExecutionFailed("embedder returned no vectors".into()))?;
 
             // Build metadata.
             let now = Utc::now();
@@ -105,7 +105,7 @@ impl Skill for RememberSkill {
 
             self.vector_store
                 .store(entry)
-                .map_err(|e| SkillError::ExecutionFailed(format!("failed to store memory: {e}")))?;
+                .map_err(|e| ToolError::ExecutionFailed(format!("failed to store memory: {e}")))?;
 
             Ok(serde_json::json!({
                 "status": "ok",
@@ -201,7 +201,7 @@ mod tests {
             }))
             .await
             .unwrap_err();
-        assert!(matches!(err, SkillError::InvalidInput(_)));
+        assert!(matches!(err, ToolError::InvalidInput(_)));
     }
 
     #[tokio::test]

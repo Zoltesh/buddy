@@ -8,7 +8,7 @@ use std::sync::Arc;
 use buddy_core::config::Config;
 use buddy_core::provider::{AnyProvider, ProviderChain};
 pub use buddy_core::reload::{
-    build_approval_overrides, build_embedder, build_provider_chain, build_skill_registry,
+    build_approval_overrides, build_embedder, build_provider_chain, build_tool_registry,
     build_vector_store, refresh_warnings, ReloadError,
 };
 
@@ -23,7 +23,7 @@ pub fn reload_from_config(
     let provider = build_provider_chain(config)?;
     let embedder = build_embedder(config)?;
     let vector_store = build_vector_store(&embedder)?;
-    let registry = build_skill_registry(
+    let registry = build_tool_registry(
         config,
         state.working_memory.clone(),
         &embedder,
@@ -83,7 +83,7 @@ model = "all-MiniLM-L6-v2"
         let embedder = build_embedder(&config_with_external).unwrap();
         let vector_store = build_vector_store(&embedder).unwrap();
         let working_memory = skill::working_memory::new_working_memory_map();
-        let registry = build_skill_registry(
+        let registry = build_tool_registry(
             &config_with_external,
             working_memory.clone(),
             &embedder,
@@ -162,7 +162,7 @@ endpoint = "http://localhost:1234/v1"
         let vector_store = build_vector_store(&embedder).unwrap();
         let working_memory = skill::working_memory::new_working_memory_map();
         let registry =
-            build_skill_registry(&config_v1, working_memory.clone(), &embedder, &vector_store);
+            build_tool_registry(&config_v1, working_memory.clone(), &embedder, &vector_store);
         let approval_overrides = build_approval_overrides(&config_v1);
         let warnings = warning::new_shared_warnings();
 
@@ -230,7 +230,7 @@ endpoint = "http://localhost:1234/v1"
         let vector_store = build_vector_store(&embedder).unwrap();
         let working_memory = skill::working_memory::new_working_memory_map();
         let registry =
-            build_skill_registry(&config, working_memory.clone(), &embedder, &vector_store);
+            build_tool_registry(&config, working_memory.clone(), &embedder, &vector_store);
         let approval_overrides = build_approval_overrides(&config);
         let warnings = warning::new_shared_warnings();
 
@@ -284,7 +284,7 @@ endpoint = "http://localhost:1234/v1"
         let embedder = build_embedder(&config_valid).unwrap();
         let vector_store = build_vector_store(&embedder).unwrap();
         let working_memory = skill::working_memory::new_working_memory_map();
-        let registry = build_skill_registry(
+        let registry = build_tool_registry(
             &config_valid,
             working_memory.clone(),
             &embedder,
@@ -358,7 +358,7 @@ endpoint = "http://localhost:1234/v1"
         let embedder = build_embedder(&config_no_embedder).unwrap();
         let vector_store = build_vector_store(&embedder).unwrap();
         let working_memory = skill::working_memory::new_working_memory_map();
-        let registry = build_skill_registry(
+        let registry = build_tool_registry(
             &config_no_embedder,
             working_memory.clone(),
             &embedder,

@@ -14,6 +14,21 @@
     { key: 'fetch_url', label: 'Fetch URL', permission: 'Network', field: 'allowed_domains', fieldLabel: 'Allowed domains', placeholder: 'example.com' },
   ];
 
+  const compositeSkills = [
+    {
+      key: 'remember',
+      label: 'Remember',
+      description: 'Save a fact, preference, or important information to long-term memory for later retrieval across conversations.',
+      tools: ['memory_write'],
+    },
+    {
+      key: 'recall',
+      label: 'Recall',
+      description: 'Search long-term memory for previously stored facts, preferences, or context relevant to a query.',
+      tools: ['memory_read'],
+    },
+  ];
+
   const permissionBadgeClass = {
     ReadOnly: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300',
     Mutating: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
@@ -228,5 +243,37 @@
         {skillsSaveMessage.text}
       </span>
     {/if}
+  </div>
+
+  <!-- Composite Skills (read-only) -->
+  <div class="mt-8 pt-6 border-t border-gray-200 dark:border-gray-800">
+    <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-100 uppercase tracking-wide mb-4">Composite Skills</h2>
+    <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+      Composite skills that combine multiple tools for complex operations.
+    </p>
+
+    <div class="space-y-4">
+      {#each compositeSkills as skill}
+        <section>
+          <div class="rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 px-4 py-3">
+            <div class="flex items-center gap-2 mb-2">
+              <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100">{skill.label}</h3>
+              <span class="inline-flex items-center gap-1 text-xs font-medium text-green-600 dark:text-green-400">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+                Available
+              </span>
+            </div>
+            <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">{skill.description}</p>
+            <div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+              <span>Uses:</span>
+              {#each skill.tools as tool, i}
+                <span class="px-2 py-0.5 bg-gray-200 dark:bg-gray-700 rounded">{tool}</span>
+                {#if i < skill.tools.length - 1}<span class="text-gray-400">+</span>{/if}
+              {/each}
+            </div>
+          </div>
+        </section>
+      {/each}
+    </div>
   </div>
 </div>
