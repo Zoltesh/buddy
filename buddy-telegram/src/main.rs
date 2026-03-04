@@ -92,6 +92,7 @@ async fn handle_message(
 
     let provider = state.provider.load();
     let registry = state.registry.load();
+    let skill_registry = state.skill_registry.load();
     let approval_overrides = state.approval_overrides.load();
     let approval_ctx = handler::TelegramApprovalContext {
         bot: &bot,
@@ -104,6 +105,7 @@ async fn handle_message(
         &state.store,
         &**provider,
         &registry,
+        &skill_registry,
         &approval_overrides,
         &state.conversation_approvals,
         chat_id.0,

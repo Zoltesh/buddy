@@ -6,6 +6,7 @@ use axum::Json;
 use serde::Serialize;
 
 use buddy_core::provider::Provider;
+use buddy_core::skill::SkillRegistry;
 
 use super::AppState;
 
@@ -147,6 +148,7 @@ endpoint = "http://localhost:1234/v1"
         let state = Arc::new(AppState {
             provider: arc_swap::ArcSwap::from_pointee(provider),
             registry: arc_swap::ArcSwap::from_pointee(registry),
+            skill_registry: arc_swap::ArcSwap::from_pointee(SkillRegistry::new(Arc::new(buddy_core::skill::ToolRegistry::new()))),
             store,
             embedder: arc_swap::ArcSwap::from_pointee(embedder),
             vector_store: arc_swap::ArcSwap::from_pointee(None),

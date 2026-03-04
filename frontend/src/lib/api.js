@@ -150,11 +150,11 @@ export function putConfigModels(models) {
 }
 
 /**
- * Update the skills config (read_file, write_file, fetch_url).
- * @param {object} skills
+ * Update the tools config (read_file, write_file, fetch_url).
+ * @param {object} tools
  */
-export function putConfigSkills(skills) {
-  return putConfigSection('skills', skills);
+export function putConfigTools(tools) {
+  return putConfigSection('tools', tools);
 }
 
 /** Fetch interface connection status. */

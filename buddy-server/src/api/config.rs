@@ -78,35 +78,35 @@ fn validate_server(server: &buddy_core::config::ServerConfig) -> Vec<FieldError>
     errors
 }
 
-pub(crate) fn validate_skills(skills: &buddy_core::config::SkillsConfig) -> Vec<FieldError> {
+pub(crate) fn validate_tools(tools: &buddy_core::config::ToolsConfig) -> Vec<FieldError> {
     let mut errors = Vec::new();
-    if let Some(ref rf) = skills.read_file {
+    if let Some(ref rf) = tools.read_file {
         for (i, dir) in rf.allowed_directories.iter().enumerate() {
             let path = std::path::Path::new(dir);
             if !path.is_dir() {
                 errors.push(FieldError {
-                    field: format!("skills.read_file.allowed_directories[{i}]"),
+                    field: format!("tools.read_file.allowed_directories[{i}]"),
                     message: format!("'{}' does not exist or is not a directory", dir),
                 });
             }
         }
     }
-    if let Some(ref wf) = skills.write_file {
+    if let Some(ref wf) = tools.write_file {
         for (i, dir) in wf.allowed_directories.iter().enumerate() {
             let path = std::path::Path::new(dir);
             if !path.is_dir() {
                 errors.push(FieldError {
-                    field: format!("skills.write_file.allowed_directories[{i}]"),
+                    field: format!("tools.write_file.allowed_directories[{i}]"),
                     message: format!("'{}' does not exist or is not a directory", dir),
                 });
             }
         }
     }
-    if let Some(ref fu) = skills.fetch_url {
+    if let Some(ref fu) = tools.fetch_url {
         for (i, domain) in fu.allowed_domains.iter().enumerate() {
             if domain.is_empty() {
                 errors.push(FieldError {
-                    field: format!("skills.fetch_url.allowed_domains[{i}]"),
+                    field: format!("tools.fetch_url.allowed_domains[{i}]"),
                     message: "must not be empty".into(),
                 });
             }
@@ -206,16 +206,16 @@ pub async fn put_config_models<P: Provider + 'static>(
     }
 }
 
-/// `PUT /api/config/skills` — update the skills section.
-pub async fn put_config_skills<P: Provider + 'static>(
+/// `PUT /api/config/tools` — update the tools section.
+pub async fn put_config_tools<P: Provider + 'static>(
     State(state): State<Arc<AppState<P>>>,
-    Json(skills): Json<buddy_core::config::SkillsConfig>,
+    Json(tools): Json<buddy_core::config::ToolsConfig>,
 ) -> axum::response::Response {
-    let errors = validate_skills(&skills);
+    let errors = validate_tools(&tools);
     if !errors.is_empty() {
         return (StatusCode::BAD_REQUEST, Json(ValidationErrorResponse { errors })).into_response();
     }
-    match apply_config_update(&state, |config| config.skills = skills) {
+    match apply_config_update(&state, |config| config.tools = tools) {
         Ok(config) => Json(config).into_response(),
         Err(resp) => resp,
     }

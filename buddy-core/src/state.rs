@@ -18,7 +18,7 @@ use crate::memory::VectorStore;
 use crate::provider::{AnyProvider, ProviderChain};
 use crate::reload;
 use crate::skill::working_memory::WorkingMemoryMap;
-use crate::skill::ToolRegistry;
+use crate::skill::{SkillRegistry, ToolRegistry};
 use crate::store::Store;
 use crate::warning::SharedWarnings;
 
@@ -50,6 +50,7 @@ pub fn new_child_process_handle() -> ChildProcessHandle {
 pub struct AppState<P> {
     pub provider: arc_swap::ArcSwap<P>,
     pub registry: arc_swap::ArcSwap<ToolRegistry>,
+    pub skill_registry: arc_swap::ArcSwap<SkillRegistry>,
     pub store: Store,
     pub embedder: arc_swap::ArcSwap<Option<Arc<dyn Embedder>>>,
     pub vector_store: arc_swap::ArcSwap<Option<Arc<dyn VectorStore>>>,
@@ -93,6 +94,9 @@ impl AppState<ProviderChain<AnyProvider>> {
         let registry =
             reload::build_tool_registry(&config, working_memory.clone(), &embedder, &vector_store);
 
+        let skill_registry =
+            reload::build_skill_registry(Arc::new(registry.clone()), &embedder, &vector_store);
+
         let approval_overrides = reload::build_approval_overrides(&config);
 
         let provider_count = provider.len();
@@ -102,6 +106,7 @@ impl AppState<ProviderChain<AnyProvider>> {
         Ok(Self {
             provider: arc_swap::ArcSwap::from_pointee(provider),
             registry: arc_swap::ArcSwap::from_pointee(registry),
+            skill_registry: arc_swap::ArcSwap::from_pointee(skill_registry),
             store,
             embedder: arc_swap::ArcSwap::from_pointee(embedder),
             vector_store: arc_swap::ArcSwap::from_pointee(vector_store),

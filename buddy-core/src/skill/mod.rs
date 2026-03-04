@@ -9,8 +9,9 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::path::{Component, Path, PathBuf};
 use std::pin::Pin;
+use std::sync::Arc;
 
-use crate::config::SkillsConfig;
+use crate::config::ToolsConfig;
 use serde::{Deserialize, Serialize};
 
 /// Normalize a path by making it absolute and resolving `.` and `..` without
@@ -103,8 +104,9 @@ pub trait Tool: Send + Sync {
 ///
 /// Tools are registered at startup and looked up by name when the LLM
 /// requests a tool call.
+#[derive(Clone)]
 pub struct ToolRegistry {
-    tools: HashMap<String, Box<dyn Tool>>,
+    tools: HashMap<String, Arc<dyn Tool>>,
 }
 
 impl ToolRegistry {
@@ -116,7 +118,7 @@ impl ToolRegistry {
     }
 
     /// Register a tool. Overwrites any existing tool with the same name.
-    pub fn register(&mut self, tool: Box<dyn Tool>) {
+    pub fn register(&mut self, tool: Arc<dyn Tool>) {
         self.tools.insert(tool.name().to_owned(), tool);
     }
 
@@ -170,20 +172,39 @@ impl ToolRegistry {
     }
 }
 
-/// Build a `ToolRegistry` from the skills configuration.
+/// Build a `ToolRegistry` from the tools configuration.
 ///
-/// Only skills with configuration present in `buddy.toml` are registered.
-pub fn build_tool_registry(config: &SkillsConfig) -> ToolRegistry {
+/// # Tool Registration Rules
+///
+/// Tools that ALWAYS require config (need sandboxing):
+/// - `read_file` - requires allowed_directories in config
+/// - `write_file` - requires allowed_directories in config
+/// - `fetch_url` - requires allowed_domains in config
+///
+/// Tools that NEVER require config:
+/// - `memory_read` - per-conversation working memory, no sandboxing
+/// - `memory_write` - per-conversation working memory, no sandboxing
+pub fn build_tool_registry(
+    config: &ToolsConfig,
+    working_memory: Option<working_memory::WorkingMemoryMap>,
+) -> ToolRegistry {
     let mut registry = ToolRegistry::new();
 
+    // Tools that require config (sandboxing)
     if let Some(ref cfg) = config.read_file {
-        registry.register(Box::new(read_file::ReadFileSkill::new(cfg)));
+        registry.register(Arc::new(read_file::ReadFileSkill::new(cfg)));
     }
     if let Some(ref cfg) = config.write_file {
-        registry.register(Box::new(write_file::WriteFileSkill::new(cfg)));
+        registry.register(Arc::new(write_file::WriteFileSkill::new(cfg)));
     }
     if let Some(ref cfg) = config.fetch_url {
-        registry.register(Box::new(fetch_url::FetchUrlSkill::new(cfg)));
+        registry.register(Arc::new(fetch_url::FetchUrlSkill::new(cfg)));
+    }
+
+    // Tools that don't require config (always available when working_memory is provided)
+    if let Some(map) = working_memory {
+        registry.register(Arc::new(working_memory::MemoryReadSkill::new(map.clone())));
+        registry.register(Arc::new(working_memory::MemoryWriteSkill::new(map)));
     }
 
     registry
@@ -197,7 +218,7 @@ mod tests {
     #[test]
     fn registry_get_returns_some_for_registered_tool() {
         let mut registry = ToolRegistry::new();
-        registry.register(Box::new(MockEchoSkill));
+        registry.register(Arc::new(MockEchoSkill));
         assert!(registry.get("echo").is_some());
     }
 
@@ -210,15 +231,15 @@ mod tests {
     #[test]
     fn registry_list_returns_all_registered_tools() {
         let mut registry = ToolRegistry::new();
-        registry.register(Box::new(MockEchoSkill));
-        registry.register(Box::new(MockNoOpSkill));
+        registry.register(Arc::new(MockEchoSkill));
+        registry.register(Arc::new(MockNoOpSkill));
         assert_eq!(registry.list().len(), 2);
     }
 
     #[test]
     fn tool_definitions_has_correct_shape() {
         let mut registry = ToolRegistry::new();
-        registry.register(Box::new(MockEchoSkill));
+        registry.register(Arc::new(MockEchoSkill));
 
         let defs = registry.tool_definitions();
         assert_eq!(defs.len(), 1);
@@ -234,7 +255,7 @@ mod tests {
     #[tokio::test]
     async fn execute_mock_tool_with_valid_input() {
         let mut registry = ToolRegistry::new();
-        registry.register(Box::new(MockEchoSkill));
+        registry.register(Arc::new(MockEchoSkill));
 
         let tool = registry.get("echo").unwrap();
         let result = tool
@@ -248,7 +269,7 @@ mod tests {
     #[tokio::test]
     async fn execute_mock_tool_with_invalid_input_returns_error() {
         let mut registry = ToolRegistry::new();
-        registry.register(Box::new(MockEchoSkill));
+        registry.register(Arc::new(MockEchoSkill));
 
         let tool = registry.get("echo").unwrap();
         let result = tool.execute(serde_json::json!({})).await;
@@ -273,8 +294,8 @@ mod tests {
 
     #[test]
     fn build_tool_registry_with_no_tools_is_empty() {
-        let config = SkillsConfig::default();
-        let registry = build_tool_registry(&config);
+        let config = ToolsConfig::default();
+        let registry = build_tool_registry(&config, None);
         assert!(registry.is_empty());
         assert_eq!(registry.len(), 0);
     }
@@ -283,7 +304,7 @@ mod tests {
     fn build_tool_registry_with_read_file_only() {
         use crate::config::ReadFileConfig;
 
-        let config = SkillsConfig {
+        let config = ToolsConfig {
             read_file: Some(ReadFileConfig {
                 allowed_directories: vec!["/tmp".into()],
                 approval: None,
@@ -291,7 +312,7 @@ mod tests {
             write_file: None,
             fetch_url: None,
         };
-        let registry = build_tool_registry(&config);
+        let registry = build_tool_registry(&config, None);
         assert_eq!(registry.len(), 1);
         assert!(registry.get("read_file").is_some());
         assert!(registry.get("write_file").is_none());
@@ -302,7 +323,7 @@ mod tests {
     fn build_tool_registry_with_all_tools() {
         use crate::config::{FetchUrlConfig, ReadFileConfig, WriteFileConfig};
 
-        let config = SkillsConfig {
+        let config = ToolsConfig {
             read_file: Some(ReadFileConfig {
                 allowed_directories: vec!["/tmp".into()],
                 approval: None,
@@ -316,19 +337,26 @@ mod tests {
                 approval: None,
             }),
         };
-        let registry = build_tool_registry(&config);
-        assert_eq!(registry.len(), 3);
+        let registry = build_tool_registry(
+            &config,
+            Some(working_memory::new_working_memory_map()),
+        );
+        assert_eq!(registry.len(), 5);
         assert!(registry.get("read_file").is_some());
         assert!(registry.get("write_file").is_some());
         assert!(registry.get("fetch_url").is_some());
+        assert!(registry.get("memory_read").is_some());
+        assert!(registry.get("memory_write").is_some());
+    }
+
+    #[test]
+    fn build_tool_registry_memory_tools_require_working_memory() {
+        let config = ToolsConfig::default();
+        let registry = build_tool_registry(&config, None);
+        assert!(registry.get("memory_read").is_none());
+        assert!(registry.get("memory_write").is_none());
     }
 }
-
-// ============================================================================
-// Skill: High-level composite operations that use tools
-// ============================================================================
-
-use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillDefinition {
@@ -359,11 +387,24 @@ pub struct SkillMatch {
 pub struct Skill {
     definition: SkillDefinition,
     tool_registry: Arc<ToolRegistry>,
+    tool: Option<Box<dyn Tool>>,
 }
 
 impl Skill {
     pub fn new(definition: SkillDefinition, tool_registry: Arc<ToolRegistry>) -> Self {
-        Self { definition, tool_registry }
+        Self {
+            definition,
+            tool_registry,
+            tool: None,
+        }
+    }
+
+    pub fn with_tool(definition: SkillDefinition, tool_registry: Arc<ToolRegistry>, tool: Box<dyn Tool>) -> Self {
+        Self {
+            definition,
+            tool_registry,
+            tool: Some(tool),
+        }
     }
 
     pub fn name(&self) -> &str {
@@ -379,6 +420,13 @@ impl Skill {
     }
 
     pub async fn execute(&self, input: serde_json::Value) -> Result<serde_json::Value, SkillError> {
+        if let Some(ref tool) = self.tool {
+            return tool
+                .execute(input)
+                .await
+                .map_err(SkillError::ToolExecutionFailed);
+        }
+
         let mut current_input = input;
         let mut step_stack: Vec<&InstructionStep> = self.definition.instruction_steps.iter().collect();
         
@@ -484,6 +532,11 @@ impl SkillRegistry {
         self.skills.insert(skill.name().to_owned(), skill);
     }
 
+    pub fn register_with_impl(&mut self, definition: SkillDefinition, tool: Box<dyn Tool>) {
+        let skill = Skill::with_tool(definition, self.tool_registry.clone(), tool);
+        self.skills.insert(skill.name().to_owned(), skill);
+    }
+
     pub fn get(&self, name: &str) -> Option<&Skill> {
         self.skills.get(name)
     }
@@ -510,6 +563,23 @@ impl SkillRegistry {
     pub fn is_empty(&self) -> bool {
         self.skills.is_empty()
     }
+
+    pub fn tool_definitions(&self) -> Vec<serde_json::Value> {
+        self.skills
+            .values()
+            .filter_map(|skill| skill.tool.as_ref())
+            .map(|tool| {
+                serde_json::json!({
+                    "type": "function",
+                    "function": {
+                        "name": tool.name(),
+                        "description": tool.description(),
+                        "parameters": tool.input_schema(),
+                    }
+                })
+            })
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -519,7 +589,7 @@ mod skill_tests {
 
     fn test_tool_registry() -> Arc<ToolRegistry> {
         let mut registry = ToolRegistry::new();
-        registry.register(Box::new(MockEchoSkill));
+        registry.register(Arc::new(MockEchoSkill));
         Arc::new(registry)
     }
 

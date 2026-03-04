@@ -8,9 +8,10 @@ use std::sync::Arc;
 use buddy_core::config::Config;
 use buddy_core::provider::{AnyProvider, ProviderChain};
 pub use buddy_core::reload::{
-    build_approval_overrides, build_embedder, build_provider_chain, build_tool_registry,
-    build_vector_store, refresh_warnings, ReloadError,
+    build_approval_overrides, build_embedder, build_provider_chain, build_skill_registry,
+    build_tool_registry, build_vector_store, refresh_warnings, ReloadError,
 };
+use buddy_core::skill::SkillRegistry;
 
 /// Perform a full hot-reload: rebuild all runtime components from config and
 /// swap them into `AppState`.
@@ -94,7 +95,12 @@ model = "all-MiniLM-L6-v2"
 
         let state = AppState {
             provider: arc_swap::ArcSwap::from_pointee(provider),
-            registry: arc_swap::ArcSwap::from_pointee(registry),
+            registry: arc_swap::ArcSwap::from_pointee(registry.clone()),
+            skill_registry: arc_swap::ArcSwap::from_pointee(build_skill_registry(
+                Arc::new(registry.clone()),
+                &embedder,
+                &vector_store,
+            )),
             store,
             embedder: arc_swap::ArcSwap::from_pointee(embedder),
             vector_store: arc_swap::ArcSwap::from_pointee(vector_store),
@@ -168,7 +174,12 @@ endpoint = "http://localhost:1234/v1"
 
         let state = AppState {
             provider: arc_swap::ArcSwap::from_pointee(provider),
-            registry: arc_swap::ArcSwap::from_pointee(registry),
+            registry: arc_swap::ArcSwap::from_pointee(registry.clone()),
+            skill_registry: arc_swap::ArcSwap::from_pointee(build_skill_registry(
+                Arc::new(registry.clone()),
+                &embedder,
+                &vector_store,
+            )),
             store,
             embedder: arc_swap::ArcSwap::from_pointee(embedder),
             vector_store: arc_swap::ArcSwap::from_pointee(vector_store),
@@ -236,7 +247,12 @@ endpoint = "http://localhost:1234/v1"
 
         let state = AppState {
             provider: arc_swap::ArcSwap::from_pointee(provider),
-            registry: arc_swap::ArcSwap::from_pointee(registry),
+            registry: arc_swap::ArcSwap::from_pointee(registry.clone()),
+            skill_registry: arc_swap::ArcSwap::from_pointee(build_skill_registry(
+                Arc::new(registry.clone()),
+                &embedder,
+                &vector_store,
+            )),
             store,
             embedder: arc_swap::ArcSwap::from_pointee(embedder),
             vector_store: arc_swap::ArcSwap::from_pointee(vector_store),
@@ -295,7 +311,12 @@ endpoint = "http://localhost:1234/v1"
 
         let state = AppState {
             provider: arc_swap::ArcSwap::from_pointee(provider),
-            registry: arc_swap::ArcSwap::from_pointee(registry),
+            registry: arc_swap::ArcSwap::from_pointee(registry.clone()),
+            skill_registry: arc_swap::ArcSwap::from_pointee(build_skill_registry(
+                Arc::new(registry.clone()),
+                &embedder,
+                &vector_store,
+            )),
             store,
             embedder: arc_swap::ArcSwap::from_pointee(embedder),
             vector_store: arc_swap::ArcSwap::from_pointee(vector_store),
@@ -369,7 +390,12 @@ endpoint = "http://localhost:1234/v1"
 
         let state = AppState {
             provider: arc_swap::ArcSwap::from_pointee(provider),
-            registry: arc_swap::ArcSwap::from_pointee(registry),
+            registry: arc_swap::ArcSwap::from_pointee(registry.clone()),
+            skill_registry: arc_swap::ArcSwap::from_pointee(build_skill_registry(
+                Arc::new(registry.clone()),
+                &embedder,
+                &vector_store,
+            )),
             store,
             embedder: arc_swap::ArcSwap::from_pointee(embedder),
             vector_store: arc_swap::ArcSwap::from_pointee(vector_store),

@@ -104,7 +104,9 @@ pub async fn chat_handler<P: Provider + 'static>(
 
     let tools = {
         let registry = state.registry.load();
-        let defs = registry.tool_definitions();
+        let skill_registry = state.skill_registry.load();
+        let mut defs = registry.tool_definitions();
+        defs.extend(skill_registry.tool_definitions());
         if defs.is_empty() {
             None
         } else {

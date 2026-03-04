@@ -275,6 +275,7 @@ async fn receive_webhook(
 async fn process_incoming_message(state: &AppState, phone: &str, text: &str) {
     let provider = state.core.provider.load();
     let registry = state.core.registry.load();
+    let skill_registry = state.core.skill_registry.load();
     let approval_overrides = state.core.approval_overrides.load();
 
     let approval_ctx = conversation::WhatsAppApprovalContext {
@@ -288,6 +289,7 @@ async fn process_incoming_message(state: &AppState, phone: &str, text: &str) {
         &state.core.store,
         &**provider,
         &registry,
+        &skill_registry,
         &approval_overrides,
         &state.core.conversation_approvals,
         phone,

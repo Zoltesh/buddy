@@ -41,7 +41,7 @@
   };
 
   function isToolEnabled(key) {
-    return config?.skills?.[key] != null;
+    return config?.tools?.[key] != null;
   }
 </script>
 

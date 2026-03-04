@@ -38,7 +38,7 @@ pub use buddy_core::state::new_pending_approvals;
 pub use chat::{approve_handler, chat_handler};
 pub use config::{
     discover_models, get_config, put_config_chat, put_config_memory, put_config_models,
-    put_config_server, put_config_skills, test_provider,
+    put_config_server, put_config_tools, test_provider,
 };
 pub use conversation::{
     create_conversation, delete_conversation, get_conversation, list_conversations,

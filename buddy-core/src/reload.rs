@@ -18,6 +18,7 @@ use crate::provider::ollama::OllamaProvider;
 use crate::provider::openai::OpenAiProvider;
 use crate::provider::{AnyProvider, ProviderChain};
 use crate::skill;
+use crate::skill::{InstructionStep, SkillDefinition, SkillRegistry};
 use crate::warning;
 
 /// Errors that can occur during hot-reload.
@@ -208,40 +209,96 @@ pub fn build_tool_registry(
     embedder: &Option<Arc<dyn embedding::Embedder>>,
     vector_store: &Option<Arc<dyn memory::VectorStore>>,
 ) -> skill::ToolRegistry {
-    let mut registry = skill::build_tool_registry(&config.skills);
-    registry.register(Box::new(skill::working_memory::MemoryWriteSkill::new(
-        working_memory.clone(),
-    )));
-    registry.register(Box::new(skill::working_memory::MemoryReadSkill::new(
-        working_memory,
-    )));
+    let registry = skill::build_tool_registry(&config.tools, Some(working_memory.clone()));
+    if let (Some(_emb), Some(_vs)) = (embedder, vector_store) {}
+    registry
+}
+
+/// Build the skill registry with remember/recall skills.
+pub fn build_skill_registry(
+    tool_registry: Arc<skill::ToolRegistry>,
+    embedder: &Option<Arc<dyn embedding::Embedder>>,
+    vector_store: &Option<Arc<dyn memory::VectorStore>>,
+) -> SkillRegistry {
+    let mut registry = SkillRegistry::new(tool_registry);
+
     if let (Some(emb), Some(vs)) = (embedder, vector_store) {
-        registry.register(Box::new(skill::remember::RememberSkill::new(
-            emb.clone(),
-            vs.clone(),
-        )));
-        registry.register(Box::new(skill::recall::RecallSkill::new(
-            emb.clone(),
-            vs.clone(),
-        )));
+        let remember_def = SkillDefinition {
+            name: "remember".to_string(),
+            description: "Save a fact, preference, or important information to long-term memory for later retrieval across conversations.".to_string(),
+            tools: vec![],
+            instruction_steps: vec![
+                InstructionStep::ToolCall {
+                    tool: "remember".to_string(),
+                    input: serde_json::json!({}),
+                },
+            ],
+            user_prompts: vec![
+                "remember that".to_string(),
+                "don't forget".to_string(),
+                "keep in mind".to_string(),
+            ],
+            keywords: vec![
+                "remember".to_string(),
+                "recall".to_string(),
+                "memory".to_string(),
+                "forget".to_string(),
+                "store".to_string(),
+                "save".to_string(),
+            ],
+        };
+        registry.register_with_impl(
+            remember_def,
+            Box::new(skill::remember::RememberSkill::new(emb.clone(), vs.clone())),
+        );
+
+        let recall_def = SkillDefinition {
+            name: "recall".to_string(),
+            description: "Search long-term memory for previously stored facts, preferences, or context relevant to a query.".to_string(),
+            tools: vec![],
+            instruction_steps: vec![
+                InstructionStep::ToolCall {
+                    tool: "recall".to_string(),
+                    input: serde_json::json!({}),
+                },
+            ],
+            user_prompts: vec![
+                "what do i remember".to_string(),
+                "do you recall".to_string(),
+                "search memory".to_string(),
+            ],
+            keywords: vec![
+                "recall".to_string(),
+                "remember".to_string(),
+                "search".to_string(),
+                "find".to_string(),
+                "memory".to_string(),
+                "previously".to_string(),
+            ],
+        };
+        registry.register_with_impl(
+            recall_def,
+            Box::new(skill::recall::RecallSkill::new(emb.clone(), vs.clone())),
+        );
     }
+
     registry
 }
 
 /// Extract per-skill approval overrides from config.
 pub fn build_approval_overrides(config: &Config) -> HashMap<String, ApprovalPolicy> {
     let mut map = HashMap::new();
-    if let Some(ref cfg) = config.skills.read_file {
+    if let Some(ref cfg) = config.tools.read_file {
         if let Some(policy) = cfg.approval {
             map.insert("read_file".to_string(), policy);
         }
     }
-    if let Some(ref cfg) = config.skills.write_file {
+    if let Some(ref cfg) = config.tools.write_file {
         if let Some(policy) = cfg.approval {
             map.insert("write_file".to_string(), policy);
         }
     }
-    if let Some(ref cfg) = config.skills.fetch_url {
+    if let Some(ref cfg) = config.tools.fetch_url {
         if let Some(policy) = cfg.approval {
             map.insert("fetch_url".to_string(), policy);
         }
@@ -360,7 +417,7 @@ endpoint = "http://localhost:5678/v1"
     }
 
     #[test]
-    fn build_approval_overrides_from_skills() {
+    fn build_approval_overrides_from_tools() {
         let config = Config::parse(
             r#"
 [[models.chat.providers]]
@@ -368,7 +425,7 @@ type = "lmstudio"
 model = "test-model"
 endpoint = "http://localhost:1234/v1"
 
-[skills.read_file]
+[tools.read_file]
 allowed_directories = ["/tmp"]
 approval = "trust"
 "#,

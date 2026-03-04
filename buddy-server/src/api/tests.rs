@@ -12,7 +12,7 @@ use tower_http::services::ServeDir;
 
 use buddy_core::types::MessageContent;
 use buddy_core::provider::ProviderChain;
-use buddy_core::skill::ToolRegistry;
+use buddy_core::skill::{SkillRegistry, ToolRegistry};
 use buddy_core::testutil::{
     ConfigurableMockProvider, FailingSkill, MockEchoSkill, MockProvider, MockResponse,
     SequencedProvider,
@@ -37,20 +37,25 @@ endpoint = "http://localhost:1234/v1"
 
 fn registry_with_echo() -> ToolRegistry {
     let mut r = ToolRegistry::new();
-    r.register(Box::new(MockEchoSkill));
+    r.register(Arc::new(MockEchoSkill));
     r
 }
 
 fn registry_with_failing() -> ToolRegistry {
     let mut r = ToolRegistry::new();
-    r.register(Box::new(FailingSkill));
+    r.register(Arc::new(FailingSkill));
     r
+}
+
+fn empty_skill_registry() -> SkillRegistry {
+    SkillRegistry::new(Arc::new(ToolRegistry::new()))
 }
 
 struct TestAppBuilder {
     tokens: Vec<String>,
     responses: Option<Vec<MockResponse>>,
     registry: Option<ToolRegistry>,
+    skill_registry: Option<SkillRegistry>,
     embedder: Option<Arc<dyn buddy_core::embedding::Embedder>>,
     vector_store: Option<Arc<dyn buddy_core::memory::VectorStore>>,
     static_dir: Option<String>,
@@ -62,6 +67,7 @@ impl TestAppBuilder {
             tokens: vec![],
             responses: None,
             registry: None,
+            skill_registry: None,
             embedder: None,
             vector_store: None,
             static_dir: None,
@@ -115,10 +121,12 @@ impl TestAppBuilder {
     ) -> Router {
         let provider = make_provider(self.tokens);
         let registry = self.registry.unwrap_or_else(ToolRegistry::new);
+        let skill_registry = self.skill_registry.unwrap_or_else(empty_skill_registry);
 
         let state = Arc::new(AppState {
             provider: arc_swap::ArcSwap::from_pointee(provider),
             registry: arc_swap::ArcSwap::from_pointee(registry),
+            skill_registry: arc_swap::ArcSwap::from_pointee(skill_registry),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(self.embedder),
             vector_store: arc_swap::ArcSwap::from_pointee(self.vector_store),
@@ -168,6 +176,7 @@ fn conversation_app(tokens: Vec<String>) -> (Arc<AppState<MockProvider>>, Router
     let state = Arc::new(AppState {
         provider: arc_swap::ArcSwap::from_pointee(MockProvider { tokens }),
         registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
+        skill_registry: arc_swap::ArcSwap::from_pointee(empty_skill_registry()),
         store: buddy_core::store::Store::open_in_memory().unwrap(),
         embedder: arc_swap::ArcSwap::from_pointee(None),
         vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -181,7 +190,7 @@ fn conversation_app(tokens: Vec<String>) -> (Arc<AppState<MockProvider>>, Router
         config: std::sync::RwLock::new(test_config()),
         config_path: std::path::PathBuf::from("/tmp/buddy-test.toml"),
         on_config_change: None,
-            telegram_process: buddy_core::state::new_child_process_handle(),
+        telegram_process: buddy_core::state::new_child_process_handle(),
     });
     let router = Router::new()
         .route("/api/chat", post(chat_handler::<MockProvider>))
@@ -531,6 +540,7 @@ mod tool_loop {
         let state = Arc::new(AppState {
             provider: arc_swap::ArcSwap::from_pointee(chain),
             registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
+        skill_registry: arc_swap::ArcSwap::from_pointee(empty_skill_registry()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -752,6 +762,7 @@ mod conversations {
                 MockResponse::Text(vec!["Final answer.".into()]),
             ])),
             registry: arc_swap::ArcSwap::from_pointee(registry_with_echo()),
+            skill_registry: arc_swap::ArcSwap::from_pointee(empty_skill_registry()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -889,6 +900,7 @@ mod warnings {
         let state = Arc::new(AppState {
             provider: arc_swap::ArcSwap::from_pointee(MockProvider { tokens }),
             registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
+        skill_registry: arc_swap::ArcSwap::from_pointee(empty_skill_registry()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -951,6 +963,7 @@ mod warnings {
         let state = Arc::new(AppState {
             provider: arc_swap::ArcSwap::from_pointee(MockProvider { tokens: vec![] }),
             registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
+        skill_registry: arc_swap::ArcSwap::from_pointee(empty_skill_registry()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -1009,6 +1022,7 @@ mod warnings {
         let state = Arc::new(AppState {
             provider: arc_swap::ArcSwap::from_pointee(MockProvider { tokens: vec![] }),
             registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
+        skill_registry: arc_swap::ArcSwap::from_pointee(empty_skill_registry()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -1141,6 +1155,7 @@ mod warnings {
         let state = Arc::new(AppState {
             provider: arc_swap::ArcSwap::from_pointee(MockProvider { tokens: vec![] }),
             registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
+        skill_registry: arc_swap::ArcSwap::from_pointee(empty_skill_registry()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -1277,13 +1292,13 @@ mod approval {
 
     fn registry_with_mutating() -> ToolRegistry {
         let mut r = ToolRegistry::new();
-        r.register(Box::new(MockMutatingSkill));
+        r.register(Arc::new(MockMutatingSkill));
         r
     }
 
     fn registry_with_network() -> ToolRegistry {
         let mut r = ToolRegistry::new();
-        r.register(Box::new(MockNetworkSkill));
+        r.register(Arc::new(MockNetworkSkill));
         r
     }
 
@@ -1296,6 +1311,7 @@ mod approval {
         let state = Arc::new(AppState {
             provider: arc_swap::ArcSwap::from_pointee(SequencedProvider::new(responses)),
             registry: arc_swap::ArcSwap::from_pointee(registry),
+            skill_registry: arc_swap::ArcSwap::from_pointee(empty_skill_registry()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -1681,6 +1697,7 @@ mod config_api {
                 tokens: vec!["hi".into()],
             }),
             registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
+        skill_registry: arc_swap::ArcSwap::from_pointee(empty_skill_registry()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -1727,13 +1744,13 @@ model = "all-minilm"
 [chat]
 system_prompt = "Be helpful."
 
-[skills.read_file]
+[tools.read_file]
 allowed_directories = ["/tmp"]
 
-[skills.write_file]
+[tools.write_file]
 allowed_directories = ["/tmp"]
 
-[skills.fetch_url]
+[tools.fetch_url]
 allowed_domains = ["example.com"]
 
 [memory]
@@ -1780,9 +1797,9 @@ similarity_threshold = 0.8
         assert_eq!(json["server"]["port"], 8080);
 
         // Skills section
-        assert!(json["skills"]["read_file"].is_object());
-        assert!(json["skills"]["write_file"].is_object());
-        assert!(json["skills"]["fetch_url"].is_object());
+        assert!(json["tools"]["read_file"].is_object());
+        assert!(json["tools"]["write_file"].is_object());
+        assert!(json["tools"]["fetch_url"].is_object());
 
         // Memory section
         assert_eq!(json["memory"]["auto_retrieve"], false);
@@ -1818,9 +1835,9 @@ endpoint = "http://localhost:1234/v1"
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
 
         assert!(json["models"]["embedding"].is_null());
-        assert!(json["skills"]["read_file"].is_null());
-        assert!(json["skills"]["write_file"].is_null());
-        assert!(json["skills"]["fetch_url"].is_null());
+        assert!(json["tools"]["read_file"].is_null());
+        assert!(json["tools"]["write_file"].is_null());
+        assert!(json["tools"]["fetch_url"].is_null());
     }
 
     #[tokio::test]
@@ -1887,7 +1904,7 @@ model = "all-minilm"
 [chat]
 system_prompt = "Hello"
 
-[skills.read_file]
+[tools.read_file]
 allowed_directories = ["/tmp"]
 
 [memory]
@@ -1920,7 +1937,7 @@ similarity_threshold = 0.5
         assert_eq!(deserialized.models.chat.providers[0].model, "gpt-4");
         assert!(deserialized.models.embedding.is_some());
         assert_eq!(deserialized.chat.system_prompt, "Hello");
-        assert!(deserialized.skills.read_file.is_some());
+        assert!(deserialized.tools.read_file.is_some());
         assert!(deserialized.memory.auto_retrieve);
     }
 
@@ -1943,6 +1960,7 @@ endpoint = "http://localhost:1234/v1"
         let state = Arc::new(AppState {
             provider: arc_swap::ArcSwap::from_pointee(MockProvider { tokens: vec!["hi".into()] }),
             registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
+        skill_registry: arc_swap::ArcSwap::from_pointee(empty_skill_registry()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -1961,7 +1979,7 @@ endpoint = "http://localhost:1234/v1"
         let router = Router::new()
             .route("/api/config", get(get_config::<MockProvider>))
             .route("/api/config/models", axum::routing::put(put_config_models::<MockProvider>))
-            .route("/api/config/skills", axum::routing::put(put_config_skills::<MockProvider>))
+            .route("/api/config/tools", axum::routing::put(put_config_tools::<MockProvider>))
             .route("/api/config/chat", axum::routing::put(put_config_chat::<MockProvider>))
             .route("/api/config/server", axum::routing::put(put_config_server::<MockProvider>))
             .route("/api/config/memory", axum::routing::put(put_config_memory::<MockProvider>))
@@ -2122,7 +2140,7 @@ endpoint = "http://localhost:1234/v1"
     }
 
     #[tokio::test]
-    async fn put_skills_updates_skills_preserves_others() {
+    async fn put_tools_updates_tools_preserves_others() {
         let (dir, app) = config_write_app();
         let tmp = std::env::temp_dir();
         let body = serde_json::json!({
@@ -2134,7 +2152,7 @@ endpoint = "http://localhost:1234/v1"
             .oneshot(
                 Request::builder()
                     .method("PUT")
-                    .uri("/api/config/skills")
+                    .uri("/api/config/tools")
                     .header("content-type", "application/json")
                     .body(Body::from(serde_json::to_vec(&body).unwrap()))
                     .unwrap(),
@@ -2145,7 +2163,7 @@ endpoint = "http://localhost:1234/v1"
 
         let disk = std::fs::read_to_string(dir.join("buddy.toml")).unwrap();
         let reparsed = buddy_core::config::Config::parse(&disk).unwrap();
-        assert!(reparsed.skills.read_file.is_some());
+        assert!(reparsed.tools.read_file.is_some());
         // Models section should be unchanged.
         assert_eq!(reparsed.models.chat.providers[0].model, "test-model");
 
@@ -2154,7 +2172,7 @@ endpoint = "http://localhost:1234/v1"
 
     // ── skills settings tests ─────────────────────────────────────
 
-    fn skills_config_write_app() -> (std::path::PathBuf, Router) {
+    fn tools_config_write_app() -> (std::path::PathBuf, Router) {
         use std::sync::atomic::{AtomicU64, Ordering};
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         let id = COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -2172,14 +2190,14 @@ type = "lmstudio"
 model = "test-model"
 endpoint = "http://localhost:1234/v1"
 
-[skills.read_file]
+[tools.read_file]
 allowed_directories = ["{tmp}"]
 
-[skills.write_file]
+[tools.write_file]
 allowed_directories = ["{tmp}"]
 approval = "always"
 
-[skills.fetch_url]
+[tools.fetch_url]
 allowed_domains = ["example.com"]
 approval = "once"
 "#,
@@ -2192,6 +2210,7 @@ approval = "once"
                 tokens: vec!["hi".into()],
             }),
             registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
+        skill_registry: arc_swap::ArcSwap::from_pointee(empty_skill_registry()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -2212,16 +2231,16 @@ approval = "once"
         let router = Router::new()
             .route("/api/config", get(get_config::<MockProvider>))
             .route(
-                "/api/config/skills",
-                axum::routing::put(put_config_skills::<MockProvider>),
+                "/api/config/tools",
+                axum::routing::put(put_config_tools::<MockProvider>),
             )
             .with_state(state);
         (dir, router)
     }
 
     #[tokio::test]
-    async fn skills_load_all_three_configured() {
-        let (dir, app) = skills_config_write_app();
+    async fn tools_load_all_three_configured() {
+        let (dir, app) = tools_config_write_app();
         let response = app
             .oneshot(
                 Request::builder()
@@ -2240,23 +2259,23 @@ approval = "once"
         let tmp_str = tmp.to_str().unwrap();
 
         // read_file
-        assert!(json["skills"]["read_file"].is_object());
-        assert_eq!(json["skills"]["read_file"]["allowed_directories"][0], tmp_str);
+        assert!(json["tools"]["read_file"].is_object());
+        assert_eq!(json["tools"]["read_file"]["allowed_directories"][0], tmp_str);
         // write_file
-        assert!(json["skills"]["write_file"].is_object());
-        assert_eq!(json["skills"]["write_file"]["allowed_directories"][0], tmp_str);
-        assert_eq!(json["skills"]["write_file"]["approval"], "always");
+        assert!(json["tools"]["write_file"].is_object());
+        assert_eq!(json["tools"]["write_file"]["allowed_directories"][0], tmp_str);
+        assert_eq!(json["tools"]["write_file"]["approval"], "always");
         // fetch_url
-        assert!(json["skills"]["fetch_url"].is_object());
-        assert_eq!(json["skills"]["fetch_url"]["allowed_domains"][0], "example.com");
-        assert_eq!(json["skills"]["fetch_url"]["approval"], "once");
+        assert!(json["tools"]["fetch_url"].is_object());
+        assert_eq!(json["tools"]["fetch_url"]["allowed_domains"][0], "example.com");
+        assert_eq!(json["tools"]["fetch_url"]["approval"], "once");
 
         std::fs::remove_dir_all(&dir).ok();
     }
 
     #[tokio::test]
-    async fn skills_toggle_off_write_file() {
-        let (dir, app) = skills_config_write_app();
+    async fn tools_toggle_off_write_file() {
+        let (dir, app) = tools_config_write_app();
         let tmp = std::env::temp_dir();
         let body = serde_json::json!({
             "read_file": { "allowed_directories": [tmp.to_str().unwrap()] },
@@ -2266,7 +2285,7 @@ approval = "once"
             .oneshot(
                 Request::builder()
                     .method("PUT")
-                    .uri("/api/config/skills")
+                    .uri("/api/config/tools")
                     .header("content-type", "application/json")
                     .body(Body::from(serde_json::to_vec(&body).unwrap()))
                     .unwrap(),
@@ -2276,15 +2295,15 @@ approval = "once"
         assert_eq!(response.status(), StatusCode::OK);
         let bytes = response.into_body().collect().await.unwrap().to_bytes();
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        assert!(json["skills"]["write_file"].is_null());
-        assert!(json["skills"]["read_file"].is_object());
+        assert!(json["tools"]["write_file"].is_null());
+        assert!(json["tools"]["read_file"].is_object());
 
         std::fs::remove_dir_all(&dir).ok();
     }
 
     #[tokio::test]
-    async fn skills_toggle_on_with_empty_defaults() {
-        let (dir, app) = skills_config_write_app();
+    async fn tools_toggle_on_with_empty_defaults() {
+        let (dir, app) = tools_config_write_app();
         let tmp = std::env::temp_dir();
         // Toggle write_file on with empty list
         let body = serde_json::json!({
@@ -2296,7 +2315,7 @@ approval = "once"
             .oneshot(
                 Request::builder()
                     .method("PUT")
-                    .uri("/api/config/skills")
+                    .uri("/api/config/tools")
                     .header("content-type", "application/json")
                     .body(Body::from(serde_json::to_vec(&body).unwrap()))
                     .unwrap(),
@@ -2306,15 +2325,15 @@ approval = "once"
         assert_eq!(response.status(), StatusCode::OK);
         let bytes = response.into_body().collect().await.unwrap().to_bytes();
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        assert!(json["skills"]["write_file"].is_object());
-        assert_eq!(json["skills"]["write_file"]["allowed_directories"], serde_json::json!([]));
+        assert!(json["tools"]["write_file"].is_object());
+        assert_eq!(json["tools"]["write_file"]["allowed_directories"], serde_json::json!([]));
 
         std::fs::remove_dir_all(&dir).ok();
     }
 
     #[tokio::test]
-    async fn skills_add_directory_to_read_file() {
-        let (dir, app) = skills_config_write_app();
+    async fn tools_add_directory_to_read_file() {
+        let (dir, app) = tools_config_write_app();
         let tmp = std::env::temp_dir();
         // Create a second valid directory
         let extra_dir = dir.join("extra");
@@ -2330,7 +2349,7 @@ approval = "once"
             .oneshot(
                 Request::builder()
                     .method("PUT")
-                    .uri("/api/config/skills")
+                    .uri("/api/config/tools")
                     .header("content-type", "application/json")
                     .body(Body::from(serde_json::to_vec(&body).unwrap()))
                     .unwrap(),
@@ -2340,7 +2359,7 @@ approval = "once"
         assert_eq!(response.status(), StatusCode::OK);
         let bytes = response.into_body().collect().await.unwrap().to_bytes();
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        let dirs = json["skills"]["read_file"]["allowed_directories"]
+        let dirs = json["tools"]["read_file"]["allowed_directories"]
             .as_array()
             .unwrap();
         assert_eq!(dirs.len(), 2);
@@ -2350,8 +2369,8 @@ approval = "once"
     }
 
     #[tokio::test]
-    async fn skills_remove_directory_from_write_file() {
-        let (dir, app) = skills_config_write_app();
+    async fn tools_remove_directory_from_write_file() {
+        let (dir, app) = tools_config_write_app();
         // Save write_file with empty directory list (remove all)
         let tmp = std::env::temp_dir();
         let body = serde_json::json!({
@@ -2363,7 +2382,7 @@ approval = "once"
             .oneshot(
                 Request::builder()
                     .method("PUT")
-                    .uri("/api/config/skills")
+                    .uri("/api/config/tools")
                     .header("content-type", "application/json")
                     .body(Body::from(serde_json::to_vec(&body).unwrap()))
                     .unwrap(),
@@ -2373,7 +2392,7 @@ approval = "once"
         assert_eq!(response.status(), StatusCode::OK);
         let bytes = response.into_body().collect().await.unwrap().to_bytes();
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        let dirs = json["skills"]["write_file"]["allowed_directories"]
+        let dirs = json["tools"]["write_file"]["allowed_directories"]
             .as_array()
             .unwrap();
         assert_eq!(dirs.len(), 0);
@@ -2382,8 +2401,8 @@ approval = "once"
     }
 
     #[tokio::test]
-    async fn skills_change_fetch_url_approval_to_trust() {
-        let (dir, app) = skills_config_write_app();
+    async fn tools_change_fetch_url_approval_to_trust() {
+        let (dir, app) = tools_config_write_app();
         let tmp = std::env::temp_dir();
         let body = serde_json::json!({
             "read_file": { "allowed_directories": [tmp.to_str().unwrap()] },
@@ -2394,7 +2413,7 @@ approval = "once"
             .oneshot(
                 Request::builder()
                     .method("PUT")
-                    .uri("/api/config/skills")
+                    .uri("/api/config/tools")
                     .header("content-type", "application/json")
                     .body(Body::from(serde_json::to_vec(&body).unwrap()))
                     .unwrap(),
@@ -2404,14 +2423,14 @@ approval = "once"
         assert_eq!(response.status(), StatusCode::OK);
         let bytes = response.into_body().collect().await.unwrap().to_bytes();
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(json["skills"]["fetch_url"]["approval"], "trust");
+        assert_eq!(json["tools"]["fetch_url"]["approval"], "trust");
 
         std::fs::remove_dir_all(&dir).ok();
     }
 
     #[tokio::test]
-    async fn skills_empty_domain_returns_400() {
-        let (dir, app) = skills_config_write_app();
+    async fn tools_empty_domain_returns_400() {
+        let (dir, app) = tools_config_write_app();
         let tmp = std::env::temp_dir();
         let body = serde_json::json!({
             "read_file": { "allowed_directories": [tmp.to_str().unwrap()] },
@@ -2421,7 +2440,7 @@ approval = "once"
             .oneshot(
                 Request::builder()
                     .method("PUT")
-                    .uri("/api/config/skills")
+                    .uri("/api/config/tools")
                     .header("content-type", "application/json")
                     .body(Body::from(serde_json::to_vec(&body).unwrap()))
                     .unwrap(),
@@ -2440,8 +2459,8 @@ approval = "once"
     }
 
     #[tokio::test]
-    async fn skills_readonly_has_no_approval_in_response() {
-        let (dir, app) = skills_config_write_app();
+    async fn tools_readonly_has_no_approval_in_response() {
+        let (dir, app) = tools_config_write_app();
         let response = app
             .oneshot(
                 Request::builder()
@@ -2456,10 +2475,10 @@ approval = "once"
         let bytes = response.into_body().collect().await.unwrap().to_bytes();
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         // read_file is ReadOnly — approval should be null (not set in config)
-        assert!(json["skills"]["read_file"]["approval"].is_null());
+        assert!(json["tools"]["read_file"]["approval"].is_null());
         // Mutating/Network skills should have approval set
-        assert!(!json["skills"]["write_file"]["approval"].is_null());
-        assert!(!json["skills"]["fetch_url"]["approval"].is_null());
+        assert!(!json["tools"]["write_file"]["approval"].is_null());
+        assert!(!json["tools"]["fetch_url"]["approval"].is_null());
 
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -2624,6 +2643,7 @@ approval = "once"
                 tokens: vec!["hi".into()],
             }),
             registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
+        skill_registry: arc_swap::ArcSwap::from_pointee(empty_skill_registry()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -3172,6 +3192,7 @@ mod discover_models {
                 tokens: vec!["hi".into()],
             }),
             registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
+        skill_registry: arc_swap::ArcSwap::from_pointee(empty_skill_registry()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -3409,6 +3430,7 @@ mod settings_page {
                 tokens: vec!["hi".into()],
             }),
             registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
+        skill_registry: arc_swap::ArcSwap::from_pointee(empty_skill_registry()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -3456,6 +3478,7 @@ similarity_threshold = 0.5
                 tokens: vec!["hi".into()],
             }),
             registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
+        skill_registry: arc_swap::ArcSwap::from_pointee(empty_skill_registry()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -3505,7 +3528,7 @@ model = "all-minilm"
 [chat]
 system_prompt = "Be helpful."
 
-[skills.read_file]
+[tools.read_file]
 allowed_directories = ["/tmp"]
 
 [memory]
@@ -3542,7 +3565,7 @@ similarity_threshold = 0.8
         assert_eq!(json["server"]["port"], 3000);
 
         // Skills section
-        assert!(json["skills"]["read_file"].is_object());
+        assert!(json["tools"]["read_file"].is_object());
 
         // Memory section
         assert_eq!(json["memory"]["auto_retrieve"], false);
@@ -3705,7 +3728,7 @@ endpoint = "http://localhost:1234/v1"
         assert!(json["server"].is_object());
         assert!(json["models"].is_object());
         assert!(json["chat"].is_object());
-        assert!(json["skills"].is_object());
+        assert!(json["tools"].is_object());
         assert!(json["memory"].is_object());
     }
 
@@ -3778,6 +3801,7 @@ endpoint = "http://localhost:1234/v1"
                 tokens: vec!["hi".into()],
             }),
             registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
+        skill_registry: arc_swap::ArcSwap::from_pointee(empty_skill_registry()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -3796,7 +3820,10 @@ endpoint = "http://localhost:1234/v1"
                 let config = state.config.read().unwrap();
 
                 // Rebuild tool registry from config.
-                let registry = buddy_core::skill::build_tool_registry(&config.skills);
+                let registry = buddy_core::skill::build_tool_registry(
+                    &config.tools,
+                    Some(state.working_memory.clone()),
+                );
                 state.registry.store(Arc::new(registry));
 
                 // Update memory config.
@@ -3830,8 +3857,8 @@ endpoint = "http://localhost:1234/v1"
                 put(put_config_models::<MockProvider>),
             )
             .route(
-                "/api/config/skills",
-                put(put_config_skills::<MockProvider>),
+                "/api/config/tools",
+                put(put_config_tools::<MockProvider>),
             )
             .route("/api/config/chat", put(put_config_chat::<MockProvider>))
             .route(
@@ -3921,7 +3948,7 @@ endpoint = "http://localhost:1234/v1"
             .oneshot(
                 Request::builder()
                     .method("PUT")
-                    .uri("/api/config/skills")
+                    .uri("/api/config/tools")
                     .header("content-type", "application/json")
                     .body(Body::from(serde_json::to_vec(&body).unwrap()))
                     .unwrap(),
@@ -4077,6 +4104,7 @@ model = "all-minilm"
                 tokens: vec!["hi".into()],
             }),
             registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
+        skill_registry: arc_swap::ArcSwap::from_pointee(empty_skill_registry()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -4247,6 +4275,7 @@ endpoint = "http://localhost:1234/v1"
                 tokens: vec!["hi".into()],
             }),
             registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
+        skill_registry: arc_swap::ArcSwap::from_pointee(empty_skill_registry()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -4342,6 +4371,7 @@ endpoint = "https://api.openai.com/v1"
                 tokens: vec!["hi".into()],
             }),
             registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
+        skill_registry: arc_swap::ArcSwap::from_pointee(empty_skill_registry()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -4496,6 +4526,7 @@ mod auth {
         let state = Arc::new(AppState {
             provider: arc_swap::ArcSwap::from_pointee(MockProvider { tokens: vec![] }),
             registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
+        skill_registry: arc_swap::ArcSwap::from_pointee(empty_skill_registry()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -4730,6 +4761,7 @@ mod interfaces_api {
                 tokens: vec!["hi".into()],
             }),
             registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
+        skill_registry: arc_swap::ArcSwap::from_pointee(empty_skill_registry()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -4774,6 +4806,7 @@ endpoint = "http://localhost:1234/v1"
                 tokens: vec!["hi".into()],
             }),
             registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
+        skill_registry: arc_swap::ArcSwap::from_pointee(empty_skill_registry()),
             store: buddy_core::store::Store::open_in_memory().unwrap(),
             embedder: arc_swap::ArcSwap::from_pointee(None),
             vector_store: arc_swap::ArcSwap::from_pointee(None),
@@ -5040,6 +5073,7 @@ fn health_check_app(config: buddy_core::config::Config) -> Router {
             tokens: vec!["ok".into()],
         }),
         registry: arc_swap::ArcSwap::from_pointee(ToolRegistry::new()),
+        skill_registry: arc_swap::ArcSwap::from_pointee(empty_skill_registry()),
         store: buddy_core::store::Store::open_in_memory().unwrap(),
         embedder: arc_swap::ArcSwap::from_pointee(None),
         vector_store: arc_swap::ArcSwap::from_pointee(None),

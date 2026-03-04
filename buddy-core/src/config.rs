@@ -13,7 +13,7 @@ pub struct Config {
     #[serde(default)]
     pub chat: ChatConfig,
     #[serde(default)]
-    pub skills: SkillsConfig,
+    pub tools: ToolsConfig,
     #[serde(default)]
     pub storage: StorageConfig,
     #[serde(default)]
@@ -132,7 +132,7 @@ fn default_database() -> String {
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Clone, Default)]
-pub struct SkillsConfig {
+pub struct ToolsConfig {
     pub read_file: Option<ReadFileConfig>,
     pub write_file: Option<WriteFileConfig>,
     pub fetch_url: Option<FetchUrlConfig>,
@@ -495,11 +495,11 @@ endpoint = "http://localhost:1234/v1"
     }
 
     #[test]
-    fn no_skills_section_uses_defaults() {
+    fn no_tools_section_uses_defaults() {
         let config = Config::parse(minimal_chat_toml()).unwrap();
-        assert!(config.skills.read_file.is_none());
-        assert!(config.skills.write_file.is_none());
-        assert!(config.skills.fetch_url.is_none());
+        assert!(config.tools.read_file.is_none());
+        assert!(config.tools.write_file.is_none());
+        assert!(config.tools.fetch_url.is_none());
     }
 
     #[test]
@@ -524,55 +524,55 @@ database = "/var/data/buddy.db"
     }
 
     #[test]
-    fn skills_read_file_only() {
+    fn tools_read_file_only() {
         let toml = r#"
 [[models.chat.providers]]
 type = "lmstudio"
 model = "deepseek-coder"
 endpoint = "http://localhost:1234/v1"
 
-[skills.read_file]
+[tools.read_file]
 allowed_directories = ["/home/user/documents"]
 "#;
         let config = Config::parse(toml).unwrap();
-        assert!(config.skills.read_file.is_some());
+        assert!(config.tools.read_file.is_some());
         assert_eq!(
-            config.skills.read_file.unwrap().allowed_directories,
+            config.tools.read_file.unwrap().allowed_directories,
             vec!["/home/user/documents"]
         );
-        assert!(config.skills.write_file.is_none());
-        assert!(config.skills.fetch_url.is_none());
+        assert!(config.tools.write_file.is_none());
+        assert!(config.tools.fetch_url.is_none());
     }
 
     #[test]
-    fn full_skills_config_parses() {
+    fn full_tools_config_parses() {
         let toml = r#"
 [[models.chat.providers]]
 type = "lmstudio"
 model = "deepseek-coder"
 endpoint = "http://localhost:1234/v1"
 
-[skills.read_file]
+[tools.read_file]
 allowed_directories = ["/home/user/docs", "/tmp/shared"]
 
-[skills.write_file]
+[tools.write_file]
 allowed_directories = ["/home/user/sandbox"]
 
-[skills.fetch_url]
+[tools.fetch_url]
 allowed_domains = ["example.com", "api.github.com"]
 "#;
         let config = Config::parse(toml).unwrap();
 
-        let rf = config.skills.read_file.unwrap();
+        let rf = config.tools.read_file.unwrap();
         assert_eq!(
             rf.allowed_directories,
             vec!["/home/user/docs", "/tmp/shared"]
         );
 
-        let wf = config.skills.write_file.unwrap();
+        let wf = config.tools.write_file.unwrap();
         assert_eq!(wf.allowed_directories, vec!["/home/user/sandbox"]);
 
-        let fu = config.skills.fetch_url.unwrap();
+        let fu = config.tools.fetch_url.unwrap();
         assert_eq!(fu.allowed_domains, vec!["example.com", "api.github.com"]);
     }
 

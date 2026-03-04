@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use buddy_core::config::ApprovalPolicy;
 use buddy_core::provider::{Provider, ProviderError, Token};
-use buddy_core::skill::{PermissionLevel, ToolRegistry};
+use buddy_core::skill::{PermissionLevel, SkillRegistry, ToolRegistry};
 use buddy_core::state::ConversationApprovals;
 use buddy_core::store::Store;
 use buddy_core::types::{Message, MessageContent, Role};
@@ -75,6 +75,7 @@ pub async fn process_message<P: Provider>(
     store: &Store,
     provider: &P,
     registry: &ToolRegistry,
+    skill_registry: &SkillRegistry,
     approval_overrides: &HashMap<String, ApprovalPolicy>,
     conversation_approvals: &ConversationApprovals,
     chat_id: i64,
@@ -108,10 +109,13 @@ pub async fn process_message<P: Provider>(
 
     let tools = {
         let defs = registry.tool_definitions();
-        if defs.is_empty() {
+        let mut skill_defs = skill_registry.tool_definitions();
+        let mut all_defs = defs;
+        all_defs.extend(skill_defs);
+        if all_defs.is_empty() {
             None
         } else {
-            Some(defs)
+            Some(all_defs)
         }
     };
 
@@ -381,28 +385,32 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use buddy_core::skill::ToolRegistry;
     use buddy_core::config::ApprovalPolicy;
+    use buddy_core::skill::ToolRegistry;
     use buddy_core::testutil::{
         MockEchoSkill, MockMutatingSkill, MockNetworkSkill, MockProvider, MockResponse,
         SequencedProvider,
     };
 
+    fn empty_skill_registry() -> SkillRegistry {
+        SkillRegistry::new(Arc::new(ToolRegistry::new()))
+    }
+
     fn registry_with_echo() -> ToolRegistry {
         let mut r = ToolRegistry::new();
-        r.register(Box::new(MockEchoSkill));
+        r.register(Arc::new(MockEchoSkill));
         r
     }
 
     fn registry_with_mutating() -> ToolRegistry {
         let mut r = ToolRegistry::new();
-        r.register(Box::new(MockMutatingSkill));
+        r.register(Arc::new(MockMutatingSkill));
         r
     }
 
     fn registry_with_network() -> ToolRegistry {
         let mut r = ToolRegistry::new();
-        r.register(Box::new(MockNetworkSkill));
+        r.register(Arc::new(MockNetworkSkill));
         r
     }
 
@@ -420,6 +428,7 @@ mod tests {
             &store,
             &provider,
             &registry,
+            &empty_skill_registry(),
             &overrides,
             &conversation_approvals,
             12345,
@@ -456,6 +465,7 @@ mod tests {
             &store,
             &provider,
             &registry,
+            &empty_skill_registry(),
             &overrides,
             &conversation_approvals,
             100,
@@ -493,6 +503,7 @@ mod tests {
             &store,
             &provider,
             &registry,
+            &empty_skill_registry(),
             &overrides,
             &conversation_approvals,
             555,
@@ -505,6 +516,7 @@ mod tests {
             &store,
             &provider,
             &registry,
+            &empty_skill_registry(),
             &overrides,
             &conversation_approvals,
             555,
@@ -540,6 +552,7 @@ mod tests {
             &store,
             &provider,
             &registry,
+            &empty_skill_registry(),
             &overrides,
             &conversation_approvals,
             200,
@@ -584,6 +597,7 @@ mod tests {
             &store,
             &provider,
             &registry,
+            &empty_skill_registry(),
             &overrides,
             &conversation_approvals,
             200,
@@ -627,6 +641,7 @@ mod tests {
             &store,
             &provider,
             &registry,
+            &empty_skill_registry(),
             &overrides,
             &conversation_approvals,
             200,
@@ -668,6 +683,7 @@ mod tests {
             &store,
             &setup_provider,
             &registry,
+            &empty_skill_registry(),
             &overrides,
             &conversation_approvals,
             300,
@@ -700,6 +716,7 @@ mod tests {
             &store,
             &provider,
             &registry,
+            &empty_skill_registry(),
             &overrides,
             &conversation_approvals,
             300,
@@ -753,6 +770,7 @@ mod tests {
             &store,
             &provider,
             &registry,
+            &empty_skill_registry(),
             &overrides,
             &conversation_approvals,
             200,
