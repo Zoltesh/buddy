@@ -306,6 +306,24 @@ export async function migrateMemory() {
 }
 
 /**
+ * Send a tool approval response.
+ * @param {string} conversationId
+ * @param {string} approvalId
+ * @param {boolean} approved
+ */
+export async function approveTool(conversationId, approvalId, approved) {
+  const res = await authFetch(`/api/chat/${conversationId}/approve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ approval_id: approvalId, approved }),
+  });
+  if (!res.ok) {
+    const data = await res.json();
+    throw new Error(data.message || 'Failed to send approval');
+  }
+}
+
+/**
  * Format a timestamp as a relative time string.
  * @param {string} dateStr
  */

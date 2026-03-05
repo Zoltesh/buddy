@@ -35,13 +35,28 @@ fn validate_domain(url_str: &str, allowed_domains: &[String]) -> Result<(), Tool
         .host_str()
         .ok_or_else(|| ToolError::InvalidInput("URL has no host".into()))?;
 
-    if allowed_domains.iter().any(|d| d == domain) {
-        Ok(())
-    } else {
-        Err(ToolError::Forbidden(format!(
-            "domain '{domain}' is not in the allowlist"
-        )))
+    // Check for exact match or wildcard match
+    for allowed in allowed_domains {
+        if allowed == domain {
+            return Ok(());
+        }
+        // "*" matches everything
+        if allowed == "*" {
+            return Ok(());
+        }
+        // "*.example.com" matches subdomains
+        if allowed.starts_with("*.") {
+            let suffix = &allowed[1..]; // ".example.com"
+            if domain.ends_with(suffix) {
+                return Ok(());
+            }
+        }
     }
+
+    // No match found
+    Err(ToolError::Forbidden(format!(
+        "domain '{domain}' is not in the allowlist"
+    )))
 }
 
 impl Tool for FetchUrlSkill {
@@ -109,6 +124,20 @@ mod tests {
         let domains = vec!["example.com".into(), "api.github.com".into()];
         assert!(validate_domain("https://example.com/page", &domains).is_ok());
         assert!(validate_domain("https://api.github.com/repos", &domains).is_ok());
+    }
+
+    #[test]
+    fn validate_domain_wildcard() {
+        // "*" matches everything
+        let domains = vec!["*".into()];
+        assert!(validate_domain("https://youtube.com", &domains).is_ok());
+        assert!(validate_domain("https://evil.com", &domains).is_ok());
+
+        // "*.example.com" matches subdomains
+        let domains = vec!["*.youtube.com".into()];
+        assert!(validate_domain("https://www.youtube.com", &domains).is_ok());
+        assert!(validate_domain("https://m.youtube.com", &domains).is_ok());
+        assert!(validate_domain("https://youtube.com", &domains).is_err());
     }
 
     #[test]

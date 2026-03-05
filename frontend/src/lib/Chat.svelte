@@ -9,6 +9,7 @@
     authFetch,
   } from './api.js';
   import ToolCallBlock from './ToolCallBlock.svelte';
+  import ApprovalDialog from './ApprovalDialog.svelte';
 
   marked.setOptions({ breaks: true, gfm: true });
 
@@ -24,6 +25,9 @@
   let inputText = $state('');
   let isStreaming = $state(false);
   let messagesContainer;
+
+  // Pending approval request from the backend
+  let pendingApproval = $state(null);
 
   // Warning banner state
   let warnings = $state([]);
@@ -192,6 +196,15 @@
                 currentAssistantIdx = displayItems.length - 1;
               } else if (event.type === 'warnings') {
                 warnings = event.warnings;
+              } else if (event.type === 'approval_request') {
+                // Show approval dialog - store the approval request data
+                pendingApproval = {
+                  id: event.id,
+                  skill_name: event.skill_name,
+                  arguments: event.arguments,
+                  permission_level: event.permission_level,
+                  conversationId: conversationId,
+                };
               } else if (event.type === 'error') {
                 displayItems[currentAssistantIdx].content +=
                   `\n\nError: ${event.message}`;
@@ -241,6 +254,9 @@
 </script>
 
 <div class="flex-1 flex flex-col min-w-0 min-h-0">
+  <!-- Approval Dialog -->
+  <ApprovalDialog bind:approval={pendingApproval} />
+
   <!-- Header -->
   <header
     class="flex-shrink-0 flex items-center gap-3 border-b border-gray-200 dark:border-gray-800 px-4 py-3"
